@@ -1,8 +1,11 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { ApiType } from "../lib/ai-provider";
+import type { ServerModel, SearchProvider, AssetProvider } from "../lib/mohua-api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+export const SERVER_ENGINE = "server" as const;
 
 export interface AISettings {
   apiType: ApiType;
@@ -12,19 +15,29 @@ export interface AISettings {
 }
 
 export interface WebSearchSettings {
-  engine: "tavily" | "firecrawl" | "builtin" | "disabled";
+  engine: "tavily" | "firecrawl" | "builtin" | "disabled" | typeof SERVER_ENGINE;
   tavilyApiKey: string;
   tavilyApiUrl: string;
   firecrawlApiKey: string;
   firecrawlApiUrl: string;
+  backendProvider?: string;
 }
 
 export interface AssetSearchSettings {
-  engine: "pixabay" | "unsplash" | "disabled";
+  engine: "pixabay" | "unsplash" | "disabled" | typeof SERVER_ENGINE;
   pixabayApiKey: string;
   pixabayApiUrl: string;
   unsplashApiKey: string;
   unsplashApiUrl: string;
+  backendProvider?: string;
+}
+
+export interface ServerServiceSettings {
+  selectedModel: string; // 用户选择的服务端模型 ID
+  webSearchEnabled: boolean; // 是否启用服务端联网搜索（默认 true）
+  webSearchProviderId: string; // 选择的搜索供应商 ID（空 = 使用默认）
+  assetSearchEnabled: boolean; // 是否启用服务端素材搜索（默认 true）
+  assetSearchProviderId: string; // 选择的素材供应商 ID（空 = 使用默认）
 }
 
 export type Language = "system" | "zh" | "en";
@@ -43,19 +56,31 @@ export interface ModelCache {
   apiKey: string;
 }
 
+export interface ServerServiceCache {
+  models: ServerModel[];
+  searchProviders: SearchProvider[];
+  assetProviders: AssetProvider[];
+  timestamp: number;
+}
+
 interface SettingsState {
   ai: AISettings;
   webSearch: WebSearchSettings;
   assetSearch: AssetSearchSettings;
   system: SystemSettings;
+  serverService: ServerServiceSettings;
   modelCache: ModelCache | null;
+  serverServiceCache: ServerServiceCache | null;
 
   setAI: (settings: AISettings) => void;
   setWebSearch: (settings: WebSearchSettings) => void;
   setAssetSearch: (settings: AssetSearchSettings) => void;
   setSystem: (settings: SystemSettings) => void;
+  setServerService: (patch: Partial<ServerServiceSettings>) => void;
   setModelCache: (cache: ModelCache) => void;
   clearModelCache: () => void;
+  setServerServiceCache: (cache: ServerServiceCache | null) => void;
+  patchServerServiceCache: (patch: Partial<ServerServiceCache>) => void;
   resetAll: () => void;
   isAIValid: () => boolean;
   isWebSearchConfigured: () => boolean;
@@ -92,7 +117,15 @@ export const useSettingsStore = create<SettingsState>()(
         theme: "system" as Theme,
         reverseProxy: false,
       },
+      serverService: {
+        selectedModel: "",
+        webSearchEnabled: true,
+        webSearchProviderId: "",
+        assetSearchEnabled: true,
+        assetSearchProviderId: "",
+      },
       modelCache: null,
+      serverServiceCache: null,
 
       setAI: (settings) =>
         set({
@@ -104,8 +137,35 @@ export const useSettingsStore = create<SettingsState>()(
       setWebSearch: (settings) => set({ webSearch: settings }),
       setAssetSearch: (settings) => set({ assetSearch: settings }),
       setSystem: (settings) => set({ system: settings }),
+      setServerService: (patch) =>
+        set((state) => ({
+          serverService: { ...state.serverService, ...patch },
+        })),
       setModelCache: (cache) => set({ modelCache: cache }),
       clearModelCache: () => set({ modelCache: null }),
+      setServerServiceCache: (cache) => set({ serverServiceCache: cache }),
+      patchServerServiceCache: (patch) =>
+        set((state) => {
+          const current = state.serverServiceCache;
+          if (
+            current &&
+            (patch.models === undefined || patch.models === current.models) &&
+            (patch.searchProviders === undefined || patch.searchProviders === current.searchProviders) &&
+            (patch.assetProviders === undefined || patch.assetProviders === current.assetProviders) &&
+            patch.timestamp === undefined
+          ) {
+            return state;
+          }
+          return {
+            serverServiceCache: {
+              models: current?.models ?? [],
+              searchProviders: current?.searchProviders ?? [],
+              assetProviders: current?.assetProviders ?? [],
+              ...patch,
+              timestamp: patch.timestamp ?? Date.now(),
+            },
+          };
+        }),
 
       resetAll: () => {
         set({
@@ -135,6 +195,7 @@ export const useSettingsStore = create<SettingsState>()(
             reverseProxy: false,
           },
           modelCache: null,
+          serverServiceCache: null,
         });
       },
 
@@ -165,13 +226,15 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "open-builder-settings",
-      version: 6,
+      version: 7,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         ai: state.ai,
         webSearch: state.webSearch,
         assetSearch: state.assetSearch,
         system: state.system,
+        serverService: state.serverService,
+        serverServiceCache: state.serverServiceCache,
       }),
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, any>;
@@ -211,6 +274,17 @@ export const useSettingsStore = create<SettingsState>()(
           if (!state.system) state.system = {};
           if (state.system.reverseProxy === undefined) {
             state.system.reverseProxy = false;
+          }
+        }
+        if (version < 7) {
+          if (!state.serverService) {
+            state.serverService = {
+              selectedModel: "",
+              webSearchEnabled: true,
+              webSearchProviderId: "",
+              assetSearchEnabled: true,
+              assetSearchProviderId: "",
+            };
           }
         }
         // version 6: added "builtin" to webSearch.engine — no data migration needed

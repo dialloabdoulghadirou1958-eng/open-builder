@@ -13,6 +13,8 @@ import { useIsMobile } from "./hooks/useIsMobile";
 import { useTheme } from "./hooks/useTheme";
 import { useConversationStore } from "./store/conversation";
 import { useT } from "./i18n";
+import { AuthCallback } from "./components/AuthCallback";
+import { useAuthStore } from "./store/auth";
 
 export default function App() {
   const t = useT();
@@ -23,6 +25,15 @@ export default function App() {
   const switchConversation = useConversationStore((s) => s.switchConversation);
   const isMobile = useIsMobile();
   useTheme();
+
+  useEffect(() => {
+    // Passively refresh token on load if needed
+    useAuthStore.getState().getValidTokenAsync().catch(() => {});
+  }, []);
+
+  if (window.location.pathname === "/auth/callback") {
+    return <AuthCallback />;
+  }
 
   // On hydration: ensure there's an active conversation
   useEffect(() => {
@@ -58,6 +69,8 @@ export default function App() {
     handleSaveAssetSearchSettings,
     systemSettings,
     handleSaveSystemSettings,
+    serverServiceSettings,
+    handleSaveServerServiceSettings,
     template,
     setTemplate,
     sandpackKey,
@@ -81,6 +94,7 @@ export default function App() {
     settings,
     webSearchSettings,
     assetSearchSettings,
+    serverServiceSettings,
     files,
     setMessages,
     setFiles,
@@ -176,6 +190,8 @@ export default function App() {
         onSaveAssetSearch={handleSaveAssetSearchSettings}
         systemSettings={systemSettings}
         onSaveSystem={handleSaveSystemSettings}
+        serverServiceSettings={serverServiceSettings}
+        onSaveServerService={handleSaveServerServiceSettings}
       />
     </ResizablePanelGroup>
   );

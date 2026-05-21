@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Key,
   Globe,
@@ -10,16 +10,21 @@ import {
   RefreshCw,
   Trash2,
   Shield,
+  LogOut,
+  Image as ImageIcon,
 } from "lucide-react";
 import {
   AISettings,
   WebSearchSettings,
   AssetSearchSettings,
   SystemSettings,
+  ServerServiceSettings,
   Language,
   Theme,
+  ServerServiceCache,
   useSettingsStore,
 } from "../store/settings";
+import { useAuthStore } from "../store/auth";
 import { useConversationStore } from "../store/conversation";
 import { useSnapshotStore } from "../store/snapshot";
 import { useMemoryStore } from "../store/memory";
@@ -52,6 +57,14 @@ import {
 import type { ApiType } from "@/lib/ai-provider";
 import { version } from "../../package.json";
 import { useT } from "../i18n";
+import {
+  fetchServerModels,
+  fetchSearchProviders,
+  fetchAssetProviders,
+  ServerModel,
+  SearchProvider,
+  AssetProvider,
+} from "../lib/mohua-api";
 
 const API_ENDPOINTS: Record<ApiType, string> = {
   "openai-compatible": "/chat/completions",
@@ -71,6 +84,8 @@ interface SettingsDialogProps {
   onSaveAssetSearch: (settings: AssetSearchSettings) => void;
   systemSettings: SystemSettings;
   onSaveSystem: (settings: SystemSettings) => void;
+  serverServiceSettings: ServerServiceSettings;
+  onSaveServerService: (settings: Partial<ServerServiceSettings>) => void;
 }
 
 export function SettingsDialog({
@@ -84,14 +99,20 @@ export function SettingsDialog({
   onSaveAssetSearch,
   systemSettings,
   onSaveSystem,
+  serverServiceSettings,
+  onSaveServerService,
 }: SettingsDialogProps) {
   const t = useT();
+  const isAuth = useAuthStore((s) => s.isLoggedIn());
+
   const [formData, setFormData] = useState<AISettings>(settings);
   const [webSearchForm, setWebSearchForm] =
     useState<WebSearchSettings>(webSearchSettings);
   const [assetSearchForm, setAssetSearchForm] =
     useState<AssetSearchSettings>(assetSearchSettings);
   const [systemForm, setSystemForm] = useState<SystemSettings>(systemSettings);
+  const [serverServiceForm, setServerServiceForm] =
+    useState<ServerServiceSettings>(serverServiceSettings);
 
   useEffect(() => {
     setFormData(settings);
@@ -109,11 +130,18 @@ export function SettingsDialog({
     setSystemForm(systemSettings);
   }, [systemSettings]);
 
+  useEffect(() => {
+    setServerServiceForm(serverServiceSettings);
+  }, [serverServiceSettings]);
+
   const handleSave = () => {
     onSave(formData);
     onSaveWebSearch(webSearchForm);
     onSaveAssetSearch(assetSearchForm);
     onSaveSystem(systemForm);
+    if (isAuth) {
+      onSaveServerService(serverServiceForm);
+    }
     onClose();
   };
 
@@ -125,37 +153,61 @@ export function SettingsDialog({
         </DialogHeader>
 
         <Tabs
-          defaultValue="model"
+          defaultValue={isAuth ? "serverService" : "model"}
           className="flex-1 min-h-0 flex flex-col px-2"
         >
           <TabsList className="w-full">
-            <TabsTrigger value="model">{t.settings.tabs.model}</TabsTrigger>
-            <TabsTrigger value="search">{t.settings.tabs.search}</TabsTrigger>
-            <TabsTrigger value="asset">{t.settings.tabs.asset}</TabsTrigger>
+            {isAuth ? (
+              <TabsTrigger value="serverService">
+                {t.settings.tabs.serverService}
+              </TabsTrigger>
+            ) : (
+              <>
+                <TabsTrigger value="model">{t.settings.tabs.model}</TabsTrigger>
+                <TabsTrigger value="search">
+                  {t.settings.tabs.search}
+                </TabsTrigger>
+                <TabsTrigger value="asset">{t.settings.tabs.asset}</TabsTrigger>
+              </>
+            )}
             <TabsTrigger value="system">{t.settings.tabs.system}</TabsTrigger>
           </TabsList>
 
-          {/* ── 模型设置 ── */}
-          <TabsContent value="model" className="py-4 space-y-4">
-            <ModelSettingsTab formData={formData} setFormData={setFormData} />
-          </TabsContent>
+          {isAuth ? (
+            <TabsContent value="serverService" className="py-4 space-y-4">
+              <ServerServiceTab
+                form={serverServiceForm}
+                setForm={setServerServiceForm}
+              />
+            </TabsContent>
+          ) : (
+            <>
+              {/* ── 模型设置 ── */}
+              <TabsContent value="model" className="py-4 space-y-4">
+                <ModelSettingsTab
+                  formData={formData}
+                  setFormData={setFormData}
+                />
+              </TabsContent>
 
-          {/* ── 联网搜索 ── */}
-          <TabsContent value="search" className="py-4 space-y-4">
-            <WebSearchTab
-              form={webSearchForm}
-              setForm={setWebSearchForm}
-              apiType={formData.apiType}
-            />
-          </TabsContent>
+              {/* ── 联网搜索 ── */}
+              <TabsContent value="search" className="py-4 space-y-4">
+                <WebSearchTab
+                  form={webSearchForm}
+                  setForm={setWebSearchForm}
+                  apiType={formData.apiType}
+                />
+              </TabsContent>
 
-          {/* ── 素材搜索 ── */}
-          <TabsContent value="asset" className="py-4 space-y-4">
-            <AssetSearchTab
-              form={assetSearchForm}
-              setForm={setAssetSearchForm}
-            />
-          </TabsContent>
+              {/* ── 素材搜索 ── */}
+              <TabsContent value="asset" className="py-4 space-y-4">
+                <AssetSearchTab
+                  form={assetSearchForm}
+                  setForm={setAssetSearchForm}
+                />
+              </TabsContent>
+            </>
+          )}
 
           {/* ── 系统设置 ── */}
           <TabsContent value="system" className="py-4 space-y-4">
@@ -200,6 +252,7 @@ function ModelSettingsTab({
   const [fetchFailed, setFetchFailed] = useState(!cacheHit);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const loadingKeyRef = useRef<string>("");
 
   const fetchModels = useCallback(async () => {
     if (!formData.apiBaseUrl || !formData.apiKey) {
@@ -208,8 +261,12 @@ function ModelSettingsTab({
       clearModelCache();
       return;
     }
+    const currentKey = `${formData.apiType}-${formData.apiBaseUrl}-${formData.apiKey}`;
+    if (loadingKeyRef.current === currentKey) return;
+
     setIsLoading(true);
     setIsRefreshing(true);
+    loadingKeyRef.current = currentKey;
     try {
       const ids = await fetchModelList(
         formData.apiType,
@@ -229,6 +286,7 @@ function ModelSettingsTab({
       setFetchFailed(true);
       clearModelCache();
     } finally {
+      loadingKeyRef.current = "";
       setIsLoading(false);
       setTimeout(() => setIsRefreshing(false), 600);
     }
@@ -689,6 +747,284 @@ function AssetSearchTab({
           </div>
         </>
       )}
+    </>
+  );
+}
+
+/* ── Server Service Tab ── */
+
+interface ProviderSelectOption {
+  id: string;
+  label: string;
+}
+
+function ProviderSelectRow({
+  id,
+  icon,
+  label,
+  value,
+  onValueChange,
+  options,
+  placeholder,
+  defaultOptionLabel,
+  onRefresh,
+  refreshing,
+  hint,
+}: {
+  id?: string;
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  onValueChange: (v: string) => void;
+  options: ProviderSelectOption[];
+  placeholder: string;
+  defaultOptionLabel?: string;
+  onRefresh: () => void;
+  refreshing: boolean;
+  hint: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>
+        {icon}
+        {label}
+      </Label>
+      <div className="flex items-center gap-2">
+        <Select value={value} onValueChange={onValueChange}>
+          <SelectTrigger id={id} className="w-full">
+            <SelectValue placeholder={placeholder} />
+          </SelectTrigger>
+          <SelectContent>
+            {defaultOptionLabel && (
+              <SelectItem value="default">{defaultOptionLabel}</SelectItem>
+            )}
+            {options.map((o) => (
+              <SelectItem key={o.id} value={o.id}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          variant="outline"
+          size="icon"
+          className="shrink-0 size-9"
+          onClick={onRefresh}
+          disabled={refreshing}
+        >
+          <RefreshCw size={14} className={cn(refreshing && "animate-spin")} />
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">{hint}</p>
+    </div>
+  );
+}
+
+function isAuthError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return (
+    err.message.includes("Session expired") ||
+    err.message.includes("401") ||
+    err.message.includes("Unauthorized")
+  );
+}
+
+function ServerServiceTab({
+  form,
+  setForm,
+}: {
+  form: ServerServiceSettings;
+  setForm: React.Dispatch<React.SetStateAction<ServerServiceSettings>>;
+}) {
+  const t = useT();
+  const profile = useAuthStore((s) => s.user);
+  const serverServiceCache = useSettingsStore((s) => s.serverServiceCache);
+  const patchServerServiceCache = useSettingsStore(
+    (s) => s.patchServerServiceCache,
+  );
+
+  const models: ServerModel[] = serverServiceCache?.models ?? [];
+  const searchProviders: SearchProvider[] =
+    serverServiceCache?.searchProviders ?? [];
+  const assetProviders: AssetProvider[] =
+    serverServiceCache?.assetProviders ?? [];
+
+  const [isRefreshingModels, setIsRefreshingModels] = useState(false);
+  const [isRefreshingSearch, setIsRefreshingSearch] = useState(false);
+  const [isRefreshingAsset, setIsRefreshingAsset] = useState(false);
+  const fetchingRef = useRef(false);
+
+  const loadData = useCallback(
+    async (force = false) => {
+      if (fetchingRef.current) return;
+
+      const cache = useSettingsStore.getState().serverServiceCache;
+      if (!force && cache) {
+        return;
+      }
+
+      fetchingRef.current = true;
+      setIsRefreshingModels(true);
+      setIsRefreshingSearch(true);
+      setIsRefreshingAsset(true);
+      try {
+        const handleError = <T extends unknown[]>(fallback: T) => (err: unknown): T => {
+          if (isAuthError(err)) return [] as unknown as T;
+          console.error(err);
+          return fallback;
+        };
+
+        const [_models, _search, _assets] = await Promise.all([
+          fetchServerModels().catch(handleError(cache?.models ?? [])),
+          fetchSearchProviders().catch(handleError(cache?.searchProviders ?? [])),
+          fetchAssetProviders().catch(handleError(cache?.assetProviders ?? [])),
+        ]);
+
+        patchServerServiceCache({
+          models: _models,
+          searchProviders: _search,
+          assetProviders: _assets,
+        });
+
+        setForm((prev) => {
+          if (prev.selectedModel || _models.length === 0) return prev;
+          return { ...prev, selectedModel: _models[0].id };
+        });
+      } catch (e) {
+        console.error(e);
+      } finally {
+        fetchingRef.current = false;
+        setTimeout(() => {
+          setIsRefreshingModels(false);
+          setIsRefreshingSearch(false);
+          setIsRefreshingAsset(false);
+        }, 600);
+      }
+    },
+    [setForm, patchServerServiceCache],
+  );
+
+  const refreshProvider = async <T extends unknown[]>(
+    fetchFn: () => Promise<T>,
+    setRefresher: (val: boolean) => void,
+    cacheKey: keyof ServerServiceCache,
+  ) => {
+    setRefresher(true);
+    try {
+      const data = await fetchFn();
+      patchServerServiceCache({ [cacheKey]: data } as Partial<ServerServiceCache>);
+    } catch (err) {
+      if (isAuthError(err)) {
+        patchServerServiceCache({ [cacheKey]: [] } as Partial<ServerServiceCache>);
+      } else {
+        console.error(err);
+      }
+    } finally {
+      setTimeout(() => setRefresher(false), 600);
+    }
+  };
+
+  const refreshModels = () =>
+    refreshProvider(fetchServerModels, setIsRefreshingModels, "models");
+  const refreshSearch = () =>
+    refreshProvider(fetchSearchProviders, setIsRefreshingSearch, "searchProviders");
+  const refreshAsset = () =>
+    refreshProvider(fetchAssetProviders, setIsRefreshingAsset, "assetProviders");
+
+  useEffect(() => {
+    loadData(false);
+  }, [loadData]);
+
+  return (
+    <>
+      <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+        {profile?.picture ? (
+          <img
+            src={profile.picture}
+            alt="Avatar"
+            className="h-10 w-10 rounded-full object-cover shrink-0"
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          <div className="h-10 w-10 text-xl font-semibold bg-primary/10 text-primary rounded-full flex items-center justify-center shrink-0">
+            {profile?.name?.charAt(0) || "U"}
+          </div>
+        )}
+        <div className="flex-1">
+          <div className="text-sm font-medium">
+            {t.settings.serverService.loggedInAs} {profile?.name || "User"}
+          </div>
+          <div className="text-xs text-muted-foreground">{profile?.email}</div>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="shrink-0 size-9 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50"
+          onClick={(e) => {
+            e.preventDefault();
+            useAuthStore.getState().clearAuth();
+          }}
+        >
+          <LogOut size={16} />
+        </Button>
+      </div>
+
+      <div className="pt-2">
+        <ProviderSelectRow
+          id="selectedModel"
+          icon={<Cpu size={16} className="inline mr-1" />}
+          label={t.settings.serverService.modelLabel}
+          value={form.selectedModel || ""}
+          onValueChange={(v) => setForm({ ...form, selectedModel: v })}
+          options={models.map((m) => ({ id: m.id, label: m.displayName }))}
+          placeholder={t.settings.serverService.selectPlaceholder}
+          onRefresh={refreshModels}
+          refreshing={isRefreshingModels}
+          hint={t.settings.serverService.modelDesc}
+        />
+      </div>
+
+      <div className="space-y-4 pt-4 border-t">
+        <ProviderSelectRow
+          id="webSearchProviderId"
+          icon={<Search size={16} className="inline mr-1" />}
+          label={t.settings.serverService.webSearch}
+          value={form.webSearchProviderId || "default"}
+          onValueChange={(v) =>
+            setForm({
+              ...form,
+              webSearchProviderId: v === "default" ? "" : v,
+            })
+          }
+          options={searchProviders.map((p) => ({ id: p.id, label: p.name }))}
+          placeholder={t.settings.serverService.providerDefault || "Default (Auto)"}
+          defaultOptionLabel={t.settings.serverService.providerDefault || "Default (Auto)"}
+          onRefresh={refreshSearch}
+          refreshing={isRefreshingSearch}
+          hint={t.settings.serverService.webSearchDesc}
+        />
+      </div>
+
+      <div className="space-y-4 pt-4 border-t">
+        <ProviderSelectRow
+          id="assetSearchProviderId"
+          icon={<ImageIcon size={16} className="inline mr-1" />}
+          label={t.settings.serverService.assetSearch}
+          value={form.assetSearchProviderId || "default"}
+          onValueChange={(v) =>
+            setForm({
+              ...form,
+              assetSearchProviderId: v === "default" ? "" : v,
+            })
+          }
+          options={assetProviders.map((p) => ({ id: p.id, label: p.name }))}
+          placeholder={t.settings.serverService.providerDefault || "Default (Auto)"}
+          defaultOptionLabel={t.settings.serverService.providerDefault || "Default (Auto)"}
+          onRefresh={refreshAsset}
+          refreshing={isRefreshingAsset}
+          hint={t.settings.serverService.assetSearchDesc}
+        />
+      </div>
     </>
   );
 }

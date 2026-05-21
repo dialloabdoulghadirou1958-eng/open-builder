@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
+## [1.4.0] - 2026-04-06
+
+### Added
+
+- **Unified Server API**: Seamless integration with Mohua API (`mohua.u14.app`) offering centralized proxying for AI models, web search, and asset search.
+- **SSO Authentication**: Implemented pure frontend OAuth2 Public Client + PKCE flow via `u14.app` SSO, replacing the legacy email/password JWT system.
+- **Dynamic Providers**: Support dynamically fetching and rendering available web search and asset search providers from the server.
+- **Server UI Mode**: Settings Dialog auto-hides local API and provider configurations when authenticated, substituting them with active server configurations.
+- **Auth Callback UI**: New secure callback processing page showing SSO redirect and token exchange status.
+
+### Refactored
+
+- Removed JWT auto-refresh mechanism locally; implemented token timeout checks defaulting to SSO reauthorization.
+- Deprecated client-side Asset Search configuration for logged-in users, using the server API entirely.
+
+---
+
 ## [1.3.0] - 2026-03-14
 
 ### Added
@@ -106,6 +123,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 - OpenAI-compatible API support (OpenAI, DeepSeek, etc.)
 - Basic file operation tools: `write_file`, `read_files`, `list_files`, `delete_file`
 
+[1.4.0]: https://github.com/Amery2010/open-builder/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Amery2010/open-builder/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Amery2010/open-builder/compare/v1.0.0...v1.2.0
 [1.0.0]: https://github.com/Amery2010/open-builder/compare/v0.3.0...v1.0.0

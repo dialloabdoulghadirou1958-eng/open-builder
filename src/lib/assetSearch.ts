@@ -1,6 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
-import type { AssetSearchSettings } from "../store/settings";
+import { type AssetSearchSettings, SERVER_ENGINE } from "../store/settings";
+import { serverAssetSearch } from "./mohua-api";
+import { toolResult } from "./toolResult";
 
 export const ASSET_SEARCH_TOOLS = {
   image_search: tool({
@@ -135,6 +137,20 @@ export function createAssetSearchToolHandler(
         a.orientation,
         a.color,
         a.per_page,
+      );
+    }
+
+    if (engine === SERVER_ENGINE && name === "image_search") {
+      return toolResult(
+        serverAssetSearch({
+          query: a.query,
+          providerId: settings.backendProvider,
+          image_type: a.image_type,
+          orientation: a.orientation,
+          color: a.color,
+          per_page: a.per_page,
+        }),
+        (res) => ({ ...res }),
       );
     }
 

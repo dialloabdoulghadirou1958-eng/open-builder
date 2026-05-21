@@ -11,6 +11,10 @@ import {
   Pin,
   Archive,
   Sparkles,
+  UserCircle,
+  LogOut,
+  LogIn,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +31,8 @@ import {
 } from "@/components/ui/collapsible";
 import { useConversationStore, DEFAULT_TITLE } from "../../store/conversation";
 import { useSettingsStore } from "../../store/settings";
+import { useAuthStore } from "../../store/auth";
+import { initiateLogin } from "../../lib/sso";
 import { generateSmartTitle } from "../../lib/smartTitle";
 import { cn } from "@/lib/utils";
 import { useT } from "../../i18n";
@@ -56,6 +62,22 @@ export function SessionList({
   const unarchiveConversation = useConversationStore(
     (s) => s.unarchiveConversation,
   );
+
+  const isAuth = useAuthStore((s) => s.isLoggedIn());
+  const profile = useAuthStore((s) => s.user);
+  const isLoggingIn = useAuthStore((s) => s.isLoggingIn);
+
+  const handleLogin = () => {
+    useAuthStore.getState().setLoggingIn(true);
+    initiateLogin().catch(err => {
+      console.error("Login failed:", err);
+      useAuthStore.getState().setLoggingIn(false);
+    });
+  };
+
+  const handleLogout = () => {
+    useAuthStore.getState().clearAuth();
+  };
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
@@ -293,7 +315,7 @@ export function SessionList({
   };
 
   return (
-    <div className="flex flex-col flex-1 overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden bg-background">
       <div className="px-3 py-2.5 border-b flex items-center justify-between">
         <Button
           variant="ghost"
@@ -328,6 +350,39 @@ export function SessionList({
           </>
         ) : (
           sorted.map(renderItem)
+        )}
+      </div>
+
+      <div className="mt-auto p-3 border-t">
+        {isAuth && profile ? (
+          <div className="flex items-center gap-2 mb-3 px-2 py-1.5 rounded-lg border bg-card text-card-foreground shadow-sm">
+            {profile.picture ? (
+              <img src={profile.picture} alt="Avatar" className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
+            ) : (
+              <UserCircle className="w-8 h-8 text-muted-foreground" />
+            )}
+            <div className="flex-1 overflow-hidden">
+              <p className="text-sm font-medium truncate">{profile.name}</p>
+              <p className="text-xs text-muted-foreground truncate">{profile.email}</p>
+            </div>
+            <Button variant="ghost" size="icon" onClick={handleLogout} className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted" title={t.auth.logout}>
+              <LogOut size={16} />
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="default"
+            className="w-full gap-2"
+            onClick={handleLogin}
+            disabled={isLoggingIn}
+          >
+            {isLoggingIn ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <LogIn size={16} />
+            )}
+            {isLoggingIn ? t.auth.loggingIn : t.auth.login}
+          </Button>
         )}
       </div>
     </div>

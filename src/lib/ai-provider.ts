@@ -7,7 +7,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { type LanguageModel } from "ai";
+import { type LanguageModel, wrapLanguageModel, extractReasoningMiddleware } from "ai";
 import type { ToolSet } from "ai";
 import type {
   OpenAILanguageModelChatOptions,
@@ -83,6 +83,8 @@ export function getProviderModel(config: ProviderConfig): LanguageModel {
   const { apiType, apiBaseUrl, apiKey, model, headers } = config;
   const baseURL = resolveBaseURL(apiBaseUrl, apiType);
 
+  let lm: LanguageModel;
+
   switch (apiType) {
     case "openai": {
       const provider = createOpenAI({
@@ -90,7 +92,8 @@ export function getProviderModel(config: ProviderConfig): LanguageModel {
         baseURL,
         headers,
       });
-      return provider.responses(model);
+      lm = provider.responses(model);
+      break;
     }
 
     case "anthropic": {
@@ -102,7 +105,8 @@ export function getProviderModel(config: ProviderConfig): LanguageModel {
           ...headers,
         },
       });
-      return provider(model);
+      lm = provider(model);
+      break;
     }
 
     case "google": {
@@ -111,7 +115,8 @@ export function getProviderModel(config: ProviderConfig): LanguageModel {
         baseURL,
         headers,
       });
-      return provider(model);
+      lm = provider(model);
+      break;
     }
 
     case "openai-compatible":
@@ -122,9 +127,16 @@ export function getProviderModel(config: ProviderConfig): LanguageModel {
         apiKey,
         headers,
       });
-      return provider(model);
+      lm = provider(model);
+      break;
     }
   }
+
+  // 兼容类似 DeepSeek 会使用 <think> 标签的情况
+  return wrapLanguageModel({
+    model: lm,
+    middleware: extractReasoningMiddleware({ tagName: "think" }),
+  });
 }
 
 // ─── Provider Options ────────────────────────────────────────────────────────

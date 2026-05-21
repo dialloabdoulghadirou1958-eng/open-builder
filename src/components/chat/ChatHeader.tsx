@@ -34,8 +34,8 @@ export function ChatHeader({
       <span className="text-sm font-medium truncate px-2 flex-1 text-center">
         {title}
       </span>
-      <div>
-        <a href="https://github.com/Amery2010/open-builder" target="_blank">
+      <div className="flex items-center gap-1">
+        <a href="https://github.com/Amery2010/open-builder" target="_blank" rel="noreferrer">
           <Button
             variant="ghost"
             size="icon"

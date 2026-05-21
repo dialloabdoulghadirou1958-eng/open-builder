@@ -3,7 +3,6 @@ import {
   SendHorizonal,
   Square,
   Loader2,
-  Plus,
   X,
   Image,
   FileText,
@@ -26,7 +25,14 @@ const SLASH_COMMANDS = [
 ] as const;
 
 /** Commands that require existing conversation messages */
-const NEEDS_MESSAGES = new Set(["fork", "clear", "compact", "review", "continue", "retry"]);
+const NEEDS_MESSAGES = new Set([
+  "fork",
+  "clear",
+  "compact",
+  "review",
+  "continue",
+  "retry",
+]);
 
 const FILE_ACCEPT =
   "text/*,application/json,application/xml,application/javascript,application/xhtml+xml,application/x-yaml,application/sql,application/graphql,application/ld+json,application/x-sh,application/x-httpd-php,application/typescript,application/pdf";
@@ -385,7 +391,10 @@ export function ChatInput({
         )}
         <div className="relative">
           {showSlashMenu && (
-            <div ref={slashMenuRef} className="absolute bottom-full left-0 right-0 mb-1 bg-popover border rounded-lg shadow-md overflow-y-auto z-10 max-h-[min(200px,32dvh)]">
+            <div
+              ref={slashMenuRef}
+              className="absolute bottom-full left-0 right-0 mb-1 bg-popover border rounded-lg shadow-md overflow-y-auto z-10 max-h-[min(200px,32dvh)]"
+            >
               {filteredCmds.map((cmd, i) => (
                 <button
                   key={cmd}
@@ -434,7 +443,7 @@ export function ChatInput({
                 title={t.chat.attachment}
                 onClick={() => setShowMenu((v) => !v)}
               >
-                <Plus size={16} />
+                <Paperclip size={16} />
               </Button>
               {showMenu && (
                 <div className="absolute bottom-full left-0 mb-1 bg-popover border rounded-lg shadow-md overflow-hidden z-20 min-w-36">
@@ -457,7 +466,7 @@ export function ChatInput({
                       setShowMenu(false);
                     }}
                   >
-                    <Paperclip size={14} />
+                    <FileText size={14} />
                     {t.chat.uploadFile}
                   </button>
                 </div>

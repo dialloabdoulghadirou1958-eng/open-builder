@@ -1,6 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
-import type { WebSearchSettings } from "../store/settings";
+import { type WebSearchSettings, SERVER_ENGINE } from "../store/settings";
+import { serverWebSearch } from "./mohua-api";
+import { toolResult } from "./toolResult";
 
 // ═══════════════════════════════ 工具定义 ═══════════════════════════════════
 
@@ -239,6 +241,21 @@ export function createSearchToolHandler(
           return firecrawlSearch(settings, a.query, a.max_results);
         case "web_reader":
           return firecrawlScrape(settings, a.urls);
+      }
+    } else if (engine === SERVER_ENGINE) {
+      switch (name) {
+        case "web_search":
+          return toolResult(
+            serverWebSearch({
+              query: a.query,
+              providerId: settings.backendProvider,
+              maxResults: a.max_results,
+            }),
+            (results) => ({ results }),
+          );
+        case "web_reader":
+          // The server doesn't support batch web_reader yet, so fallback to Jina reader directly
+          return jinaFallback(a.urls);
       }
     }
 

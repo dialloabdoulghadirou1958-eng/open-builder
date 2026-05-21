@@ -52,9 +52,11 @@ It also supports building as a desktop app (macOS / Windows / Linux) and mobile 
 - **Context Compression** — Automatically compresses long conversation context to reduce token usage
 - **Built-in Search** — Supports enabling the model's built-in search service
 - **CORS Resolution** — App Client-side (Tauri) API reverse proxy forwarding effectively resolves CORS issues
+- **Unified Backend API** — (Optional) Integrates with Mohua server to proxy AI calls, Asset Search, and Web Search under one authentication.
 
 ### User Experience
 
+- **SSO Authentication** — Simple, secure login using OAuth2 PKCE Authorization Code flow via `u14.app`.
 - **Multi-Session Management** — Sidebar with create, switch, delete sessions; history persisted locally
 - **Smart Session Naming** — Auto-generates session titles based on conversation content
 - **Slash Commands** — Input box supports `/compact`, `/review`, and other shortcut commands
@@ -128,6 +130,7 @@ Click the settings button in the top-right corner and fill in:
 | Tavily API Key | (Optional) Web search feature | `tvly-...`                                   |
 
 > All settings are stored in browser `localStorage` and never leave your device.
+> Users logged in via the SSO mechanism will bypass these local credentials and proxy all requests securely through the Mohua unified server.
 
 ---
 
