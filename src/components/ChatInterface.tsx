@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { Undo2 } from "lucide-react";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ChatInput } from "./chat/ChatInput";
 import { EmptyState } from "./chat/EmptyState";
@@ -9,9 +8,14 @@ import { GeneratingIndicator } from "./chat/GeneratingIndicator";
 import { SettingsWarning } from "./chat/SettingsWarning";
 import { SessionList } from "./chat/SessionList";
 import { DiffModal } from "./chat/DiffModal";
+import {
+  RollbackHint,
+  RollbackConfirmDialog,
+} from "./chat/RollbackConfirmBanner";
 import { useMergedMessages } from "../hooks/useMergedMessages";
-import { mergeMessages } from "../lib/mergeMessages";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { useRollback } from "../hooks/useRollback";
+import { findAssistantGroupEnd } from "../lib/utils/message-navigation";
 import { useConversationStore } from "../store/conversation";
 import { useSettingsStore } from "../store/settings";
 import { useSnapshotStore } from "../store/snapshot";
@@ -24,39 +28,6 @@ import type {
 } from "../types";
 
 const EMPTY_SNAPSHOTS: ProjectSnapshot[] = [];
-
-/** Given a MergedMessage ID like "assistant-3", find the end index (exclusive)
- *  of that assistant group in the raw messages array. */
-function findAssistantGroupEnd(messages: Message[], mergedId: string): number {
-  const startIdx = parseInt(mergedId.replace("assistant-", ""), 10);
-  if (isNaN(startIdx) || startIdx >= messages.length) return messages.length;
-  let j = startIdx;
-  while (
-    j < messages.length &&
-    (messages[j].role === "assistant" || messages[j].role === "tool")
-  ) {
-    j++;
-  }
-  return j;
-}
-
-/** Find the user message text right before a given merged assistant message */
-function findPrecedingUserLabel(messages: Message[], mergedId: string): string {
-  const merged = mergeMessages(messages);
-  const idx = merged.findIndex((m) => m.id === mergedId);
-  if (idx <= 0) return "";
-  // Walk backwards to find the preceding user message
-  for (let i = idx - 1; i >= 0; i--) {
-    if (merged[i].role === "user") {
-      const textBlock = merged[i].blocks.find((b) => b.type === "text");
-      if (textBlock && "content" in textBlock) {
-        const text = textBlock.content;
-        return text.length > 30 ? text.slice(0, 30) + "..." : text;
-      }
-    }
-  }
-  return "";
-}
 
 interface ChatInterfaceProps {
   messages: Message[];
@@ -115,42 +86,20 @@ export function ChatInterface({
     [snapshots],
   );
   const [diffMessageId, setDiffMessageId] = useState<string | null>(null);
-  const [rollbackConfirmId, setRollbackConfirmId] = useState<string | null>(
-    null,
-  );
-  // Ephemeral rollback hint: { messageId, label }
-  const [rollbackInfo, setRollbackInfo] = useState<{
-    messageId: string;
-    label: string;
-  } | null>(null);
 
-  /** Flush any pending manual edits into the latest snapshot */
-  const flushSnapshotUpdate = useCallback(() => {
-    if (activeId && snapshots.length > 0) {
-      useSnapshotStore.getState().updateLatestSnapshot(activeId, files);
-    }
-  }, [activeId, snapshots.length, files]);
-
-  const handleRollback = useCallback(
-    (messageId: string) => {
-      if (!activeId) return;
-      // Flush manual edits into the current snapshot before rollback
-      flushSnapshotUpdate();
-      const snap = useSnapshotStore
-        .getState()
-        .getSnapshotByMessageId(activeId, messageId);
-      if (!snap) return;
-      const restoredFiles = useSnapshotStore
-        .getState()
-        .reconstructFiles(activeId, snap.id);
-      onSetFiles(restoredFiles);
-      setRollbackConfirmId(null);
-      // Set rollback hint with preceding user message as label
-      const label = findPrecedingUserLabel(messages, messageId);
-      setRollbackInfo({ messageId, label });
-    },
-    [activeId, onSetFiles, messages, flushSnapshotUpdate],
-  );
+  const {
+    rollbackConfirmId,
+    setRollbackConfirmId,
+    rollbackInfo,
+    setRollbackInfo,
+    handleRollback,
+    flushSnapshotUpdate,
+  } = useRollback({
+    activeId,
+    messages,
+    snapshotsLength: snapshots.length,
+    onSetFiles,
+  });
 
   const handleSlashCommand = useCallback(
     (cmd: string) => {
@@ -186,7 +135,6 @@ export function ChatInterface({
     [onCompressContext, onReview, onRetry, onContinue, onSetFiles],
   );
 
-  // Find the last assistant message ID for streaming indicator
   const lastAssistantId = useMemo(() => {
     for (let i = mergedMessages.length - 1; i >= 0; i--) {
       if (mergedMessages[i].role === "assistant") return mergedMessages[i].id;
@@ -194,11 +142,10 @@ export function ChatInterface({
     return null;
   }, [mergedMessages]);
 
-  // Stable callbacks for MessageBubble (avoid breaking memo)
   const handleShowDiff = useCallback((id: string) => setDiffMessageId(id), []);
   const handleRollbackConfirm = useCallback(
     (id: string) => setRollbackConfirmId(id),
-    [],
+    [setRollbackConfirmId],
   );
 
   useEffect(() => {
@@ -217,10 +164,8 @@ export function ChatInterface({
     setInput("");
     setAttachments([]);
 
-    // Flush manual edits into the latest snapshot before generating
     flushSnapshotUpdate();
 
-    // If we have a pending rollback, truncate messages to the rollback point first
     if (rollbackInfo) {
       const endIdx = findAssistantGroupEnd(messages, rollbackInfo.messageId);
       useConversationStore.getState().setMessages(messages.slice(0, endIdx));
@@ -238,7 +183,6 @@ export function ChatInterface({
         onToggleSessionList={() => setShowSessionList(true)}
       />
 
-      {/* Session list sidebar overlay */}
       {showSessionList && (
         <div
           className="absolute inset-0 top-0 z-40 backdrop-blur-sm bg-black/20 animate-in fade-in duration-200"
@@ -248,10 +192,7 @@ export function ChatInterface({
             className="h-full w-full max-w-80 bg-background border-r shadow-lg animate-in slide-in-from-left duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <SessionList
-              onToggleSessionList={() => setShowSessionList(false)}
-              onClose={() => setShowSessionList(false)}
-            />
+            <SessionList onClose={() => setShowSessionList(false)} />
           </div>
         </div>
       )}
@@ -270,11 +211,10 @@ export function ChatInterface({
 
         {mergedMessages.map((msg, mi) => {
           const idx = parseInt(msg.id.split("-").pop()!, 10);
-          // Show divider before the first merged message at or after the compression point
           const showDivider =
             compressFromIndex >= 0 &&
             idx >= compressFromIndex &&
-            (mi === 0 ||
+            (mi < 2 ||
               parseInt(mergedMessages[mi - 2].id.split("-").pop()!, 10) <
                 compressFromIndex);
           const isLast = msg.id === lastAssistantId;
@@ -310,26 +250,13 @@ export function ChatInterface({
 
         {isGenerating && <GeneratingIndicator />}
 
-        {/* Rollback hint */}
         {rollbackInfo && !isGenerating && (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-400">
-            <Undo2 className="w-3.5 h-3.5 shrink-0" />
-            <span>
-              {t.rollback.rolledBackTo}
-              <span className="font-medium">
-                {rollbackInfo.label || t.rollback.initialState}
-              </span>
-            </span>
-            <button
-              onClick={() => setRollbackInfo(null)}
-              className="ml-auto text-amber-600/60 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer"
-            >
-              ✕
-            </button>
-          </div>
+          <RollbackHint
+            label={rollbackInfo.label}
+            onDismiss={() => setRollbackInfo(null)}
+          />
         )}
 
-        {/* Context compression hint */}
         {!isGenerating &&
           messages.length > 0 &&
           typeof messages[messages.length - 1].content === "string" &&
@@ -362,7 +289,6 @@ export function ChatInterface({
         onSlashCommand={handleSlashCommand}
       />
 
-      {/* Diff modal */}
       {diffMessageId && activeId && (
         <DiffModal
           conversationId={activeId}
@@ -371,30 +297,11 @@ export function ChatInterface({
         />
       )}
 
-      {/* Rollback confirmation */}
       {rollbackConfirmId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-background rounded-lg border p-6 shadow-lg max-w-sm mx-4">
-            <h3 className="text-sm font-semibold mb-2">{t.rollback.confirm}</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              {t.rollback.confirmDesc}
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setRollbackConfirmId(null)}
-                className="px-3 py-1.5 text-sm rounded-md border hover:bg-muted transition-colors cursor-pointer"
-              >
-                {t.rollback.cancel}
-              </button>
-              <button
-                onClick={() => handleRollback(rollbackConfirmId)}
-                className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
-              >
-                {t.rollback.confirm}
-              </button>
-            </div>
-          </div>
-        </div>
+        <RollbackConfirmDialog
+          onCancel={() => setRollbackConfirmId(null)}
+          onConfirm={() => handleRollback(rollbackConfirmId)}
+        />
       )}
     </div>
   );

@@ -2,8 +2,8 @@ import { Settings, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useT } from "../../i18n";
-import { isMohuaEnabled } from "../../lib/mohua-api";
-import { initiateLogin } from "../../lib/sso";
+import { isMohuaEnabled } from "../../lib/services/mohua-api";
+import { initiateLogin } from "../../lib/services/sso";
 
 interface SettingsWarningProps {
   onOpenSettings: () => void;

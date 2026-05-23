@@ -8,7 +8,7 @@ import { useInteractiveStore } from "../../store/interactive";
 import {
   PLAN_APPROVED_PREFIX,
   PLAN_REJECTED_PREFIX,
-} from "../../lib/generator";
+} from "../../lib/ai/generator";
 
 interface PlanApprovalCardProps {
   toolCallId: string;

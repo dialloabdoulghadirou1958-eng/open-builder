@@ -1,90 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import {
-  ChevronRight,
-  ChevronDown,
-  File,
-  Folder,
-  FolderOpen,
-  FilePlus,
-  FolderPlus,
-  Check,
-  X,
-  Pencil,
-  Trash2,
-  Copy,
-  Download,
-} from "lucide-react";
+import { File, Folder, FilePlus, FolderPlus } from "lucide-react";
 import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
-import { cn } from "@/lib/utils";
 import { useT } from "../../i18n";
 import type { ProjectFiles } from "@/types";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface FileNode {
-  name: string;
-  path: string;
-  type: "file" | "folder";
-  children?: FileNode[];
-}
-
-// ─── buildFileTree ────────────────────────────────────────────────────────────
-
-function buildFileTree(files: ProjectFiles): FileNode[] {
-  const root: FileNode[] = [];
-  const folderMap = new Map<string, FileNode>();
-
-  const ensureFolder = (name: string, path: string, level: FileNode[]) => {
-    let folder = folderMap.get(path);
-    if (!folder) {
-      folder = { name, path, type: "folder", children: [] };
-      folderMap.set(path, folder);
-      level.push(folder);
-    }
-    return folder;
-  };
-
-  for (const path of Object.keys(files).sort()) {
-    const cleaned = path.replace(/^\//, "");
-    // Trailing "/" means empty folder marker — just ensure folders exist
-    if (cleaned.endsWith("/")) {
-      const parts = cleaned.slice(0, -1).split("/");
-      let currentLevel = root;
-      let currentPath = "";
-      for (const part of parts) {
-        currentPath += (currentPath ? "/" : "") + part;
-        currentLevel = ensureFolder(part, currentPath, currentLevel).children!;
-      }
-      continue;
-    }
-
-    const parts = cleaned.split("/");
-    let currentLevel = root;
-    let currentPath = "";
-
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      currentPath += (currentPath ? "/" : "") + part;
-      if (i === parts.length - 1) {
-        currentLevel.push({ name: part, path: currentPath, type: "file" });
-      } else {
-        currentLevel = ensureFolder(part, currentPath, currentLevel).children!;
-      }
-    }
-  }
-
-  return root;
-}
-
-// ─── FileExplorer ─────────────────────────────────────────────────────────────
+import { FileTreeNode } from "./file-explorer/FileTreeNode";
+import { InlineInput } from "./file-explorer/InlineInput";
+import { BASE_PAD, INDENT, buildFileTree } from "./file-explorer/types";
+import type { FileNode } from "./file-explorer/types";
 
 interface FileExplorerProps {
   files: ProjectFiles;
@@ -113,18 +36,15 @@ export function FileExplorer({
   );
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
 
-  // Create state
   const [createState, setCreateState] = useState<{
     type: "file" | "folder";
     parent: string;
   } | null>(null);
   const [createName, setCreateName] = useState("");
 
-  // Rename state
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameName, setRenameName] = useState("");
 
-  // Drag state
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
 
   const createInputRef = useRef<HTMLInputElement>(null);
@@ -135,7 +55,6 @@ export function FileExplorer({
     : currentFile;
   const fileTree = buildFileTree(files);
 
-  // Focus inputs when shown
   useEffect(() => {
     if (createState && createInputRef.current) {
       createInputRef.current.focus();
@@ -145,7 +64,6 @@ export function FileExplorer({
   useEffect(() => {
     if (renamingPath && renameInputRef.current) {
       renameInputRef.current.focus();
-      // Select filename without extension for files
       const name = renameName;
       const dotIdx = name.lastIndexOf(".");
       if (dotIdx > 0) {
@@ -155,10 +73,6 @@ export function FileExplorer({
       }
     }
   }, [renamingPath]);
-
-  // Indent: each level shifts by 18px (chevron 14px + gap 4px)
-  const INDENT = 18;
-  const BASE_PAD = 8;
 
   const toggleFolder = (path: string) => {
     setSelectedFolder(path);
@@ -173,8 +87,6 @@ export function FileExplorer({
     const parts = normalizedCurrentFile.split("/");
     return parts.length === 1 ? "" : parts.slice(0, -1).join("/");
   };
-
-  // ── Create handlers ──
 
   const startCreate = (type: "file" | "folder", parentDir: string) => {
     setRenamingPath(null);
@@ -204,8 +116,6 @@ export function FileExplorer({
     else if (e.key === "Escape") cancelCreate();
   };
 
-  // ── Rename handlers ──
-
   const startRename = (node: FileNode) => {
     setCreateState(null);
     setRenamingPath(node.path);
@@ -234,8 +144,6 @@ export function FileExplorer({
     else if (e.key === "Escape") cancelRename();
   };
 
-  // ── Drag handlers ──
-
   const handleDragStart = (e: React.DragEvent, node: FileNode) => {
     e.dataTransfer.setData("text/plain", node.path);
     e.dataTransfer.effectAllowed = "move";
@@ -257,9 +165,7 @@ export function FileExplorer({
     setDragOverPath(null);
     const sourcePath = e.dataTransfer.getData("text/plain");
     if (!sourcePath || sourcePath === targetFolder) return;
-    // Don't drop into itself or its own children
     if (targetFolder.startsWith(sourcePath + "/")) return;
-    // Don't drop if already in that folder
     const sourceParent = sourcePath.includes("/")
       ? sourcePath.substring(0, sourcePath.lastIndexOf("/"))
       : "";
@@ -284,13 +190,13 @@ export function FileExplorer({
     e.dataTransfer.dropEffect = "move";
   };
 
-  // ── Copy path & Download ──
-
   const copyPath = (path: string) => {
     navigator.clipboard.writeText(path);
   };
 
-  const downloadFile = (path: string, content: string) => {
+  const downloadFile = (path: string) => {
+    const normalized = path.startsWith("/") ? path.slice(1) : path;
+    const content = files[normalized] ?? files[`/${normalized}`] ?? "";
     const blob = new Blob([content], { type: "text/plain" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -316,325 +222,38 @@ export function FileExplorer({
     URL.revokeObjectURL(a.href);
   };
 
-  // ── Inline input row (shared by create & rename) ──
-
-  const renderInlineInput = ({
-    icon,
-    value,
-    onChange,
-    onKeyDown,
-    onConfirm,
-    onCancel,
-    placeholder,
-    ref,
-    level,
-  }: {
-    icon: React.ReactNode;
-    value: string;
-    onChange: (v: string) => void;
-    onKeyDown: (e: React.KeyboardEvent) => void;
-    onConfirm: () => void;
-    onCancel: () => void;
-    placeholder: string;
-    ref: React.RefObject<HTMLInputElement | null>;
-    level: number;
-  }) => (
-    <div
-      className="flex items-center gap-1 py-0.5"
-      style={{
-        paddingLeft: `${BASE_PAD + level * INDENT + INDENT}px`,
-        paddingRight: `${BASE_PAD}px`,
-      }}
-    >
-      {icon}
-      <input
-        ref={ref}
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={onKeyDown}
-        onBlur={onCancel}
-        placeholder={placeholder}
-        className="flex-1 min-w-0 h-6 px-1.5 text-sm bg-background border border-input rounded focus:outline-none focus:ring-1 focus:ring-ring"
-      />
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-5 w-5 shrink-0 text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-900/30"
-        onMouseDown={(e) => {
-          e.preventDefault();
-          onConfirm();
-        }}
-      >
-        <Check size={12} />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground"
-        onMouseDown={(e) => {
-          e.preventDefault();
-          onCancel();
-        }}
-      >
-        <X size={12} />
-      </Button>
-    </div>
-  );
-
-  // ── Render create input ──
-
-  const renderCreateInput = (level: number) => {
-    if (!createState) return null;
-    return renderInlineInput({
-      icon:
-        createState.type === "file" ? (
-          <File size={14} className="text-gray-400 shrink-0" />
-        ) : (
-          <Folder size={14} className="text-blue-500 shrink-0" />
-        ),
-      value: createName,
-      onChange: setCreateName,
-      onKeyDown: handleCreateKeyDown,
-      onConfirm: confirmCreate,
-      onCancel: cancelCreate,
-      placeholder: createState.type === "file" ? "filename.tsx" : "folder-name",
-      ref: createInputRef,
-      level,
-    });
-  };
-
-  // ── Render node ──
-
-  const renderNode = (node: FileNode, level = 0): React.ReactNode => {
-    const isRenaming = renamingPath === node.path;
-    const isCreatingIn = createState && createState.parent === node.path;
-
-    if (node.type === "folder") {
-      const isExpanded = expandedFolders.has(node.path);
-      const isDragOver = dragOverPath === node.path;
-
-      return (
-        <div key={node.path}>
-          <ContextMenu>
-            <ContextMenuTrigger asChild>
-              <div
-                className={cn(
-                  "flex items-center gap-1 py-1 hover:bg-accent/50 cursor-pointer text-sm group",
-                  isCreatingIn && "bg-accent/30",
-                  selectedFolder === node.path &&
-                    "bg-accent text-accent-foreground",
-                  isDragOver &&
-                    "bg-blue-100 dark:bg-blue-900/30 outline-dashed outline-1 outline-blue-400",
-                )}
-                style={{
-                  paddingLeft: `${BASE_PAD + level * INDENT}px`,
-                  paddingRight: `${BASE_PAD}px`,
-                }}
-                onClick={() => toggleFolder(node.path)}
-                draggable={!isRenaming}
-                onDragStart={(e) => handleDragStart(e, node)}
-                onDragOver={(e) => handleDragOver(e, node.path)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, node.path)}
-              >
-                {isExpanded ? (
-                  <ChevronDown
-                    size={14}
-                    className="text-muted-foreground shrink-0"
-                  />
-                ) : (
-                  <ChevronRight
-                    size={14}
-                    className="text-muted-foreground shrink-0"
-                  />
-                )}
-                {isExpanded ? (
-                  <FolderOpen size={14} className="text-blue-500 shrink-0" />
-                ) : (
-                  <Folder size={14} className="text-blue-500 shrink-0" />
-                )}
-                {isRenaming ? (
-                  <>
-                    <input
-                      ref={renameInputRef}
-                      type="text"
-                      value={renameName}
-                      onChange={(e) => setRenameName(e.target.value)}
-                      onKeyDown={handleRenameKeyDown}
-                      onBlur={cancelRename}
-                      onClick={(e) => e.stopPropagation()}
-                      className="flex-1 min-w-0 h-5 px-1.5 text-sm bg-background border border-input rounded focus:outline-none focus:ring-1 focus:ring-ring"
-                    />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-5 w-5 shrink-0 text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-900/30"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        confirmRename();
-                      }}
-                    >
-                      <Check size={12} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        cancelRename();
-                      }}
-                    >
-                      <X size={12} />
-                    </Button>
-                  </>
-                ) : (
-                  <span className="text-foreground/80 flex-1 truncate">
-                    {node.name}
-                  </span>
-                )}
-              </div>
-            </ContextMenuTrigger>
-            <ContextMenuContent className="w-44">
-              <ContextMenuItem onClick={() => startCreate("file", node.path)}>
-                <FilePlus size={14} />
-                {t.explorer.newFile}
-              </ContextMenuItem>
-              <ContextMenuItem onClick={() => startCreate("folder", node.path)}>
-                <FolderPlus size={14} />
-                {t.explorer.newFolder}
-              </ContextMenuItem>
-              <ContextMenuSeparator />
-              <ContextMenuItem onClick={() => startRename(node)}>
-                <Pencil size={14} />
-                {t.explorer.rename}
-              </ContextMenuItem>
-              <ContextMenuItem onClick={() => copyPath(node.path)}>
-                <Copy size={14} />
-                {t.explorer.copyPath}
-              </ContextMenuItem>
-              <ContextMenuItem onClick={() => downloadFolder(node.path)}>
-                <Download size={14} />
-                {t.explorer.download}
-              </ContextMenuItem>
-              <ContextMenuItem
-                variant="destructive"
-                onClick={() => onDeleteFile(node.path)}
-              >
-                <Trash2 size={14} />
-                {t.explorer.delete}
-              </ContextMenuItem>
-            </ContextMenuContent>
-          </ContextMenu>
-
-          {isExpanded && (
-            <div>
-              {isCreatingIn && renderCreateInput(level + 1)}
-              {node.children?.map((child) => renderNode(child, level + 1))}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    // File node
-    return (
-      <ContextMenu key={node.path}>
-        <ContextMenuTrigger asChild>
-          <div
-            className={cn(
-              "flex items-center gap-1 py-1 hover:bg-accent/50 cursor-pointer text-sm",
-              normalizedCurrentFile === node.path &&
-                "bg-accent text-accent-foreground",
-            )}
-            style={{
-              paddingLeft: `${BASE_PAD + level * INDENT}px`,
-              paddingRight: `${BASE_PAD}px`,
-            }}
-            onClick={() => {
-              if (!isRenaming) {
-                setSelectedFolder(null);
-                onFileSelect(node.path);
-              }
-            }}
-            draggable={!isRenaming}
-            onDragStart={(e) => handleDragStart(e, node)}
-          >
-            <File size={14} className="text-muted-foreground shrink-0" />
-            {isRenaming ? (
-              <>
-                <input
-                  ref={renameInputRef}
-                  type="text"
-                  value={renameName}
-                  onChange={(e) => setRenameName(e.target.value)}
-                  onKeyDown={handleRenameKeyDown}
-                  onBlur={cancelRename}
-                  onClick={(e) => e.stopPropagation()}
-                  className="flex-1 min-w-0 h-5 px-1.5 text-sm bg-background border border-input rounded focus:outline-none focus:ring-1 focus:ring-ring"
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5 shrink-0 text-green-600 hover:text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:text-green-300 dark:hover:bg-green-900/30"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    confirmRename();
-                  }}
-                >
-                  <Check size={12} />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    cancelRename();
-                  }}
-                >
-                  <X size={12} />
-                </Button>
-              </>
-            ) : (
-              <span className="truncate">{node.name}</span>
-            )}
-          </div>
-        </ContextMenuTrigger>
-        <ContextMenuContent className="w-44">
-          <ContextMenuItem onClick={() => startRename(node)}>
-            <Pencil size={14} />
-            {t.explorer.rename}
-          </ContextMenuItem>
-          <ContextMenuItem onClick={() => copyPath(node.path)}>
-            <Copy size={14} />
-            {t.explorer.copyPath}
-          </ContextMenuItem>
-          <ContextMenuItem
-            onClick={() => {
-              const normalized = node.path.startsWith("/") ? node.path.slice(1) : node.path;
-              const content = files[normalized] ?? files[`/${normalized}`] ?? "";
-              downloadFile(node.path, content);
-            }}
-          >
-            <Download size={14} />
-            {t.explorer.download}
-          </ContextMenuItem>
-          <ContextMenuItem
-            variant="destructive"
-            onClick={() => onDeleteFile(node.path)}
-          >
-            <Trash2 size={14} />
-            {t.explorer.delete}
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
-    );
+  const nodeProps = {
+    expandedFolders,
+    selectedFolder,
+    dragOverPath,
+    normalizedCurrentFile,
+    createState,
+    createName,
+    setCreateName,
+    createInputRef,
+    confirmCreate,
+    cancelCreate,
+    handleCreateKeyDown,
+    startCreate,
+    renamingPath,
+    renameName,
+    setRenameName,
+    renameInputRef,
+    confirmRename,
+    cancelRename,
+    handleRenameKeyDown,
+    startRename,
+    toggleFolder,
+    onFileSelect,
+    onDeleteFile,
+    copyPath,
+    downloadFile,
+    downloadFolder,
+    setSelectedFolder,
+    handleDragStart,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
   };
 
   return (
@@ -671,9 +290,32 @@ export function FileExplorer({
         onDragOver={handleRootDragOver}
         onDrop={handleRootDrop}
       >
-        {fileTree.map((node) => renderNode(node))}
+        {fileTree.map((node) => (
+          <FileTreeNode key={node.path} node={node} level={0} {...nodeProps} />
+        ))}
 
-        {createState && createState.parent === "" && renderCreateInput(0)}
+        {createState && createState.parent === "" && (
+          <InlineInput
+            ref={createInputRef}
+            icon={
+              createState.type === "file" ? (
+                <File size={14} className="text-gray-400 shrink-0" />
+              ) : (
+                <Folder size={14} className="text-blue-500 shrink-0" />
+              )
+            }
+            value={createName}
+            onChange={setCreateName}
+            onKeyDown={handleCreateKeyDown}
+            onConfirm={confirmCreate}
+            onCancel={cancelCreate}
+            placeholder={
+              createState.type === "file" ? "filename.tsx" : "folder-name"
+            }
+            paddingLeft={BASE_PAD + INDENT}
+            paddingRight={BASE_PAD}
+          />
+        )}
       </div>
     </div>
   );

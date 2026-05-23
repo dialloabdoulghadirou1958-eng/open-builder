@@ -1,0 +1,146 @@
+import { Key, Globe, Search } from "lucide-react";
+import type { WebSearchSettings } from "../../../store/settings";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useT } from "../../../i18n";
+
+interface WebSearchTabProps {
+  form: WebSearchSettings;
+  setForm: (v: WebSearchSettings) => void;
+  apiType: string;
+}
+
+export function WebSearchTab({ form, setForm, apiType }: WebSearchTabProps) {
+  const t = useT();
+  return (
+    <>
+      <div className="space-y-2">
+        <Label htmlFor="searchEngine">
+          <Search size={16} className="inline mr-1" />
+          {t.settings.webSearch.engine}
+        </Label>
+        <Select
+          value={form.engine}
+          onValueChange={(v) => setForm({ ...form, engine: v as any })}
+        >
+          <SelectTrigger id="searchEngine" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="disabled">
+              {t.settings.webSearch.disabled}
+            </SelectItem>
+            {apiType !== "openai-compatible" && (
+              <SelectItem value="builtin">
+                {t.settings.webSearch.builtin}
+              </SelectItem>
+            )}
+            <SelectItem value="tavily">Tavily</SelectItem>
+            <SelectItem value="firecrawl">Firecrawl</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {form.engine === "builtin" ? (
+          <p className="text-xs text-muted-foreground">
+            {t.settings.webSearch.builtinDesc}
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            {t.settings.webSearch.desc}
+          </p>
+        )}
+      </div>
+
+      {form.engine === "tavily" && (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="tavilyApiKey">
+              <Key size={16} className="inline mr-1" />
+              Tavily API Key
+            </Label>
+            <Input
+              id="tavilyApiKey"
+              type="password"
+              value={form.tavilyApiKey}
+              onChange={(e) =>
+                setForm({ ...form, tavilyApiKey: e.target.value })
+              }
+              placeholder="tvly-..."
+            />
+            <p className="text-xs text-muted-foreground">
+              {t.settings.tavilyKey.hint}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="tavilyApiUrl">
+              <Globe size={16} className="inline mr-1" />
+              Tavily API URL
+            </Label>
+            <Input
+              id="tavilyApiUrl"
+              type="text"
+              value={form.tavilyApiUrl}
+              onChange={(e) =>
+                setForm({ ...form, tavilyApiUrl: e.target.value })
+              }
+              placeholder="https://api.tavily.com"
+            />
+            <p className="text-xs text-muted-foreground">
+              {t.settings.tavilyUrl.hint}
+            </p>
+          </div>
+        </>
+      )}
+
+      {form.engine === "firecrawl" && (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="firecrawlApiKey">
+              <Key size={16} className="inline mr-1" />
+              Firecrawl API Key
+            </Label>
+            <Input
+              id="firecrawlApiKey"
+              type="password"
+              value={form.firecrawlApiKey}
+              onChange={(e) =>
+                setForm({ ...form, firecrawlApiKey: e.target.value })
+              }
+              placeholder="fc-..."
+            />
+            <p className="text-xs text-muted-foreground">
+              {t.settings.firecrawlKey.hint}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="firecrawlApiUrl">
+              <Globe size={16} className="inline mr-1" />
+              Firecrawl API URL
+            </Label>
+            <Input
+              id="firecrawlApiUrl"
+              type="text"
+              value={form.firecrawlApiUrl}
+              onChange={(e) =>
+                setForm({ ...form, firecrawlApiUrl: e.target.value })
+              }
+              placeholder="https://api.firecrawl.dev"
+            />
+            <p className="text-xs text-muted-foreground">
+              {t.settings.firecrawlUrl.hint}
+            </p>
+          </div>
+        </>
+      )}
+    </>
+  );
+}

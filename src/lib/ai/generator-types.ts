@@ -1,0 +1,114 @@
+import type { ToolSet } from "ai";
+import type {
+  AskUserQuestion,
+  AskUserAnswers,
+  PlanDecision,
+} from "../../types/api";
+import type { ApiType } from "./provider";
+
+export type {
+  AskUserQuestion,
+  AskUserAnswerItem,
+  AskUserAnswers,
+  PlanDecision,
+} from "../../types/api";
+
+/** Project files: path -> content */
+export type ProjectFiles = Record<string, string>;
+
+/** OpenAI multimodal content block */
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+/** Internal message format */
+export interface Message {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string | ContentPart[] | null;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
+  thinking?: string;
+}
+
+/** Tool call (OpenAI function calling format) */
+export interface ToolCall {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+}
+
+/** Tool definition (legacy OpenAI function calling format, kept for compatibility) */
+export interface ToolDefinition {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+  };
+}
+
+/** File change record */
+export interface FileChange {
+  path: string;
+  action: "created" | "modified" | "deleted";
+}
+
+/** Final return value of generate() */
+export interface GenerateResult {
+  files: ProjectFiles;
+  messages: Message[];
+  text: string;
+  aborted: boolean;
+  maxIterationsReached: boolean;
+}
+
+/** Constructor options */
+export interface GeneratorOptions {
+  apiType?: ApiType;
+  apiBaseUrl: string;
+  apiKey: string;
+  model: string;
+  systemPrompt?: string;
+  initialFiles?: ProjectFiles;
+  maxIterations?: number;
+  stream?: boolean;
+  customTools?: ToolSet;
+  /** Full tool set — when provided, used as-is without merging with BUILTIN_TOOLS.
+   *  Caller decides which built-ins to include (useful for plan-mode filtering). */
+  tools?: ToolSet;
+  customToolHandler?: (name: string, args: unknown) => string | Promise<string>;
+  thinking?: boolean;
+  thinkingBudget?: number;
+  /** Max auto-retry attempts for failed API requests (default 3) */
+  maxRetries?: number;
+  /** Base delay in ms for exponential backoff (default 1000) */
+  retryDelay?: number;
+  /** Names of provider-managed tools (executed server-side, not locally) */
+  providerToolNames?: string[];
+  askUserQuestion?: (
+    toolCallId: string,
+    questions: AskUserQuestion[],
+  ) => Promise<AskUserAnswers>;
+  requestPlanApproval?: (
+    toolCallId: string,
+    plan: string,
+  ) => Promise<PlanDecision>;
+  /** Called once the user approves a plan via exit_plan_mode. If a new ToolSet is returned,
+   *  the generator swaps to it on the next iteration (so write tools become available). */
+  onPlanApproved?: () => ToolSet | void;
+}
+
+/** Event callbacks */
+export interface GeneratorEvents {
+  onText?: (delta: string) => void;
+  onThinking?: (delta: string) => void;
+  onToolCall?: (name: string, toolCallId: string) => void;
+  onToolResult?: (name: string, args: unknown, result: string) => void;
+  onFileChange?: (files: ProjectFiles, changes: FileChange[]) => void;
+  onTemplateChange?: (template: string, files: ProjectFiles) => void;
+  onDependenciesChange?: (files: ProjectFiles) => void;
+  onComplete?: (result: GenerateResult) => void;
+  onError?: (error: Error) => void;
+  onRetry?: (attempt: number, maxAttempts: number, error: Error) => void;
+  onCompact?: () => Promise<Message[] | null>;
+}

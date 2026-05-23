@@ -1,18 +1,11 @@
 import { generateText } from "ai";
-import type { Message } from "./generator";
-import type { ApiType } from "./ai-provider";
-import { getProviderModel } from "./ai-provider";
+import type { Message } from "../ai/generator";
+import type { ProviderConfig } from "../ai/provider";
+import { getProviderModel } from "../ai/provider";
 
-/**
- * Generate a smart title (4-12 words) for a conversation based on its messages.
- * Returns null if unable to generate a title.
- */
 export async function generateSmartTitle(
   messages: Message[],
-  apiType: ApiType,
-  apiBaseUrl: string,
-  apiKey: string,
-  model: string,
+  cfg: ProviderConfig,
 ): Promise<string | null> {
   const hasUser = messages.some((m) => m.role === "user");
   const hasAssistant = messages.some((m) => m.role === "assistant");
@@ -25,13 +18,14 @@ export async function generateSmartTitle(
       const text =
         typeof m.content === "string"
           ? m.content
-          : ((m.content as any[])?.find((p: any) => p.type === "text")?.text ?? "");
+          : ((m.content as any[])?.find((p: any) => p.type === "text")?.text ??
+            "");
       return `${m.role}: ${text.slice(0, 200)}`;
     })
     .join("\n");
 
   try {
-    const providerModel = getProviderModel({ apiType, apiBaseUrl, apiKey, model });
+    const providerModel = getProviderModel(cfg);
 
     const result = await generateText({
       model: providerModel,

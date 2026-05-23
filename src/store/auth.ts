@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { AuthResult, SSOUser, refreshAccessToken } from '../lib/sso';
+import { AuthResult, SSOUser, refreshAccessToken } from '../lib/services/sso';
 
 interface AuthState {
   accessToken: string | null;

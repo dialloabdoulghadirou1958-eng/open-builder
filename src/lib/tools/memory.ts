@@ -1,7 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
-import type { MemoryOperation } from "../types";
-import { useMemoryStore } from "../store/memory";
+import type { MemoryItem, MemoryOperation } from "../../types";
+
+export interface MemoryDeps {
+  getAll: () => MemoryItem[];
+  processBatch: (operations: MemoryOperation[]) => string;
+}
 
 // ═══════════════════════════════ Constants ═══════════════════════════════════
 
@@ -59,7 +63,7 @@ export const MEMORY_TOOLS = {
 // ═══════════════════════════════ Tool Handler ════════════════════════════════
 
 /** Create the memory tool handler function */
-export function createMemoryToolHandler(): (
+export function createMemoryToolHandler(deps: MemoryDeps): (
   name: string,
   args: unknown,
 ) => string {
@@ -82,9 +86,9 @@ export function createMemoryToolHandler(): (
         op.category ? `(${op.category})` : "",
       );
     }
-    const result = useMemoryStore.getState().processBatch(operations);
+    const result = deps.processBatch(operations);
     console.log(`  Result: ${result}`);
-    console.log("  Current memories:", useMemoryStore.getState().getAll());
+    console.log("  Current memories:", deps.getAll());
     console.groupEnd();
     return result;
   };
@@ -93,8 +97,7 @@ export function createMemoryToolHandler(): (
 // ═══════════════════════════════ Prompt Builder ══════════════════════════════
 
 /** Build the memory instruction + existing memories block for the system prompt */
-export function buildMemoryPromptSection(): string {
-  const memories = useMemoryStore.getState().getAll();
+export function buildMemoryPromptSection(memories: MemoryItem[]): string {
   const memoryCount = memories.length;
 
   let section = `\n\n<memory>

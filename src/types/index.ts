@@ -1,4 +1,4 @@
-import type { Message as _Message, ProjectFiles as _ProjectFiles } from "../lib/generator";
+import type { Message as _Message, ProjectFiles as _ProjectFiles } from "../lib/ai/generator-types";
 
 export type {
   ProjectFiles,
@@ -10,11 +10,11 @@ export type {
   GenerateResult,
   GeneratorOptions,
   GeneratorEvents,
-} from "../lib/generator";
+} from "../lib/ai/generator-types";
 
 export type { AISettings, WebSearchSettings, AssetSearchSettings } from "../store/settings";
-export type { OpenAIClientConfig } from "../lib/client";
-export type { ApiType } from "../lib/ai-provider";
+export type { OpenAIClientConfig } from "../lib/ai/client";
+export type { ApiType } from "../lib/ai/provider";
 
 // ─── Chat UI types ────────────────────────────────────────────────────────────
 

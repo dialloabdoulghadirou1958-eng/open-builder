@@ -10,8 +10,8 @@ import type {
   AssistantContent,
   UserContent,
 } from "ai";
-import type { Message, ContentPart } from "./generator";
-import type { ApiType } from "./ai-provider";
+import type { Message, ContentPart } from "./generator-types";
+import type { ApiType } from "./provider";
 
 /**
  * 将内部 Message[] 转换为 AI SDK ModelMessage[]

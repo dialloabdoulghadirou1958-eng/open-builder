@@ -1,8 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { type WebSearchSettings, SERVER_ENGINE } from "../store/settings";
-import { serverWebSearch } from "./mohua-api";
-import { toolResult } from "./toolResult";
+import { type WebSearchSettings, SERVER_ENGINE } from "../../store/settings";
+import { serverWebSearch } from "../services/mohua-api";
+import { toolResult } from "../utils/tool-result";
 
 // ═══════════════════════════════ 工具定义 ═══════════════════════════════════
 

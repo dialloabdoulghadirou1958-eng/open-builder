@@ -1,12 +1,12 @@
-import type { Message, ContentPart } from "../types";
+import type { Message, ContentPart } from "../../types";
 import type {
   MergedMessage,
   Block,
   TextBlock,
   ThinkingBlock,
   ToolBlock,
-} from "../types";
-import { getT } from "../i18n";
+} from "../../types";
+import { getT } from "../../i18n";
 
 /** Extract plain text from message content (string or multi-part array),
  *  excluding file attachment parts (prefixed with [File: ...]) */

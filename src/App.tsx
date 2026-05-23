@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -6,15 +6,14 @@ import {
 } from "@/components/ui/resizable";
 import { ChatInterface } from "./components/ChatInterface";
 import { CodeViewer } from "./components/CodeViewer";
-import { SettingsDialog } from "./components/SettingsDialog";
+import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { useAppState } from "./hooks/useAppState";
 import { useGenerator } from "./hooks/useGenerator";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { useTheme } from "./hooks/useTheme";
+import { useAuthStore } from "./store/auth";
 import { useConversationStore } from "./store/conversation";
 import { useT } from "./i18n";
-import { AuthCallback } from "./components/AuthCallback";
-import { useAuthStore } from "./store/auth";
 
 export default function App() {
   const t = useT();
@@ -27,17 +26,16 @@ export default function App() {
   useTheme();
 
   useEffect(() => {
-    // Passively refresh token on load if needed
-    useAuthStore.getState().getValidTokenAsync().catch(() => {});
+    useAuthStore
+      .getState()
+      .getValidTokenAsync()
+      .catch(() => {});
   }, []);
 
-  if (window.location.pathname === "/auth/callback") {
-    return <AuthCallback />;
-  }
-
-  // On hydration: ensure there's an active conversation
+  const didInitConversation = useRef(false);
   useEffect(() => {
-    if (!hasHydrated) return;
+    if (!hasHydrated || didInitConversation.current) return;
+    didInitConversation.current = true;
     if (!activeId || !conversations[activeId]) {
       const entries = Object.values(conversations);
       if (entries.length > 0) {
@@ -47,7 +45,7 @@ export default function App() {
         createConversation();
       }
     }
-  }, [hasHydrated]);
+  }, [hasHydrated, activeId, conversations, switchConversation, createConversation]);
 
   const {
     files,
@@ -95,7 +93,6 @@ export default function App() {
     webSearchSettings,
     assetSearchSettings,
     serverServiceSettings,
-    files,
     setMessages,
     setFiles,
     setIsGenerating,
@@ -104,9 +101,7 @@ export default function App() {
     setIsProjectInitialized,
   });
 
-  // Reset ephemeral state on conversation switch
   useEffect(() => {
-    // setCurrentFile("src/App.tsx");
     restartSandpack();
   }, [activeId]);
 

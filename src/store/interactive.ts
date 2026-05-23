@@ -1,27 +1,16 @@
 import { create } from "zustand";
+import type {
+  AskUserQuestion,
+  AskUserAnswers,
+  PlanDecision,
+} from "../types/api";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface AskUserQuestion {
-  question: string;
-  header: string;
-  multiSelect: boolean;
-  options: Array<{ label: string; description: string }>;
-}
-
-export interface AskUserAnswerItem {
-  question: string;
-  header: string;
-  selected: string[];
-}
-
-export interface AskUserAnswers {
-  answers: AskUserAnswerItem[];
-}
-
-export type PlanDecision =
-  | { approved: true }
-  | { approved: false; feedback?: string };
+export type {
+  AskUserQuestion,
+  AskUserAnswerItem,
+  AskUserAnswers,
+  PlanDecision,
+} from "../types/api";
 
 interface PendingQuestion {
   kind: "question";

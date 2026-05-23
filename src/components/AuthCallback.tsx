@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { handleCallback } from "../lib/sso";
+import { handleCallback } from "../lib/services/sso";
 import { useAuthStore } from "../store/auth";
 import { useT } from "../i18n";
 import { Loader2 } from "lucide-react";
