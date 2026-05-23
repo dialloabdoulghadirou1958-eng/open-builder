@@ -10,7 +10,10 @@ import {
 } from "lucide-react";
 import { MarkdownContent } from "./MarkdownContent";
 import { ToolCallCard } from "./ToolCallCard";
+import { PlanApprovalCard } from "./PlanApprovalCard";
+import { AskUserQuestionCard } from "./AskUserQuestionCard";
 import { useT } from "../../i18n";
+import type { AskUserQuestion } from "../../store/interactive";
 import type {
   MergedMessage,
   TextBlock,
@@ -138,6 +141,34 @@ export const MessageBubble = memo(function MessageBubble({
           );
         }
         if (block.type === "tool") {
+          if (block.toolName === "exit_plan_mode") {
+            return (
+              <PlanApprovalCard
+                key={block.id}
+                toolCallId={block.toolCallId}
+                plan={
+                  typeof block.rawArgs?.plan === "string"
+                    ? (block.rawArgs.plan as string)
+                    : ""
+                }
+                result={block.result}
+              />
+            );
+          }
+          if (block.toolName === "ask_user_question") {
+            const rawQuestions = block.rawArgs?.questions;
+            const questions = Array.isArray(rawQuestions)
+              ? (rawQuestions as AskUserQuestion[])
+              : [];
+            return (
+              <AskUserQuestionCard
+                key={block.id}
+                toolCallId={block.toolCallId}
+                questions={questions}
+                result={block.result}
+              />
+            );
+          }
           return <ToolCallCard key={block.id} {...block} />;
         }
         return null;

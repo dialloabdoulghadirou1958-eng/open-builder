@@ -48,6 +48,10 @@ export function createOpenAIGenerator(
   initialFiles?: ProjectFiles,
   customTools?: ToolSet,
   customToolHandler?: (name: string, args: unknown) => string | Promise<string>,
+  extras?: Pick<
+    GeneratorOptions,
+    "tools" | "askUserQuestion" | "requestPlanApproval" | "onPlanApproved"
+  >,
 ): WebAppGenerator {
   const options: GeneratorOptions = {
     apiType: config.apiType ?? "openai-compatible",
@@ -59,6 +63,7 @@ export function createOpenAIGenerator(
     customTools,
     customToolHandler,
     providerToolNames: config.providerToolNames,
+    ...(extras ?? {}),
   };
 
   return new WebAppGenerator(options, events);

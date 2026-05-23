@@ -170,6 +170,8 @@ export function mergeMessages(messages: Message[]): MergedMessage[] {
                 path: args.path || "",
                 paths,
                 result,
+                toolCallId: tc.id,
+                rawArgs: args,
                 id: `tool-${tc.id}`,
               } as ToolBlock);
               bi++;

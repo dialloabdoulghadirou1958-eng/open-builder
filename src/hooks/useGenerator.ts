@@ -1,9 +1,12 @@
 import { useRef, useCallback } from "react";
 import type { Dispatch, SetStateAction } from "react";
+import type { ToolSet } from "ai";
 import { WebAppGenerator } from "../lib/generator";
 import { createOpenAIGenerator } from "../lib/client";
 import { useConversationStore } from "../store/conversation";
 import { useSettingsStore } from "../store/settings";
+import { useInteractiveStore } from "../store/interactive";
+import { BUILTIN_TOOLS } from "../lib/ai-tools";
 import { useSandpackStore } from "../store/sandpack";
 import {
   SEARCH_TOOLS,
@@ -181,6 +184,40 @@ function createSnapshotForCurrentState() {
   }
 }
 
+// Builtin tools that mutate project files. Filtered out when plan mode is on.
+const WRITE_BUILTIN_TOOLS = new Set([
+  "init_project",
+  "manage_dependencies",
+  "write_file",
+  "patch_file",
+  "delete_file",
+]);
+
+const PLAN_MODE_SYSTEM_SUFFIX = `
+
+## PLAN MODE ACTIVE
+You are in Plan Mode. You MUST NOT write, modify, or delete any project files.
+The write tools (init_project, write_file, patch_file, delete_file, manage_dependencies) are NOT available right now.
+Workflow:
+  1. Use list_files / read_files / search_in_files to fully understand the existing project.
+  2. If a key requirement is ambiguous, call ask_user_question before continuing.
+  3. Synthesize a complete implementation plan in clear Markdown — what files to add/change, what dependencies to add, what the overall approach is, and how to verify it works.
+  4. Call exit_plan_mode with the plan as your FINAL step. Do NOT write the plan as a normal reply.
+After the user approves the plan, exit_plan_mode will return success and the write tools will become available — only then start implementing.`;
+
+function buildToolSet(args: {
+  custom: ToolSet;
+  planMode: boolean;
+}): ToolSet {
+  const { custom, planMode } = args;
+  const builtinEntries = Object.entries(BUILTIN_TOOLS).filter(([name]) => {
+    if (planMode) return !WRITE_BUILTIN_TOOLS.has(name);
+    // Outside plan mode, exit_plan_mode has no meaning.
+    return name !== "exit_plan_mode";
+  });
+  return { ...Object.fromEntries(builtinEntries), ...custom };
+}
+
 interface UseGeneratorOptions {
   settings: AISettings;
   webSearchSettings: WebSearchSettings;
@@ -259,6 +296,9 @@ export function useGenerator({
     if (prevActiveIdRef.current !== activeId) {
       generatorRef.current = null;
       prevActiveIdRef.current = activeId;
+      useInteractiveStore
+        .getState()
+        .rejectAllPending("conversation switched");
     }
 
     // Invalidate if settings changed
@@ -357,6 +397,22 @@ export function useGenerator({
         if (searchHandler) return searchHandler(name, args);
         return `Error: unknown tool "${name}"`;
       };
+
+      const customToolSet: ToolSet = {
+        ...(webConfigured ? SEARCH_TOOLS : {}),
+        ...builtinSearchTools,
+        ...(isBuiltinSearch || isAuth ? WEB_READER_TOOL : {}),
+        ...(assetConfigured ? ASSET_SEARCH_TOOLS : {}),
+        ...NPM_SEARCH_TOOLS,
+        ...MEMORY_TOOLS,
+      };
+
+      const initialPlanMode =
+        useSettingsStore.getState().system.planModeEnabled;
+      const initialTools = buildToolSet({
+        custom: customToolSet,
+        planMode: initialPlanMode,
+      });
 
       generatorRef.current = createOpenAIGenerator(
         {
@@ -667,15 +723,31 @@ export function useGenerator({
           },
         },
         files,
-        {
-          ...(webConfigured ? SEARCH_TOOLS : {}),
-          ...builtinSearchTools,
-          ...(isBuiltinSearch || isAuth ? WEB_READER_TOOL : {}),
-          ...(assetConfigured ? ASSET_SEARCH_TOOLS : {}),
-          ...NPM_SEARCH_TOOLS,
-          ...MEMORY_TOOLS,
-        },
+        customToolSet,
         combinedToolHandler,
+        {
+          tools: initialTools,
+          askUserQuestion: (toolCallId, questions) =>
+            useInteractiveStore.getState().askQuestion({
+              toolCallId,
+              questions,
+            }),
+          requestPlanApproval: (toolCallId, plan) =>
+            useInteractiveStore.getState().askPlanApproval({
+              toolCallId,
+              plan,
+            }),
+          onPlanApproved: () => {
+            const { system, setSystem } = useSettingsStore.getState();
+            if (system.planModeEnabled) {
+              setSystem({ ...system, planModeEnabled: false });
+            }
+            return buildToolSet({
+              custom: customToolSet,
+              planMode: false,
+            });
+          },
+        },
       );
 
       const gen = generatorRef.current as any;
@@ -703,6 +775,21 @@ export function useGenerator({
     setIsProjectInitialized,
     restartSandpack,
   ]);
+
+  // Apply state that can change between generations: tool set (plan mode toggle),
+  // system prompt suffix (memory + plan mode addendum). Called at the start of every run.
+  const applyDynamicGeneratorState = useCallback(
+    (generator: WebAppGenerator) => {
+      const planMode = useSettingsStore.getState().system.planModeEnabled;
+      const customToolSet = generator.getCustomToolSet();
+      generator.setTools(buildToolSet({ custom: customToolSet, planMode }));
+      const memorySuffix = buildMemoryPromptSection();
+      generator.setSystemPromptSuffix(
+        memorySuffix + (planMode ? PLAN_MODE_SYSTEM_SUFFIX : ""),
+      );
+    },
+    [],
+  );
 
   const generate = useCallback(
     async (prompt: string, attachments?: Attachment[]) => {
@@ -741,9 +828,10 @@ export function useGenerator({
         if (activeConv) {
           generator.syncMessages(getMessagesForAPI(activeConv));
         }
-        // Inject current memory context into system prompt
-        generator.setSystemPromptSuffix(buildMemoryPromptSection());
+        applyDynamicGeneratorState(generator);
       }
+      // Clear any abandoned pending interactive prompts before a fresh run.
+      useInteractiveStore.getState().rejectAllPending("new generation started");
 
       setMessages((prev) => [
         ...removeErrorMessages(prev),
@@ -768,7 +856,7 @@ export function useGenerator({
         setIsGenerating(false);
       }
     },
-    [getGenerator, setIsGenerating, setMessages],
+    [getGenerator, setIsGenerating, setMessages, applyDynamicGeneratorState],
   );
 
   const stop = useCallback(() => {
@@ -804,6 +892,7 @@ export function useGenerator({
       thinkingBufferRef.current = "";
     }
     generatorRef.current?.abort();
+    useInteractiveStore.getState().rejectAllPending("user stopped");
     setIsGenerating(false);
     createSnapshotForCurrentState();
   }, [setIsGenerating]);
@@ -892,7 +981,7 @@ export function useGenerator({
         if (activeConv) {
           generator.syncMessages(getMessagesForAPI(activeConv));
         }
-        generator.setSystemPromptSuffix(buildMemoryPromptSection());
+        applyDynamicGeneratorState(generator);
         await generator.retry();
       }
     } catch (err: any) {
@@ -910,7 +999,7 @@ export function useGenerator({
       setMessages((prev) => filterMemoryMessages(prev));
       setIsGenerating(false);
     }
-  }, [getGenerator, setIsGenerating, setMessages]);
+  }, [getGenerator, setIsGenerating, setMessages, applyDynamicGeneratorState]);
 
   const compressContext = useCallback(async () => {
     const storeState = useConversationStore.getState();
@@ -963,7 +1052,7 @@ export function useGenerator({
         if (activeConv) {
           generator.syncMessages(getMessagesForAPI(activeConv));
         }
-        generator.setSystemPromptSuffix(buildMemoryPromptSection());
+        applyDynamicGeneratorState(generator);
         await generator.generate(
           "Please continue where you left off and complete any unfinished tasks.",
         );
@@ -983,7 +1072,7 @@ export function useGenerator({
       setMessages((prev) => filterMemoryMessages(prev));
       setIsGenerating(false);
     }
-  }, [getGenerator, setIsGenerating, setMessages]);
+  }, [getGenerator, setIsGenerating, setMessages, applyDynamicGeneratorState]);
 
   return {
     generate,

@@ -127,4 +127,75 @@ export const BUILTIN_TOOLS = {
       "This summarizes older messages while preserving key information.",
     inputSchema: z.object({}),
   }),
+
+  ask_user_question: tool({
+    description:
+      "Ask the user 1-4 clarifying questions when the requirements are genuinely ambiguous, " +
+      "before making assumptions or starting implementation. " +
+      "Use this when a key product decision is unclear (which framework, which auth method, which layout style, etc.) " +
+      "and guessing would likely waste work. Do NOT use it for trivial confirmations. " +
+      "Each question must offer 2-4 distinct, mutually exclusive options. " +
+      "The user can also type a free-text 'Other' answer if no option fits.",
+    inputSchema: z.object({
+      questions: z
+        .array(
+          z.object({
+            question: z
+              .string()
+              .describe(
+                "The full question text the user will read. Should end with '?'.",
+              ),
+            header: z
+              .string()
+              .describe(
+                "Short tag/label shown on the question card (<=12 chars), e.g. 'Auth method'.",
+              ),
+            multiSelect: z
+              .boolean()
+              .describe(
+                "If true the user may pick more than one option. Default false.",
+              ),
+            options: z
+              .array(
+                z.object({
+                  label: z
+                    .string()
+                    .describe("Short option title (1-5 words) the user picks."),
+                  description: z
+                    .string()
+                    .describe(
+                      "One sentence explaining what choosing this option means.",
+                    ),
+                }),
+              )
+              .min(2)
+              .max(4)
+              .describe("2-4 mutually exclusive option choices."),
+          }),
+        )
+        .min(1)
+        .max(4)
+        .describe("List of 1-4 questions to ask the user in one batch."),
+    }),
+  }),
+
+  exit_plan_mode: tool({
+    description:
+      "Present the implementation plan to the user for approval. " +
+      "Call this as the FINAL step of planning, only after you have thoroughly explored " +
+      "the existing project (list_files / read_files / search_in_files) and resolved " +
+      "any ambiguity (ask_user_question if needed). " +
+      "The plan must be clear Markdown that covers: what files will change, what dependencies " +
+      "will be added, and the overall approach. " +
+      "When this tool returns 'approved', proceed directly to implementation. " +
+      "When it returns 'rejected', revise based on the user's feedback and call exit_plan_mode again. " +
+      "Do NOT output the plan as a normal text reply - it MUST be delivered via this tool.",
+    inputSchema: z.object({
+      plan: z
+        .string()
+        .describe(
+          "The complete implementation plan in Markdown. Include sections like Context, Approach, Files to change, and Verification.",
+        ),
+    }),
+  }),
 };

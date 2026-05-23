@@ -13,6 +13,7 @@ import { useMergedMessages } from "../hooks/useMergedMessages";
 import { mergeMessages } from "../lib/mergeMessages";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useConversationStore } from "../store/conversation";
+import { useSettingsStore } from "../store/settings";
 import { useSnapshotStore } from "../store/snapshot";
 import { useT } from "../i18n";
 import type {
@@ -176,6 +177,9 @@ export function ChatInterface({
           break;
         case "retry":
           onRetry();
+          break;
+        case "plan":
+          useSettingsStore.getState().togglePlanMode();
           break;
       }
     },

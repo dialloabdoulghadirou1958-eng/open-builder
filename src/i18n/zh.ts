@@ -127,6 +127,31 @@ export const zh = {
     stopGeneration: "停止生成",
     send: "发送消息",
     newApp: "新应用",
+    planMode: {
+      toggleOn: "关闭 Plan 模式",
+      toggleOff: "开启 Plan 模式",
+      tooltip:
+        "Plan 模式：AI 会先探索代码、提交方案给你审批，审批通过后才会写文件。",
+      badge: "Plan 模式",
+    },
+    planApproval: {
+      title: "方案待你审批",
+      approve: "批准并执行",
+      reject: "拒绝",
+      feedbackPlaceholder: "告诉 AI 需要改什么（可选，然后点发送反馈）",
+      sendFeedback: "发送反馈",
+      approved: "已批准",
+      rejected: "已拒绝",
+    },
+    askQuestion: {
+      title: "AI 想问你一个问题",
+      submit: "提交",
+      other: "其他...",
+      otherPlaceholder: "输入你自己的答案...",
+      answered: "已回答",
+      multiSelectHint: "可多选",
+      singleSelectHint: "单选",
+    },
   },
   header: {
     sessions: "会话列表",
@@ -181,6 +206,7 @@ export const zh = {
     review: { name: "/review", desc: "代码安全审查" },
     retry: { name: "/retry", desc: "重试上次操作" },
     continue: { name: "/continue", desc: "继续未完成的任务" },
+    plan: { name: "/plan", desc: "切换 Plan 模式" },
   },
   explorer: {
     files: "文件",
@@ -235,6 +261,8 @@ export const zh = {
       search_npm_packages: "搜索 NPM 包",
       get_npm_package_detail: "获取 NPM 包详情",
       manage_memories: "管理记忆",
+      ask_user_question: "向你提问",
+      exit_plan_mode: "提交方案待批准",
     },
   },
 };

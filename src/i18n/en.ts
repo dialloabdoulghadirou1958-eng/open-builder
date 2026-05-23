@@ -145,6 +145,32 @@ export const en: typeof zh = {
     stopGeneration: "Stop",
     send: "Send",
     newApp: "New App",
+    planMode: {
+      toggleOn: "Turn off Plan Mode",
+      toggleOff: "Turn on Plan Mode",
+      tooltip:
+        "Plan Mode: AI will explore the code and propose a plan for your approval before writing any files.",
+      badge: "Plan Mode",
+    },
+    planApproval: {
+      title: "Plan Awaiting Your Approval",
+      approve: "Approve & Execute",
+      reject: "Reject",
+      feedbackPlaceholder:
+        "Tell the AI what to change (optional, then press Send Feedback)",
+      sendFeedback: "Send Feedback",
+      approved: "Approved",
+      rejected: "Rejected",
+    },
+    askQuestion: {
+      title: "AI Has a Question",
+      submit: "Submit",
+      other: "Other...",
+      otherPlaceholder: "Type your own answer...",
+      answered: "Answered",
+      multiSelectHint: "Choose one or more",
+      singleSelectHint: "Choose one",
+    },
   },
   header: {
     sessions: "Sessions",
@@ -199,6 +225,7 @@ export const en: typeof zh = {
     review: { name: "/review", desc: "Security review" },
     retry: { name: "/retry", desc: "Retry last operation" },
     continue: { name: "/continue", desc: "Continue unfinished task" },
+    plan: { name: "/plan", desc: "Toggle Plan Mode" },
   },
   explorer: {
     files: "Files",
@@ -253,6 +280,8 @@ export const en: typeof zh = {
       search_npm_packages: "Search NPM Packages",
       get_npm_package_detail: "Get NPM Package Detail",
       manage_memories: "Manage Memories",
+      ask_user_question: "Ask You a Question",
+      exit_plan_mode: "Submit Plan for Approval",
     },
   },
 };

@@ -62,6 +62,11 @@ export interface ToolBlock {
   path: string;
   paths?: string[];
   result: string;
+  /** Tool call id used by the AI SDK — needed to correlate with pending UI prompts. */
+  toolCallId: string;
+  /** Raw parsed arguments the AI passed to the tool. Used by interactive tools
+   *  (ask_user_question, exit_plan_mode) that render full args in the UI. */
+  rawArgs?: Record<string, unknown>;
   id: string;
 }
 

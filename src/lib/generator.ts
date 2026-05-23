@@ -11,8 +11,25 @@ import { getProviderModel, buildProviderOptions } from "./ai-provider";
 import type { ApiType } from "./ai-provider";
 import { messagesToModelMessages } from "./ai-messages";
 import { BUILTIN_TOOLS } from "./ai-tools";
+import type {
+  AskUserQuestion,
+  AskUserAnswers,
+  PlanDecision,
+} from "../store/interactive";
+
+export type {
+  AskUserQuestion,
+  AskUserAnswerItem,
+  AskUserAnswers,
+  PlanDecision,
+} from "../store/interactive";
 
 // ═══════════════════════════════ 类型定义 ═══════════════════════════════════
+
+/** Result string prefixes for exit_plan_mode, exposed so the UI can detect
+ *  the decision without string-matching against full prose. */
+export const PLAN_APPROVED_PREFIX = "Plan approved";
+export const PLAN_REJECTED_PREFIX = "Plan rejected";
 
 /** 项目文件：路径 → 内容 */
 export type ProjectFiles = Record<string, string>;
@@ -84,6 +101,9 @@ export interface GeneratorOptions {
   stream?: boolean;
   /** 额外的自定义工具（AI SDK ToolSet 格式） */
   customTools?: ToolSet;
+  /** 完整工具集 — 若提供则直接使用，跳过与 BUILTIN_TOOLS 的合并。
+   *  调用方需自行决定包含哪些内置工具（用于 plan 模式过滤等场景）。 */
+  tools?: ToolSet;
   /** 自定义工具的执行回调（内置工具之外的分发到这里） */
   customToolHandler?: (name: string, args: unknown) => string | Promise<string>;
   /** 是否启用 thinking（默认 true） */
@@ -96,6 +116,21 @@ export interface GeneratorOptions {
   retryDelay?: number;
   /** Names of provider-managed tools (executed server-side, not locally) */
   providerToolNames?: string[];
+  /** Handler for the built-in `ask_user_question` tool. Receives the tool call id and the
+   *  AI-supplied questions, returns the user's answers. Rejecting with AbortError aborts the run. */
+  askUserQuestion?: (
+    toolCallId: string,
+    questions: AskUserQuestion[],
+  ) => Promise<AskUserAnswers>;
+  /** Handler for the built-in `exit_plan_mode` tool. Receives the tool call id and the plan
+   *  markdown, returns the user's approval decision. Rejecting with AbortError aborts the run. */
+  requestPlanApproval?: (
+    toolCallId: string,
+    plan: string,
+  ) => Promise<PlanDecision>;
+  /** Called once the user approves a plan via exit_plan_mode. If a new ToolSet is returned,
+   *  the generator swaps to it on the next iteration (so write tools become available). */
+  onPlanApproved?: () => ToolSet | void;
 }
 
 /** 事件回调 */
@@ -186,13 +221,17 @@ export class WebAppGenerator {
   private readonly systemPrompt: string;
   private readonly maxIterations: number;
   private readonly useStream: boolean;
-  private readonly tools: ToolSet;
+  private tools: ToolSet;
+  private readonly customToolSet: ToolSet;
   private readonly customToolHandler?: GeneratorOptions["customToolHandler"];
   private readonly useThinking: boolean;
   private readonly thinkingBudget: number;
   private readonly maxRetries: number;
   private readonly retryDelay: number;
   private readonly providerToolNames: Set<string>;
+  private readonly askUserQuestion?: GeneratorOptions["askUserQuestion"];
+  private readonly requestPlanApproval?: GeneratorOptions["requestPlanApproval"];
+  private readonly onPlanApproved?: GeneratorOptions["onPlanApproved"];
   private systemPromptSuffix: string = "";
 
   constructor(options: GeneratorOptions, events: GeneratorEvents = {}) {
@@ -203,13 +242,19 @@ export class WebAppGenerator {
     this.systemPrompt = options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
     this.maxIterations = options.maxIterations ?? 30;
     this.useStream = options.stream ?? true;
-    this.tools = { ...BUILTIN_TOOLS, ...(options.customTools ?? {}) };
+    this.customToolSet = options.customTools ?? {};
+    this.tools = options.tools
+      ? options.tools
+      : { ...BUILTIN_TOOLS, ...this.customToolSet };
     this.customToolHandler = options.customToolHandler;
     this.useThinking = options.thinking ?? true;
     this.thinkingBudget = options.thinkingBudget ?? 10000;
     this.maxRetries = options.maxRetries ?? 3;
     this.retryDelay = options.retryDelay ?? 1000;
     this.providerToolNames = new Set(options.providerToolNames ?? []);
+    this.askUserQuestion = options.askUserQuestion;
+    this.requestPlanApproval = options.requestPlanApproval;
+    this.onPlanApproved = options.onPlanApproved;
 
     this.files = { ...(options.initialFiles ?? {}) };
     this.messages = [];
@@ -246,6 +291,19 @@ export class WebAppGenerator {
   /** Set a dynamic suffix to append to the system prompt (e.g., memory context) */
   setSystemPromptSuffix(suffix: string): void {
     this.systemPromptSuffix = suffix;
+  }
+
+  /** Replace the tool set used on subsequent iterations.
+   *  Used to switch between plan-mode (no write tools) and full tool set after plan approval.
+   *  The provided set is used as-is — the caller is responsible for including any builtins it wants. */
+  setTools(tools: ToolSet): void {
+    this.tools = tools;
+  }
+
+  /** Return the custom (non-builtin) tools registered at construction time.
+   *  Used by callers that rebuild the active tool set on each run (e.g. plan-mode toggling). */
+  getCustomToolSet(): ToolSet {
+    return this.customToolSet;
   }
 
   /** 中止正在进行的 generate 请求 */
@@ -627,6 +685,54 @@ export class WebAppGenerator {
         result = this.toolSearchInFiles(args.pattern);
         break;
 
+      case "ask_user_question": {
+        if (!this.askUserQuestion) {
+          result =
+            "ask_user_question is not available in this session — fall back to making a reasonable assumption and proceed.";
+          break;
+        }
+        try {
+          const answers = await this.askUserQuestion(
+            toolCall.id,
+            args.questions as AskUserQuestion[],
+          );
+          result = this.formatAskUserAnswers(answers);
+        } catch (err: any) {
+          if (err?.name === "AbortError") throw err;
+          result = `User question was cancelled: ${err?.message ?? "unknown"}`;
+        }
+        break;
+      }
+
+      case "exit_plan_mode": {
+        if (!this.requestPlanApproval) {
+          result =
+            "exit_plan_mode is not available in this session. Just present the plan in your reply.";
+          break;
+        }
+        try {
+          const decision = await this.requestPlanApproval(
+            toolCall.id,
+            args.plan as string,
+          );
+          if (decision.approved) {
+            const newTools = this.onPlanApproved?.();
+            if (newTools) {
+              this.tools = newTools;
+            }
+            result = `${PLAN_APPROVED_PREFIX} by the user. Plan mode is now exited — proceed to implement the plan using the available write tools.`;
+          } else {
+            result = decision.feedback
+              ? `${PLAN_REJECTED_PREFIX} by the user.\nUser feedback: ${decision.feedback}\nRevise the plan based on this feedback and call exit_plan_mode again.`
+              : `${PLAN_REJECTED_PREFIX} by the user. Ask what to change and revise before calling exit_plan_mode again.`;
+          }
+        } catch (err: any) {
+          if (err?.name === "AbortError") throw err;
+          result = `Plan approval was cancelled: ${err?.message ?? "unknown"}`;
+        }
+        break;
+      }
+
       default:
         if (this.customToolHandler) {
           try {
@@ -679,6 +785,20 @@ export class WebAppGenerator {
     changes.push({ path: pkgPath, action });
     this.events.onDependenciesChange?.(this.getFiles());
     return `OK — ${action} ${pkgPath}, dependencies updated. Sandpack will restart.`;
+  }
+
+  private formatAskUserAnswers(answers: AskUserAnswers): string {
+    if (!answers.answers?.length) {
+      return "(no answers returned)";
+    }
+    return answers.answers
+      .map((a, idx) => {
+        const picks = a.selected.length
+          ? a.selected.join(" | ")
+          : "(no selection)";
+        return `Q${idx + 1} [${a.header}] ${a.question}\n→ ${picks}`;
+      })
+      .join("\n\n");
   }
 
   private toolListFiles(): string {

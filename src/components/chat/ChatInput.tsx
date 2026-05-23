@@ -7,10 +7,12 @@ import {
   Image,
   FileText,
   Paperclip,
+  ClipboardList,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useT } from "../../i18n";
+import { useSettingsStore } from "../../store/settings";
 import type { Attachment } from "../../types";
 import type { Message } from "../../lib/generator";
 
@@ -22,6 +24,7 @@ const SLASH_COMMANDS = [
   "review",
   "continue",
   "retry",
+  "plan",
 ] as const;
 
 /** Commands that require existing conversation messages */
@@ -100,6 +103,10 @@ export function ChatInput({
   onSlashCommand,
 }: ChatInputProps) {
   const t = useT();
+  const planModeEnabled = useSettingsStore(
+    (s) => s.system.planModeEnabled,
+  );
+  const togglePlanMode = useSettingsStore((s) => s.togglePlanMode);
   const [isHoveringStop, setIsHoveringStop] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [showMenu, setShowMenu] = useState(false);
@@ -432,45 +439,66 @@ export function ChatInput({
             onChange={handleFileSelect}
           />
 
-          {/* Left side: attachment button with menu */}
+          {/* Left side: attachment button with menu, plus Plan mode toggle */}
           {!isGenerating && (
-            <div ref={menuRef} className="absolute left-1.5 bottom-1.5 z-10">
+            <div className="absolute left-1.5 bottom-1.5 z-10 flex items-center gap-0.5">
+              <div ref={menuRef} className="relative">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="w-7 h-7 text-muted-foreground hover:text-foreground"
+                  title={t.chat.attachment}
+                  onClick={() => setShowMenu((v) => !v)}
+                >
+                  <Paperclip size={16} />
+                </Button>
+                {showMenu && (
+                  <div className="absolute bottom-full left-0 mb-1 bg-popover border rounded-lg shadow-md overflow-hidden z-20 min-w-36">
+                    <button
+                      type="button"
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent/50 transition-colors cursor-pointer"
+                      onClick={() => {
+                        imageInputRef.current?.click();
+                        setShowMenu(false);
+                      }}
+                    >
+                      <Image size={14} />
+                      {t.chat.uploadImage}
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent/50 transition-colors cursor-pointer"
+                      onClick={() => {
+                        fileInputRef.current?.click();
+                        setShowMenu(false);
+                      }}
+                    >
+                      <FileText size={14} />
+                      {t.chat.uploadFile}
+                    </button>
+                  </div>
+                )}
+              </div>
               <Button
                 type="button"
                 size="icon"
                 variant="ghost"
-                className="w-7 h-7 text-muted-foreground hover:text-foreground"
-                title={t.chat.attachment}
-                onClick={() => setShowMenu((v) => !v)}
+                className={`w-7 h-7 transition-colors ${
+                  planModeEnabled
+                    ? "text-primary bg-primary/10 hover:bg-primary/15 hover:text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title={
+                  planModeEnabled
+                    ? t.chat.planMode.toggleOn
+                    : t.chat.planMode.toggleOff
+                }
+                aria-pressed={planModeEnabled}
+                onClick={togglePlanMode}
               >
-                <Paperclip size={16} />
+                <ClipboardList size={16} />
               </Button>
-              {showMenu && (
-                <div className="absolute bottom-full left-0 mb-1 bg-popover border rounded-lg shadow-md overflow-hidden z-20 min-w-36">
-                  <button
-                    type="button"
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent/50 transition-colors cursor-pointer"
-                    onClick={() => {
-                      imageInputRef.current?.click();
-                      setShowMenu(false);
-                    }}
-                  >
-                    <Image size={14} />
-                    {t.chat.uploadImage}
-                  </button>
-                  <button
-                    type="button"
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent/50 transition-colors cursor-pointer"
-                    onClick={() => {
-                      fileInputRef.current?.click();
-                      setShowMenu(false);
-                    }}
-                  >
-                    <FileText size={14} />
-                    {t.chat.uploadFile}
-                  </button>
-                </div>
-              )}
             </div>
           )}
 
@@ -483,10 +511,14 @@ export function ChatInput({
             }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder={t.chat.placeholder}
+            placeholder={
+              planModeEnabled
+                ? `[${t.chat.planMode.badge}] ${t.chat.placeholder}`
+                : t.chat.placeholder
+            }
             rows={1}
             disabled={isGenerating}
-            className="pl-10 pr-12 md:text-base resize-none overflow-y-auto min-h-0"
+            className="pl-17 pr-12 md:text-base resize-none overflow-y-auto min-h-0"
             style={{ maxHeight: 200 }}
           />
 

@@ -47,6 +47,7 @@ export interface SystemSettings {
   language: Language;
   theme: Theme;
   reverseProxy: boolean;
+  planModeEnabled: boolean;
 }
 
 export interface ModelCache {
@@ -76,6 +77,7 @@ interface SettingsState {
   setWebSearch: (settings: WebSearchSettings) => void;
   setAssetSearch: (settings: AssetSearchSettings) => void;
   setSystem: (settings: SystemSettings) => void;
+  togglePlanMode: () => void;
   setServerService: (patch: Partial<ServerServiceSettings>) => void;
   setModelCache: (cache: ModelCache) => void;
   clearModelCache: () => void;
@@ -116,6 +118,7 @@ export const useSettingsStore = create<SettingsState>()(
         language: "system" as Language,
         theme: "system" as Theme,
         reverseProxy: false,
+        planModeEnabled: false,
       },
       serverService: {
         selectedModel: "",
@@ -137,6 +140,13 @@ export const useSettingsStore = create<SettingsState>()(
       setWebSearch: (settings) => set({ webSearch: settings }),
       setAssetSearch: (settings) => set({ assetSearch: settings }),
       setSystem: (settings) => set({ system: settings }),
+      togglePlanMode: () =>
+        set((state) => ({
+          system: {
+            ...state.system,
+            planModeEnabled: !state.system.planModeEnabled,
+          },
+        })),
       setServerService: (patch) =>
         set((state) => ({
           serverService: { ...state.serverService, ...patch },
@@ -193,6 +203,7 @@ export const useSettingsStore = create<SettingsState>()(
             language: "system" as Language,
             theme: "system" as Theme,
             reverseProxy: false,
+            planModeEnabled: false,
           },
           modelCache: null,
           serverServiceCache: null,
@@ -226,7 +237,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "open-builder-settings",
-      version: 7,
+      version: 8,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         ai: state.ai,
@@ -285,6 +296,12 @@ export const useSettingsStore = create<SettingsState>()(
               assetSearchEnabled: true,
               assetSearchProviderId: "",
             };
+          }
+        }
+        if (version < 8) {
+          if (!state.system) state.system = {};
+          if (state.system.planModeEnabled === undefined) {
+            state.system.planModeEnabled = false;
           }
         }
         // version 6: added "builtin" to webSearch.engine — no data migration needed
