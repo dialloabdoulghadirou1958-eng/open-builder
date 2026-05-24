@@ -96,6 +96,17 @@ export interface GeneratorOptions {
   /** Called once the user approves a plan via exit_plan_mode. If a new ToolSet is returned,
    *  the generator swaps to it on the next iteration (so write tools become available). */
   onPlanApproved?: () => ToolSet | void;
+  /** Run a subagent delegation request. Returns the serialized SubagentToolResult JSON
+   *  that will be fed back to the parent agent as a normal tool result.
+   *  Multiple calls in one turn may be invoked in parallel — implementations must be safe
+   *  for concurrent execution against the same parent state. */
+  dispatchSubagent?: (
+    name: string,
+    task: string,
+    files: ProjectFiles,
+    signal: AbortSignal,
+    toolCallId: string,
+  ) => Promise<string>;
 }
 
 /** Event callbacks */
@@ -103,7 +114,12 @@ export interface GeneratorEvents {
   onText?: (delta: string) => void;
   onThinking?: (delta: string) => void;
   onToolCall?: (name: string, toolCallId: string) => void;
-  onToolResult?: (name: string, args: unknown, result: string) => void;
+  onToolResult?: (
+    name: string,
+    args: unknown,
+    result: string,
+    toolCallId: string,
+  ) => void;
   onFileChange?: (files: ProjectFiles, changes: FileChange[]) => void;
   onTemplateChange?: (template: string, files: ProjectFiles) => void;
   onDependenciesChange?: (files: ProjectFiles) => void;

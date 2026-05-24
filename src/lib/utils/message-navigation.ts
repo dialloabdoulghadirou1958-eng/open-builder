@@ -1,5 +1,6 @@
 import type { Message } from "../../types";
 import { mergeMessages } from "./merge-messages";
+import { truncate } from "./truncate";
 
 export function findAssistantGroupEnd(
   messages: Message[],
@@ -29,7 +30,7 @@ export function findPrecedingUserLabel(
       const textBlock = merged[i].blocks.find((b) => b.type === "text");
       if (textBlock && "content" in textBlock) {
         const text = textBlock.content;
-        return text.length > 30 ? text.slice(0, 30) + "..." : text;
+        return truncate(text, 30);
       }
     }
   }

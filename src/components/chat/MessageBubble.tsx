@@ -12,6 +12,7 @@ import { MarkdownContent } from "./MarkdownContent";
 import { ToolCallCard } from "./ToolCallCard";
 import { PlanApprovalCard } from "./PlanApprovalCard";
 import { AskUserQuestionCard } from "./AskUserQuestionCard";
+import { SubagentCallCard } from "./SubagentCallCard";
 import { useT } from "../../i18n";
 import type { AskUserQuestion } from "../../store/interactive";
 import type {
@@ -168,6 +169,9 @@ export const MessageBubble = memo(function MessageBubble({
                 result={block.result}
               />
             );
+          }
+          if (block.toolName === "dispatch_subagent") {
+            return <SubagentCallCard key={block.id} {...block} />;
           }
           return <ToolCallCard key={block.id} {...block} />;
         }

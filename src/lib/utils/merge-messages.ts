@@ -7,6 +7,7 @@ import type {
   ToolBlock,
 } from "../../types";
 import { getT } from "../../i18n";
+import { truncate } from "./truncate";
 
 /** Extract plain text from message content (string or multi-part array),
  *  excluding file attachment parts (prefixed with [File: ...]) */
@@ -161,6 +162,16 @@ export function mergeMessages(messages: Message[]): MergedMessage[] {
                 title = `${t.tool.names[toolName]}: ${args.packageName}`;
               } else if (args.urls) {
                 title = `${t.tool.found}${(args.urls as string[])?.length ?? 0} ${t.tool.pages}`;
+              } else if (tc.function.name === "dispatch_subagent") {
+                const subName =
+                  typeof args.subagent === "string" ? args.subagent : "";
+                const subTask =
+                  typeof args.task === "string" ? truncate(args.task, 60) : "";
+                const subDisplay =
+                  t.subagent.names[subName as keyof typeof t.subagent.names] ??
+                  subName ??
+                  "subagent";
+                title = subTask ? `${subDisplay}: ${subTask}` : subDisplay;
               }
 
               otherBlocks.push({

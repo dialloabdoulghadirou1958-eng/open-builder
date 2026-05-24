@@ -3,6 +3,7 @@ import type {
   ProjectFiles,
   FileChange,
 } from "../ai/generator-types";
+import { truncate } from "../utils/truncate";
 
 export interface FsToolResult {
   result: string;
@@ -123,8 +124,7 @@ export function fsPatchFile(
         content.slice(0, idx) + replace + content.slice(idx + search.length);
       log.push(`patch #${i + 1}: applied`);
     } else {
-      const preview = search.length > 60 ? search.slice(0, 60) + "…" : search;
-      log.push(`patch #${i + 1}: not found — "${preview}"`);
+      log.push(`patch #${i + 1}: not found — "${truncate(search, 60)}"`);
     }
   }
 

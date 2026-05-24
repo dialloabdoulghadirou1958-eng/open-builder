@@ -19,6 +19,7 @@ import {
   createMemoryToolHandler,
   type MemoryDeps,
 } from "./memory";
+import { DISPATCH_SUBAGENT_TOOL } from "./subagent-tool";
 import { getBuiltinSearchConfig } from "../ai/provider";
 import type { ApiType } from "../ai/provider";
 import type {
@@ -132,6 +133,7 @@ export function buildToolHandlers(
     ...(features.assetSearch ? ASSET_SEARCH_TOOLS : {}),
     ...NPM_SEARCH_TOOLS,
     ...MEMORY_TOOLS,
+    ...DISPATCH_SUBAGENT_TOOL,
   };
 
   return { customToolSet, combinedToolHandler, providerToolNames };

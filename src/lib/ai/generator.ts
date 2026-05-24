@@ -71,6 +71,7 @@ export class WebAppGenerator {
   private readonly askUserQuestion?: GeneratorOptions["askUserQuestion"];
   private readonly requestPlanApproval?: GeneratorOptions["requestPlanApproval"];
   private readonly onPlanApproved?: GeneratorOptions["onPlanApproved"];
+  private readonly dispatchSubagent?: GeneratorOptions["dispatchSubagent"];
   private systemPromptSuffix: string = "";
 
   constructor(options: GeneratorOptions, events: GeneratorEvents = {}) {
@@ -94,6 +95,7 @@ export class WebAppGenerator {
     this.askUserQuestion = options.askUserQuestion;
     this.requestPlanApproval = options.requestPlanApproval;
     this.onPlanApproved = options.onPlanApproved;
+    this.dispatchSubagent = options.dispatchSubagent;
 
     this.files = { ...(options.initialFiles ?? {}) };
     this.messages = [];
@@ -203,7 +205,20 @@ export class WebAppGenerator {
           break;
         }
 
-        for (const toolCall of assistantMsg.tool_calls) {
+        // Split dispatch_subagent calls out — they run in parallel after the
+        // regular sequential calls finish. Read-only subagents share file
+        // snapshots, so parallel execution is safe.
+        const regularCalls: ToolCall[] = [];
+        const dispatchCalls: ToolCall[] = [];
+        for (const tc of assistantMsg.tool_calls) {
+          if (tc.function.name === "dispatch_subagent") {
+            dispatchCalls.push(tc);
+          } else {
+            regularCalls.push(tc);
+          }
+        }
+
+        for (const toolCall of regularCalls) {
           if (this.providerToolNames.has(toolCall.function.name)) {
             continue;
           }
@@ -228,6 +243,7 @@ export class WebAppGenerator {
               toolCall.function.name,
               {},
               this.messages[this.messages.length - 1].content as string,
+              toolCall.id,
             );
             continue;
           }
@@ -242,6 +258,34 @@ export class WebAppGenerator {
 
           if (changes.length > 0) {
             this.events.onFileChange?.(this.getFiles(), changes);
+          }
+        }
+
+        if (dispatchCalls.length > 0) {
+          const MAX_PARALLEL = 3;
+          const accepted = dispatchCalls.slice(0, MAX_PARALLEL);
+          const rejected = dispatchCalls.slice(MAX_PARALLEL);
+
+          const results = await Promise.all(
+            accepted.map((tc) => this.executeTool(tc)),
+          );
+
+          for (let i = 0; i < accepted.length; i++) {
+            this.messages.push({
+              role: "tool",
+              tool_call_id: accepted[i].id,
+              content: results[i].result,
+            });
+          }
+
+          for (const tc of rejected) {
+            const msg = `Too many parallel subagent dispatches in one turn (limit: ${MAX_PARALLEL}). Reissue this call in the next turn.`;
+            this.messages.push({
+              role: "tool",
+              tool_call_id: tc.id,
+              content: msg,
+            });
+            this.events.onToolResult?.(tc.function.name, {}, msg, tc.id);
           }
         }
 
@@ -450,7 +494,7 @@ export class WebAppGenerator {
       args = JSON.parse(toolCall.function.arguments);
     } catch {
       const errMsg = `Error: failed to parse arguments for "${name}"`;
-      this.events.onToolResult?.(name, null, errMsg);
+      this.events.onToolResult?.(name, null, errMsg, toolCall.id);
       return { result: errMsg, changes: [] };
     }
 
@@ -469,7 +513,7 @@ export class WebAppGenerator {
       if (fsOutcome.dependenciesChanged) {
         this.events.onDependenciesChange?.(this.getFiles());
       }
-      this.events.onToolResult?.(name, args, fsOutcome.result);
+      this.events.onToolResult?.(name, args, fsOutcome.result, toolCall.id);
       return { result: fsOutcome.result, changes: fsOutcome.changes };
     }
 
@@ -491,6 +535,38 @@ export class WebAppGenerator {
         } catch (err: any) {
           if (err?.name === "AbortError") throw err;
           result = `User question was cancelled: ${err?.message ?? "unknown"}`;
+        }
+        break;
+      }
+
+      case "dispatch_subagent": {
+        if (!this.dispatchSubagent) {
+          result =
+            "dispatch_subagent is not available in this session — handle the task yourself.";
+          break;
+        }
+        const subagentName =
+          typeof args?.subagent === "string" ? args.subagent : "";
+        const subagentTask =
+          typeof args?.task === "string" ? args.task : "";
+        if (!subagentName || !subagentTask) {
+          result =
+            'Error: dispatch_subagent requires both "subagent" (name) and "task" (string) arguments.';
+          break;
+        }
+        try {
+          result = await this.dispatchSubagent(
+            subagentName,
+            subagentTask,
+            this.files,
+            this.ctrl!.signal,
+            toolCall.id,
+          );
+        } catch (err) {
+          if ((err as { name?: string })?.name === "AbortError") throw err;
+          const message =
+            (err as { message?: string })?.message ?? "Unknown error";
+          result = `Error dispatching subagent "${subagentName}": ${message}`;
         }
         break;
       }
@@ -536,7 +612,7 @@ export class WebAppGenerator {
         }
     }
 
-    this.events.onToolResult?.(name, args, result);
+    this.events.onToolResult?.(name, args, result, toolCall.id);
     return { result, changes: [] };
   }
 }

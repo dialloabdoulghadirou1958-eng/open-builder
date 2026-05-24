@@ -6,10 +6,13 @@ import { createOpenAIGenerator } from "../lib/ai/client";
 import { useConversationStore } from "../store/conversation";
 import { useSettingsStore } from "../store/settings";
 import { useInteractiveStore } from "../store/interactive";
+import { useSubagentStore } from "../store/subagent";
 import { BUILTIN_TOOLS } from "../lib/ai/tools-schema";
+import { filterToolSet } from "../lib/tools/tool-set-utils";
 import { useSandpackStore } from "../store/sandpack";
 import { buildMemoryPromptSection } from "../lib/tools/memory";
 import { buildToolHandlers } from "../lib/tools/handler-factory";
+import { createSubagentDispatcher } from "../lib/ai/subagents/runner";
 import { runCompress } from "../lib/utils/run-compress";
 import { filterMemoryMessages } from "../lib/utils/memory-filter";
 import { createSnapshotForCurrentState } from "../lib/utils/snapshot-helpers";
@@ -132,11 +135,10 @@ After the user approves the plan, exit_plan_mode will return success and the wri
 
 function buildToolSet(args: { custom: ToolSet; planMode: boolean }): ToolSet {
   const { custom, planMode } = args;
-  const builtinEntries = Object.entries(BUILTIN_TOOLS).filter(([name]) => {
-    if (planMode) return !WRITE_BUILTIN_TOOLS.has(name);
-    return name !== "exit_plan_mode";
-  });
-  return { ...Object.fromEntries(builtinEntries), ...custom };
+  const builtins = filterToolSet(BUILTIN_TOOLS, (name) =>
+    planMode ? !WRITE_BUILTIN_TOOLS.has(name) : name !== "exit_plan_mode",
+  );
+  return { ...builtins, ...custom };
 }
 
 interface UseGeneratorOptions {
@@ -265,6 +267,7 @@ export function useGenerator({
       generatorRef.current = null;
       prevActiveIdRef.current = activeId;
       useInteractiveStore.getState().rejectAllPending("conversation switched");
+      useSubagentStore.setState({ progress: {} });
     }
 
     const nextConfig: GeneratorConfigSnapshot = {
@@ -333,6 +336,17 @@ export function useGenerator({
               useMemoryStore.getState().processBatch(ops),
           },
         });
+
+      const dispatchSubagent = createSubagentDispatcher({
+        getApiConfig: () => ({
+          apiType: currentApiType,
+          apiBaseUrl: currentApiBaseUrl,
+          apiKey: currentApiKey,
+          model: currentModel,
+        }),
+        getCustomToolSet: () => customToolSet,
+        getCombinedToolHandler: () => combinedToolHandler,
+      });
 
       const initialPlanMode =
         useSettingsStore.getState().system.planModeEnabled;
@@ -649,6 +663,7 @@ export function useGenerator({
               planMode: false,
             });
           },
+          dispatchSubagent,
         },
       );
 
