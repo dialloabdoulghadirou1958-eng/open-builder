@@ -11,6 +11,9 @@ fn greet(name: &str) -> String {
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(sse::SseState::default())
         .invoke_handler(tauri::generate_handler![
             greet,

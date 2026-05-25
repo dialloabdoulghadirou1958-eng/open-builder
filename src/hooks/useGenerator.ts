@@ -29,6 +29,9 @@ import type {
 import { ServerServiceSettings, SERVER_ENGINE } from "../store/settings";
 import { useAuthStore } from "../store/auth";
 import { useMemoryStore } from "../store/memory";
+import { useSkillsStore } from "../store/skills";
+import { buildSkillsPromptSection } from "../lib/skills/tool-handler";
+import { skillActiveContext } from "../lib/skills/active-context";
 import { getMohuaApiUrl } from "../lib/services/mohua-api";
 import { useFileOperations } from "./useFileOperations";
 import { useTitleAndCompression } from "./useTitleAndCompression";
@@ -696,8 +699,13 @@ export function useGenerator({
       const memorySuffix = buildMemoryPromptSection(
         useMemoryStore.getState().getAll(),
       );
+      const skillsSuffix = buildSkillsPromptSection(
+        useSkillsStore.getState().getEnabledSkills(),
+      );
       generator.setSystemPromptSuffix(
-        memorySuffix + (planMode ? PLAN_MODE_SYSTEM_SUFFIX : ""),
+        memorySuffix +
+          skillsSuffix +
+          (planMode ? PLAN_MODE_SYSTEM_SUFFIX : ""),
       );
     },
     [],
@@ -706,6 +714,7 @@ export function useGenerator({
   const generate = useCallback(
     async (prompt: string, attachments?: Attachment[]) => {
       setIsGenerating(true);
+      skillActiveContext.clear();
       await useAuthStore.getState().getValidTokenAsync();
 
       let content: string | ContentPart[];

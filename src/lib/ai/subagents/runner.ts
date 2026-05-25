@@ -8,7 +8,11 @@ import type {
 import { BUILTIN_TOOLS } from "../tools-schema";
 import type { ApiType } from "../provider";
 import { useSubagentStore } from "../../../store/subagent";
+import { useSkillsStore } from "../../../store/skills";
 import { filterToolSet } from "../../tools/tool-set-utils";
+import { buildSkillsPromptSection } from "../../skills/tool-handler";
+import { SKILL_TOOL_NAME_SET } from "../../skills/tools";
+import { isSkillsAvailable } from "../../skills/fs";
 import {
   SUBAGENT_BUILTIN_TOOL_NAMES,
   getSubagentByName,
@@ -45,11 +49,19 @@ export interface CreateDispatcherOpts {
   ) => Promise<string>;
 }
 
+function effectiveSubagentWhitelist(def: SubagentDefinition): Set<string> {
+  const whitelist = new Set(def.toolWhitelist);
+  if (isSkillsAvailable()) {
+    for (const name of SKILL_TOOL_NAME_SET) whitelist.add(name);
+  }
+  return whitelist;
+}
+
 function buildSubagentToolSet(
   def: SubagentDefinition,
   parentCustomToolSet: ToolSet,
 ): ToolSet {
-  const whitelist = new Set(def.toolWhitelist);
+  const whitelist = effectiveSubagentWhitelist(def);
   const builtins = filterToolSet(
     BUILTIN_TOOLS,
     (name) => SUBAGENT_BUILTIN_TOOL_NAMES.has(name) && whitelist.has(name),
@@ -121,13 +133,19 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string> {
     return JSON.stringify(aborted);
   }
 
-  const whitelist = new Set(def.toolWhitelist);
+  const whitelist = effectiveSubagentWhitelist(def);
   const toolSet = buildSubagentToolSet(def, opts.parentCustomToolSet);
   const wrappedHandler = wrapHandlerWithWhitelist(
     opts.parentCombinedToolHandler,
     whitelist,
   );
   const apiConfig = resolveApiConfig(opts.parentApiConfig, def.modelOverride);
+
+  const enabledSkills = isSkillsAvailable()
+    ? useSkillsStore.getState().getEnabledSkills()
+    : [];
+  const skillsSuffix = buildSkillsPromptSection(enabledSkills);
+  const effectiveSystemPrompt = def.systemPrompt + skillsSuffix;
 
   const events: GeneratorEvents = {
     onText: (delta) => {
@@ -151,7 +169,7 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string> {
     apiBaseUrl: apiConfig.apiBaseUrl,
     apiKey: apiConfig.apiKey,
     model: apiConfig.model,
-    systemPrompt: def.systemPrompt,
+    systemPrompt: effectiveSystemPrompt,
     initialFiles: opts.files,
     maxIterations: def.maxIterations ?? 10,
     stream: true,

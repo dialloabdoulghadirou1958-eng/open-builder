@@ -9,7 +9,6 @@ export const SLASH_COMMANDS = [
   "review",
   "continue",
   "retry",
-  "plan",
 ] as const;
 
 export type SlashCommand = (typeof SLASH_COMMANDS)[number];

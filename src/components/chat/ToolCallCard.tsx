@@ -12,6 +12,12 @@ import {
   Terminal,
   Image,
   Package,
+  Blocks,
+  BookOpen,
+  Play,
+  Check,
+  X,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +39,9 @@ const TOOL_ICONS: Record<string, React.ReactNode> = {
   search_npm_packages: <Package size={14} className="text-blue-500" />,
   get_npm_package_detail: <Package size={14} className="text-blue-500" />,
   get_console_logs: <Terminal size={14} className="text-sky-500" />,
+  list_skills: <Blocks size={14} className="text-indigo-500" />,
+  read_skill: <BookOpen size={14} className="text-indigo-500" />,
+  execute_skill_script: <Play size={14} className="text-indigo-500" />,
 };
 
 function countSearchResults(result: string): {
@@ -120,9 +129,8 @@ export const ToolCallCard = memo(function ToolCallCard({
 }: ToolCallCardProps) {
   const t = useT();
   const [expanded, setExpanded] = useState(false);
-  const isSuccess = result && (result.startsWith("OK") || result.includes("✓"));
-  const isError =
-    result && (result.startsWith("Error") || result.includes("✗"));
+  const isSuccess = result?.startsWith("OK") ?? false;
+  const isError = result?.startsWith("Error") ?? false;
 
   const searchResultCount =
     toolName === "web_search" && result ? countSearchResults(result).count : 0;
@@ -249,17 +257,22 @@ export const ToolCallCard = memo(function ToolCallCard({
             ) : (
               <div className="space-y-1">
                 {consoleIssues.map((issue, i) => (
-                  <p
+                  <div
                     key={i}
                     className={cn(
-                      "text-xs font-mono whitespace-pre-wrap leading-relaxed",
+                      "flex items-start gap-1.5 text-xs font-mono whitespace-pre-wrap leading-relaxed",
                       issue.level === "error"
                         ? "text-red-500"
                         : "text-yellow-600",
                     )}
                   >
-                    {issue.level === "error" ? "✗" : "⚠"} {issue.text}
-                  </p>
+                    {issue.level === "error" ? (
+                      <X size={12} className="mt-0.5 shrink-0" />
+                    ) : (
+                      <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                    )}
+                    <span>{issue.text}</span>
+                  </div>
                 ))}
               </div>
             )
@@ -290,9 +303,17 @@ export const ToolCallCard = memo(function ToolCallCard({
           ) : toolName === "web_reader" ? (
             <div className="space-y-0.5">
               {readerUrls.map(({ url, ok }) => (
-                <p key={url} className="text-xs text-muted-foreground truncate">
-                  {ok ? "✓" : "✗"} {url}
-                </p>
+                <div
+                  key={url}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                >
+                  {ok ? (
+                    <Check size={12} className="text-green-500 shrink-0" />
+                  ) : (
+                    <X size={12} className="text-red-500 shrink-0" />
+                  )}
+                  <span className="truncate">{url}</span>
+                </div>
               ))}
             </div>
           ) : (

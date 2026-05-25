@@ -1,6 +1,4 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { SendHorizonal, Square, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useT } from "../../i18n";
 import { useSettingsStore } from "../../store/settings";
@@ -12,7 +10,9 @@ import {
   type SlashCommand,
 } from "./chat-input/SlashCommandMenu";
 import { AttachmentPreview } from "./chat-input/AttachmentPreview";
-import { MediaControls } from "./chat-input/MediaControls";
+import { ChatInputToolbar } from "./chat-input/ChatInputToolbar";
+import { SkillsPanel } from "../skills/SkillsPanel";
+import { isSkillsAvailable } from "../../lib/skills/fs";
 
 const NEEDS_MESSAGES = new Set([
   "fork",
@@ -76,10 +76,12 @@ export function ChatInput({
 }: ChatInputProps) {
   const t = useT();
   const planModeEnabled = useSettingsStore((s) => s.system.planModeEnabled);
-  const togglePlanMode = useSettingsStore((s) => s.togglePlanMode);
+  const setPlanMode = useSettingsStore((s) => s.setPlanMode);
   const [isHoveringStop, setIsHoveringStop] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  const skillsAvailable = isSkillsAvailable();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -328,72 +330,43 @@ export function ChatInput({
             onChange={handleFileSelect}
           />
 
-          {!isGenerating && (
-            <MediaControls
+          <div className="border border-input rounded-lg bg-background focus-within:ring-1 focus-within:ring-ring overflow-hidden">
+            <Textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => {
+                onChange(e.target.value);
+                autoResize();
+              }}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              placeholder={t.chat.placeholder}
+              rows={2}
+              disabled={isGenerating}
+              className="border-0 shadow-none focus-visible:ring-0 focus-visible:border-0 resize-none overflow-y-auto bg-transparent px-3 py-2 md:text-base min-h-0 field-sizing-fixed"
+              style={{ maxHeight: 200 }}
+            />
+            <ChatInputToolbar
               onPickImage={() => imageInputRef.current?.click()}
               onPickFile={() => fileInputRef.current?.click()}
+              onManageSkills={
+                skillsAvailable ? () => setSkillsOpen(true) : undefined
+              }
+              skillsAvailable={skillsAvailable}
               planModeEnabled={planModeEnabled}
-              togglePlanMode={togglePlanMode}
+              setPlanMode={setPlanMode}
+              isGenerating={isGenerating}
+              hasContent={Boolean(hasContent)}
+              isHoveringStop={isHoveringStop}
+              onHoveringStopChange={setIsHoveringStop}
+              onStop={onStop}
             />
-          )}
-
-          <Textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => {
-              onChange(e.target.value);
-              autoResize();
-            }}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            placeholder={
-              planModeEnabled
-                ? `[${t.chat.planMode.badge}] ${t.chat.placeholder}`
-                : t.chat.placeholder
-            }
-            rows={1}
-            disabled={isGenerating}
-            className="pl-17 pr-12 md:text-base resize-none overflow-y-auto min-h-0"
-            style={{ maxHeight: 200 }}
-          />
-
-          <div className="absolute right-1.5 bottom-1.5 flex items-center gap-1">
-            {isGenerating ? (
-              <Button
-                type="button"
-                size="icon"
-                onClick={onStop}
-                variant={isHoveringStop ? "destructive" : "secondary"}
-                className="w-7 h-7 transition-all duration-200 rounded-full"
-                title={t.chat.stopGeneration}
-                onMouseEnter={() => setIsHoveringStop(true)}
-                onMouseLeave={() => setIsHoveringStop(false)}
-              >
-                <span
-                  className={`absolute inset-0 flex items-center justify-center transition-all duration-200 ${isHoveringStop ? "opacity-0 scale-50" : "opacity-100 scale-100"}`}
-                >
-                  <Loader2 size={16} className="animate-spin" />
-                </span>
-                <span
-                  className={`absolute inset-0 flex items-center justify-center transition-all duration-200 ${isHoveringStop ? "opacity-100 scale-100" : "opacity-0 scale-50"}`}
-                >
-                  <Square size={14} fill="currentColor" />
-                </span>
-              </Button>
-            ) : (
-              <Button
-                type="submit"
-                size="icon"
-                disabled={!hasContent}
-                className="w-7 h-7"
-                title={t.chat.send}
-              >
-                <SendHorizonal size={16} />
-              </Button>
-            )}
           </div>
         </div>
       </form>
+      {skillsAvailable && (
+        <SkillsPanel open={skillsOpen} onClose={() => setSkillsOpen(false)} />
+      )}
     </div>
   );
 }

@@ -17,7 +17,6 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import { useRollback } from "../hooks/useRollback";
 import { findAssistantGroupEnd } from "../lib/utils/message-navigation";
 import { useConversationStore } from "../store/conversation";
-import { useSettingsStore } from "../store/settings";
 import { useSnapshotStore } from "../store/snapshot";
 import { useT } from "../i18n";
 import type {
@@ -126,9 +125,6 @@ export function ChatInterface({
           break;
         case "retry":
           onRetry();
-          break;
-        case "plan":
-          useSettingsStore.getState().togglePlanMode();
           break;
       }
     },

@@ -3,24 +3,11 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import localforage from "localforage";
 import { createPatch, applyPatch } from "diff";
 import type { ProjectFiles, ProjectSnapshot } from "../types";
+import { createLocalforageStorage } from "./utils/localforage-storage";
 
-// Separate localforage instance for snapshots
-const snapshotForage = localforage.createInstance({
-  name: "open-builder-snapshots",
-});
-
-const snapshotStorage = {
-  getItem: async (name: string) => {
-    const value = await snapshotForage.getItem<string>(name);
-    return value ?? null;
-  },
-  setItem: async (name: string, value: string) => {
-    await snapshotForage.setItem(name, value);
-  },
-  removeItem: async (name: string) => {
-    await snapshotForage.removeItem(name);
-  },
-};
+const snapshotStorage = createLocalforageStorage(
+  localforage.createInstance({ name: "open-builder-snapshots" }),
+);
 
 interface SnapshotState {
   snapshots: Record<string, ProjectSnapshot[]>;

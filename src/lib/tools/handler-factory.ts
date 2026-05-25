@@ -20,6 +20,12 @@ import {
   type MemoryDeps,
 } from "./memory";
 import { DISPATCH_SUBAGENT_TOOL } from "./subagent-tool";
+import { SKILL_TOOLS, SKILL_TOOL_NAME_SET } from "../skills/tools";
+import { createSkillToolHandler } from "../skills/tool-handler";
+import { getSkillRegistry } from "../skills/instance";
+import { scriptExecutor } from "../skills/script-executor";
+import { isSkillsAvailable } from "../skills/fs";
+import { skillActiveContext } from "../skills/active-context";
 import { getBuiltinSearchConfig } from "../ai/provider";
 import type { ApiType } from "../ai/provider";
 import type {
@@ -93,7 +99,22 @@ export function buildToolHandlers(
     : undefined;
   const memoryHandler = createMemoryToolHandler(memoryDeps);
   const npmSearchHandler = createNpmSearchToolHandler();
-
+  const skillsAvailable = isSkillsAvailable();
+  const skillToolHandler = skillsAvailable
+    ? createSkillToolHandler({
+        getRegistry: () => getSkillRegistry(),
+        getExecutor: async () => scriptExecutor,
+        onActivate: (skill) => {
+          if (!skill.allowedTools || skill.allowedTools.length === 0) return;
+          skillActiveContext.activate({
+            skillId: skill.id,
+            skillName: skill.name,
+            allowedTools: skill.allowedTools,
+            activatedAt: Date.now(),
+          });
+        },
+      })
+    : null;
   const combinedToolHandler = async (
     name: string,
     handlerArgs: unknown,
@@ -112,6 +133,9 @@ export function buildToolHandlers(
     }
     if (name === MEMORY_TOOL_NAME) {
       return memoryHandler(name, handlerArgs);
+    }
+    if (skillToolHandler && SKILL_TOOL_NAME_SET.has(name)) {
+      return skillToolHandler(name, handlerArgs);
     }
     if (name === "search_npm_packages" || name === "get_npm_package_detail") {
       return npmSearchHandler(name, handlerArgs);
@@ -134,6 +158,7 @@ export function buildToolHandlers(
     ...NPM_SEARCH_TOOLS,
     ...MEMORY_TOOLS,
     ...DISPATCH_SUBAGENT_TOOL,
+    ...(skillsAvailable ? SKILL_TOOLS : {}),
   };
 
   return { customToolSet, combinedToolHandler, providerToolNames };

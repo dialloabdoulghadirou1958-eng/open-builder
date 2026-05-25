@@ -13,6 +13,10 @@ import { BUILTIN_TOOLS } from "./tools-schema";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt";
 import { dispatchFsTool } from "../tools/fs-tools";
 import { formatAskUserAnswers } from "../utils/tool-result";
+import {
+  ALWAYS_ALLOWED_TOOL_NAMES,
+  skillActiveContext,
+} from "../skills/active-context";
 import type {
   Message,
   ToolCall,
@@ -495,6 +499,20 @@ export class WebAppGenerator {
     } catch {
       const errMsg = `Error: failed to parse arguments for "${name}"`;
       this.events.onToolResult?.(name, null, errMsg, toolCall.id);
+      return { result: errMsg, changes: [] };
+    }
+
+    const activeCtx = skillActiveContext.get();
+    if (
+      activeCtx &&
+      !ALWAYS_ALLOWED_TOOL_NAMES.has(name) &&
+      !activeCtx.allowedTools.includes(name)
+    ) {
+      const errMsg =
+        `Tool "${name}" is not in the active skill "${activeCtx.skillName}"'s ` +
+        `allowed-tools. Available now: ${activeCtx.allowedTools.join(", ")}. ` +
+        `Work within these tools, or call read_skill on a different skill, or wait for the next user message to clear the restriction.`;
+      this.events.onToolResult?.(name, args, errMsg, toolCall.id);
       return { result: errMsg, changes: [] };
     }
 

@@ -20,18 +20,18 @@ export const systemDefaults: SystemSettings = {
 export interface SystemSlice {
   system: SystemSettings;
   setSystem: (settings: SystemSettings) => void;
-  togglePlanMode: () => void;
+  setPlanMode: (enabled: boolean) => void;
 }
 
 export const createSystemSlice: StateCreator<SystemSlice, [], [], SystemSlice> =
   (set) => ({
     system: systemDefaults,
     setSystem: (settings) => set({ system: settings }),
-    togglePlanMode: () =>
+    setPlanMode: (enabled) =>
       set((state) => ({
         system: {
           ...state.system,
-          planModeEnabled: !state.system.planModeEnabled,
+          planModeEnabled: enabled,
         },
       })),
   });

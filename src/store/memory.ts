@@ -2,24 +2,11 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import localforage from "localforage";
 import type { MemoryItem, MemoryOperation } from "../types";
+import { createLocalforageStorage } from "./utils/localforage-storage";
 
-// Separate localforage instance for memories
-const memoryForage = localforage.createInstance({
-  name: "open-builder-memories",
-});
-
-const memoryStorage = {
-  getItem: async (name: string) => {
-    const value = await memoryForage.getItem<string>(name);
-    return value ?? null;
-  },
-  setItem: async (name: string, value: string) => {
-    await memoryForage.setItem(name, value);
-  },
-  removeItem: async (name: string) => {
-    await memoryForage.removeItem(name);
-  },
-};
+const memoryStorage = createLocalforageStorage(
+  localforage.createInstance({ name: "open-builder-memories" }),
+);
 
 interface MemoryState {
   memories: MemoryItem[];
