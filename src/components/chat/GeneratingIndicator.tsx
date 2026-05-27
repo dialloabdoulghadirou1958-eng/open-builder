@@ -1,25 +1,10 @@
 import { useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
-
-const VERBS = [
-  "Thinking",
-  "Planning",
-  "Coding",
-  "Building",
-  "Analyzing",
-  "Designing",
-  "Refactoring",
-  "Optimizing",
-  "Debugging",
-  "Compiling",
-  "Rendering",
-  "Structuring",
-  "Generating",
-  "Composing",
-  "Crafting",
-];
+import { useT } from "../../i18n";
 
 export function GeneratingIndicator() {
+  const t = useT();
+  const verbs = t.message.generatingVerbs;
   const [index, setIndex] = useState(0);
   const [fade, setFade] = useState(true);
 
@@ -27,12 +12,12 @@ export function GeneratingIndicator() {
     const interval = setInterval(() => {
       setFade(false);
       setTimeout(() => {
-        setIndex(Math.floor(Math.random() * VERBS.length));
+        setIndex(Math.floor(Math.random() * verbs.length));
         setFade(true);
       }, 200);
     }, 2500);
     return () => clearInterval(interval);
-  }, []);
+  }, [verbs.length]);
 
   return (
     <div className="flex items-center gap-2 text-sm text-muted-foreground py-1">
@@ -41,7 +26,7 @@ export function GeneratingIndicator() {
         className="transition-opacity duration-200"
         style={{ opacity: fade ? 1 : 0 }}
       >
-        {VERBS[index]}...
+        {verbs[index]}...
       </span>
     </div>
   );

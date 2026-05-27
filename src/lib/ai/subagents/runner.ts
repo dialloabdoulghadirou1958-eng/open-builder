@@ -1,6 +1,7 @@
 import type { ToolSet } from "ai";
 import { WebAppGenerator } from "../generator";
 import type {
+  DispatchSubagentResult,
   GeneratorEvents,
   GeneratorOptions,
   ProjectFiles,
@@ -49,8 +50,26 @@ export interface CreateDispatcherOpts {
   ) => Promise<string>;
 }
 
-function effectiveSubagentWhitelist(def: SubagentDefinition): Set<string> {
+/** Tool names that mutate project files. Stripped from any subagent whose
+ *  writePolicy is "readonly" (the default). */
+const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "init_project",
+  "manage_dependencies",
+  "write_file",
+  "patch_file",
+  "delete_file",
+]);
+
+type WritePolicy = "readonly" | "fullWrite";
+
+function effectiveSubagentWhitelist(
+  def: SubagentDefinition,
+  policy: WritePolicy,
+): Set<string> {
   const whitelist = new Set(def.toolWhitelist);
+  if (policy === "readonly") {
+    for (const name of WRITE_TOOL_NAMES) whitelist.delete(name);
+  }
   if (isSkillsAvailable()) {
     for (const name of SKILL_TOOL_NAME_SET) whitelist.add(name);
   }
@@ -58,10 +77,9 @@ function effectiveSubagentWhitelist(def: SubagentDefinition): Set<string> {
 }
 
 function buildSubagentToolSet(
-  def: SubagentDefinition,
+  whitelist: ReadonlySet<string>,
   parentCustomToolSet: ToolSet,
 ): ToolSet {
-  const whitelist = effectiveSubagentWhitelist(def);
   const builtins = filterToolSet(
     BUILTIN_TOOLS,
     (name) => SUBAGENT_BUILTIN_TOOL_NAMES.has(name) && whitelist.has(name),
@@ -97,7 +115,9 @@ function resolveApiConfig(
   };
 }
 
-export async function runSubagent(opts: RunSubagentOpts): Promise<string> {
+export async function runSubagent(
+  opts: RunSubagentOpts,
+): Promise<DispatchSubagentResult> {
   const def = getSubagentByName(opts.name);
   const store = useSubagentStore.getState();
 
@@ -112,7 +132,7 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string> {
       durationMs: 0,
       error: `Unknown subagent "${opts.name}". Pick one of the listed names.`,
     };
-    return JSON.stringify(failure);
+    return { text: JSON.stringify(failure) };
   }
 
   store.init(opts.toolCallId, def.name, opts.task);
@@ -130,11 +150,12 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string> {
       durationMs: 0,
       error: "Aborted before start",
     };
-    return JSON.stringify(aborted);
+    return { text: JSON.stringify(aborted) };
   }
 
-  const whitelist = effectiveSubagentWhitelist(def);
-  const toolSet = buildSubagentToolSet(def, opts.parentCustomToolSet);
+  const policy: WritePolicy = def.writePolicy ?? "readonly";
+  const whitelist = effectiveSubagentWhitelist(def, policy);
+  const toolSet = buildSubagentToolSet(whitelist, opts.parentCustomToolSet);
   const wrappedHandler = wrapHandlerWithWhitelist(
     opts.parentCombinedToolHandler,
     whitelist,
@@ -205,7 +226,7 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string> {
         durationMs: Date.now() - startedAt,
         error: "Aborted",
       };
-      return JSON.stringify(aborted);
+      return { text: JSON.stringify(aborted) };
     }
 
     useSubagentStore.getState().markStatus(opts.toolCallId, "done");
@@ -218,7 +239,12 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string> {
       events: eventsSnapshot,
       durationMs: Date.now() - startedAt,
     };
-    return JSON.stringify(result);
+    return {
+      text: JSON.stringify(result),
+      // Only propagate files for write-capable subagents. Readonly subagents'
+      // inner files cannot diverge from the parent's, so skip the work.
+      files: policy === "fullWrite" ? inner.getFiles() : undefined,
+    };
   } catch (err) {
     const isAbort =
       (err as { name?: string })?.name === "AbortError" || opts.signal.aborted;
@@ -242,7 +268,7 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string> {
       durationMs: Date.now() - startedAt,
       error: isAbort ? "Aborted" : message,
     };
-    return JSON.stringify(failure);
+    return { text: JSON.stringify(failure) };
   } finally {
     opts.signal.removeEventListener("abort", onAbort);
   }

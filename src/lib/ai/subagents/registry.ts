@@ -26,6 +26,7 @@ export const SUBAGENT_REGISTRY: SubagentDefinition[] = [
       "- Do NOT propose code changes. Describe what exists, not what should exist.\n" +
       "- Keep the final summary concise but information-dense. Reference paths like `src/foo/bar.ts:42` so the parent agent can navigate quickly.",
     toolWhitelist: ["list_files", "read_files", "search_in_files"],
+    writePolicy: "readonly",
   },
   {
     name: "code-reviewer",
@@ -46,6 +47,7 @@ export const SUBAGENT_REGISTRY: SubagentDefinition[] = [
       "- Be specific. \"Could be improved\" without naming what is improvement is useless.\n" +
       "- If the code is genuinely fine, say so plainly. Do not invent issues to fill the report.",
     toolWhitelist: ["list_files", "read_files", "search_in_files"],
+    writePolicy: "readonly",
   },
   {
     name: "dependency-advisor",
@@ -70,6 +72,7 @@ export const SUBAGENT_REGISTRY: SubagentDefinition[] = [
       "list_files",
       "read_files",
     ],
+    writePolicy: "readonly",
   },
   {
     name: "bug-investigator",
@@ -96,6 +99,7 @@ export const SUBAGENT_REGISTRY: SubagentDefinition[] = [
       "search_in_files",
       "get_console_logs",
     ],
+    writePolicy: "readonly",
   },
   {
     name: "ui-critic",
@@ -117,6 +121,7 @@ export const SUBAGENT_REGISTRY: SubagentDefinition[] = [
       "- Be concrete. \"Could be more accessible\" is not a finding; \"Button at Foo.tsx:42 has no aria-label\" is.\n" +
       "- If the UI is genuinely well-built, say so plainly. Do not invent issues.",
     toolWhitelist: ["list_files", "read_files", "search_in_files"],
+    writePolicy: "readonly",
   },
 ];
 

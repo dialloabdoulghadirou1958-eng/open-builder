@@ -88,10 +88,13 @@ function getEffectiveAIConfig(
   };
 }
 
-const isErrorMessage = (m: Message) =>
-  m.role === "assistant" &&
-  typeof m.content === "string" &&
-  m.content.startsWith("⚠️");
+const isErrorMessage = (m: Message) => {
+  if (m.role !== "assistant") return false;
+  if (m.isError) return true;
+  // Backward-compat: legacy persisted error messages used a ⚠️ prefix
+  // before the structured flag existed.
+  return typeof m.content === "string" && m.content.startsWith("⚠️");
+};
 
 const removeErrorMessages = (prev: Message[]) =>
   prev.filter((m) => !isErrorMessage(m));
@@ -765,6 +768,7 @@ export function useGenerator({
             {
               role: "assistant",
               content: `⚠️ ${err?.message || "Unknown error"}`,
+              isError: true,
             },
           ]);
         }
@@ -849,6 +853,7 @@ export function useGenerator({
           {
             role: "assistant",
             content: `⚠️ ${err?.message || "Unknown error"}`,
+            isError: true,
           },
         ]);
       }
@@ -889,6 +894,7 @@ export function useGenerator({
           {
             role: "assistant",
             content: `⚠️ ${err?.message || "Unknown error"}`,
+            isError: true,
           },
         ]);
       }

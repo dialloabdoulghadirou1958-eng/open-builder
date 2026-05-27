@@ -132,11 +132,16 @@ export function getProviderModel(config: ProviderConfig): LanguageModel {
     }
   }
 
-  // 兼容类似 DeepSeek 会使用 <think> 标签的情况
-  return wrapLanguageModel({
-    model: lm,
-    middleware: extractReasoningMiddleware({ tagName: "think" }),
-  });
+  // openai / anthropic / google 都有专用的 reasoning 通道，AI SDK 已直接解析。
+  // 只为 openai-compatible 包装 <think> 提取中间件（兼容 DeepSeek 等会用 <think> 标签的厂商），
+  // 避免对其他 provider 造成无谓开销和误把代码注释中的 <think> 当作 reasoning。
+  if (apiType === "openai-compatible") {
+    return wrapLanguageModel({
+      model: lm,
+      middleware: extractReasoningMiddleware({ tagName: "think" }),
+    });
+  }
+  return lm;
 }
 
 // ─── Provider Options ────────────────────────────────────────────────────────

@@ -2,7 +2,6 @@ import {
   memo,
   useEffect,
   useRef,
-  useState,
   useCallback,
   isValidElement,
   Children,
@@ -14,6 +13,7 @@ import { Copy, Check } from "lucide-react";
 import lightCss from "highlight.js/styles/github.min.css?raw";
 import darkCss from "highlight.js/styles/github-dark.min.css?raw";
 import { useTheme } from "../../hooks/useTheme";
+import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 
 const HLJS_STYLE_ID = "hljs-theme";
 
@@ -53,16 +53,11 @@ function CodeBlockHeader({
   lang: string;
   preRef: React.RefObject<HTMLPreElement | null>;
 }) {
-  const [copied, setCopied] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [copied, copy] = useCopyToClipboard();
 
   const handleCopy = useCallback(() => {
-    const text = preRef.current?.textContent ?? "";
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setCopied(false), 1500);
-  }, [preRef]);
+    void copy(preRef.current?.textContent ?? "");
+  }, [copy, preRef]);
 
   return (
     <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/40">

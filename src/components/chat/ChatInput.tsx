@@ -94,8 +94,10 @@ export function ChatInput({
   const lastMsg = hasMessages ? messages[messages.length - 1] : null;
   const lastIsError =
     lastMsg?.role === "assistant" &&
-    typeof lastMsg.content === "string" &&
-    lastMsg.content.startsWith("⚠️");
+    (lastMsg.isError ||
+      // Backward-compat: legacy persisted error messages used a ⚠️ prefix.
+      (typeof lastMsg.content === "string" &&
+        lastMsg.content.startsWith("⚠️")));
 
   const filteredCmds = useMemo<SlashCommand[]>(() => {
     if (!slashMatch) return [];

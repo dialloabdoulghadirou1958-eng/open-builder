@@ -28,6 +28,10 @@ export interface Message {
   tool_calls?: ToolCall[];
   tool_call_id?: string;
   thinking?: string;
+  /** Marks an assistant message that was synthesized locally to report an error
+   *  (e.g. network failure). Consumers use this flag to render retry affordances
+   *  and filter the message out of subsequent requests. */
+  isError?: boolean;
 }
 
 /** Tool call (OpenAI function calling format) */
@@ -106,7 +110,17 @@ export interface GeneratorOptions {
     files: ProjectFiles,
     signal: AbortSignal,
     toolCallId: string,
-  ) => Promise<string>;
+  ) => Promise<DispatchSubagentResult>;
+}
+
+/** Result of a subagent dispatch.
+ *  `text` is the JSON-serialized SubagentToolResult that flows back into the
+ *  parent's tool_result message. `files` is set only when the subagent was
+ *  allowed to modify files; the parent generator overwrites its current file
+ *  tree with it. */
+export interface DispatchSubagentResult {
+  text: string;
+  files?: ProjectFiles;
 }
 
 /** Event callbacks */

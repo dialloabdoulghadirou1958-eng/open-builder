@@ -119,6 +119,7 @@ export const SessionItem = memo(function SessionItem({
             variant="ghost"
             size="icon"
             className="h-6 w-6"
+            aria-label={t.sessions.confirmEdit}
             onClick={(e) => {
               e.stopPropagation();
               commitEdit();
@@ -130,6 +131,7 @@ export const SessionItem = memo(function SessionItem({
             variant="ghost"
             size="icon"
             className="h-6 w-6"
+            aria-label={t.sessions.cancelEdit}
             onClick={(e) => {
               e.stopPropagation();
               cancelEdit();
@@ -146,6 +148,7 @@ export const SessionItem = memo(function SessionItem({
                 variant="ghost"
                 size="icon"
                 className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                aria-label={t.sessions.actionsMenu}
               >
                 <EllipsisVertical size={14} />
               </Button>

@@ -1,5 +1,6 @@
 import type { StateCreator } from "zustand";
 import type { ApiType } from "../../lib/ai/provider";
+import { useSecretsStore } from "../secrets";
 
 export interface AISettings {
   apiType: ApiType;
@@ -26,10 +27,15 @@ export const createAISlice: StateCreator<AISlice, [], [], AISlice> = (
   get,
 ) => ({
   ai: aiDefaults,
-  setAI: (settings) =>
-    set({
-      ai: { ...settings, apiBaseUrl: settings.apiBaseUrl.replace(/\/+$/, "") },
-    }),
+  setAI: (settings) => {
+    const normalized = {
+      ...settings,
+      apiBaseUrl: settings.apiBaseUrl.replace(/\/+$/, ""),
+    };
+    set({ ai: normalized });
+    // Persist apiKey to the encrypted vault (not localStorage).
+    void useSecretsStore.getState().setApiKey(normalized.apiKey);
+  },
   isAIValid: () => {
     const { ai } = get();
     return !!(ai.apiKey && ai.apiBaseUrl && ai.model);

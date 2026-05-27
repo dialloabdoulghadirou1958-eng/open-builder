@@ -3,6 +3,10 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import localforage from "localforage";
 import type { SkillEntry } from "../lib/skills/types";
 import { createLocalforageStorage } from "./utils/localforage-storage";
+import { runMigrations, type MigrationStep } from "./utils/migrate";
+
+const SKILLS_STORE_VERSION = 1;
+const skillsMigrations: MigrationStep[] = [];
 
 const skillsStorage = createLocalforageStorage(
   localforage.createInstance({ name: "open-builder-skills" }),
@@ -58,11 +62,19 @@ export const useSkillsStore = create<SkillsState>()(
     }),
     {
       name: "open-builder-skills",
+      version: SKILLS_STORE_VERSION,
       storage: createJSONStorage(() => skillsStorage),
       partialize: (state) => ({
         skills: state.skills,
         scriptWarningAcknowledged: state.scriptWarningAcknowledged,
       }),
+      migrate: (persisted, version) =>
+        runMigrations(
+          skillsMigrations,
+          persisted,
+          version,
+          SKILLS_STORE_VERSION,
+        ),
       onRehydrateStorage: () => () => {
         useSkillsStore.setState({ _hasHydrated: true });
       },

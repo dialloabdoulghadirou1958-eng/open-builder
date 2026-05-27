@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { File, Folder, FilePlus, FolderPlus } from "lucide-react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { File, Folder, FilePlus, FolderPlus, Search } from "lucide-react";
 import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useT } from "../../i18n";
 import type { ProjectFiles } from "@/types";
 import { FileTreeNode } from "./file-explorer/FileTreeNode";
@@ -53,7 +54,48 @@ export function FileExplorer({
   const normalizedCurrentFile = currentFile.startsWith("/")
     ? currentFile.slice(1)
     : currentFile;
-  const fileTree = buildFileTree(files);
+
+  const [query, setQuery] = useState("");
+  const trimmedQuery = query.trim().toLowerCase();
+
+  // Filter files by path substring. Empty query → unchanged tree.
+  const { filteredFiles, matchedPaths } = useMemo(() => {
+    if (!trimmedQuery) {
+      return {
+        filteredFiles: files,
+        matchedPaths: null as Set<string> | null,
+      };
+    }
+    const out: ProjectFiles = {};
+    const matched = new Set<string>();
+    for (const [path, content] of Object.entries(files)) {
+      const cleaned = path.startsWith("/") ? path.slice(1) : path;
+      if (cleaned.toLowerCase().includes(trimmedQuery)) {
+        out[path] = content;
+        matched.add(cleaned);
+      }
+    }
+    return { filteredFiles: out, matchedPaths: matched };
+  }, [files, trimmedQuery]);
+
+  const fileTree = useMemo(
+    () => buildFileTree(filteredFiles),
+    [filteredFiles],
+  );
+
+  // When searching, auto-expand every ancestor folder of a matched file so
+  // hits are visible. We merge with the user's explicit expansion state.
+  const effectiveExpandedFolders = useMemo(() => {
+    if (!matchedPaths) return expandedFolders;
+    const next = new Set(expandedFolders);
+    for (const path of matchedPaths) {
+      const parts = path.split("/");
+      for (let i = 1; i < parts.length; i++) {
+        next.add(parts.slice(0, i).join("/"));
+      }
+    }
+    return next;
+  }, [matchedPaths, expandedFolders]);
 
   useEffect(() => {
     if (createState && createInputRef.current) {
@@ -223,7 +265,7 @@ export function FileExplorer({
   };
 
   const nodeProps = {
-    expandedFolders,
+    expandedFolders: effectiveExpandedFolders,
     selectedFolder,
     dragOverPath,
     normalizedCurrentFile,
@@ -284,12 +326,32 @@ export function FileExplorer({
         </div>
       </div>
 
+      <div className="px-2 py-1.5 border-b">
+        <div className="relative">
+          <Search
+            size={12}
+            className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
+          />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t.explorer.searchPlaceholder}
+            className="h-7 pl-7 text-xs"
+          />
+        </div>
+      </div>
+
       <div
         className="flex-1 overflow-y-auto"
         style={{ scrollbarGutter: "stable" }}
         onDragOver={handleRootDragOver}
         onDrop={handleRootDrop}
       >
+        {trimmedQuery && fileTree.length === 0 ? (
+          <p className="px-3 py-4 text-xs text-muted-foreground text-center">
+            {t.explorer.emptySearch}
+          </p>
+        ) : null}
         {fileTree.map((node) => (
           <FileTreeNode key={node.path} node={node} level={0} {...nodeProps} />
         ))}

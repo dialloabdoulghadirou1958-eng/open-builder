@@ -1,14 +1,17 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { diffLines, type Change } from "diff";
+import { ChevronUp, ChevronDown } from "lucide-react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { useSnapshotStore } from "../../store/snapshot";
 import { cn } from "@/lib/utils";
 import { useT } from "../../i18n";
+import { DiffViewer, type DiffMode } from "./diff/DiffViewer";
 
 interface DiffModalProps {
   conversationId: string;
@@ -43,37 +46,109 @@ export function DiffModal({ conversationId, messageId, onClose }: DiffModalProps
   }, [snapshot]);
 
   const [selectedFile, setSelectedFile] = useState(changedFiles[0]?.path ?? "");
+  const [mode, setMode] = useState<DiffMode>("unified");
+  const [changeIdx, setChangeIdx] = useState(0);
+  const [changeCount, setChangeCount] = useState(0);
+  const [jumpTo, setJumpTo] = useState<number | null>(null);
 
-  // Compute diff for the selected file
   const diffChanges = useMemo<Change[]>(() => {
     if (!snapshot || !selectedFile) return [];
     const reconstructFiles = useSnapshotStore.getState().reconstructFiles;
-
     const prevFiles =
       snapshotIndex > 0
         ? reconstructFiles(conversationId, snapshots[snapshotIndex - 1].id)
         : {};
-
     const currFiles = reconstructFiles(conversationId, snapshot.id);
-
     const oldContent = prevFiles[selectedFile] ?? "";
     const newContent = currFiles[selectedFile] ?? "";
     return diffLines(oldContent, newContent);
   }, [snapshot, selectedFile, snapshotIndex, conversationId, snapshots]);
+
+  const handleChangeCount = useCallback((count: number) => {
+    setChangeCount(count);
+    setChangeIdx(0);
+  }, []);
+
+  const navigate = (delta: 1 | -1) => {
+    if (changeCount === 0) return;
+    const next = (changeIdx + delta + changeCount) % changeCount;
+    setChangeIdx(next);
+    setJumpTo(next);
+  };
 
   if (!snapshot) return null;
 
   return (
     <Dialog open onOpenChange={() => onClose()}>
       <DialogContent className="sm:max-w-4xl h-[70vh] flex flex-col p-0 gap-0 overflow-hidden">
-        <DialogHeader className="px-5 pt-5 pb-3 shrink-0">
-          <DialogTitle>{t.diff.title}</DialogTitle>
+        <DialogHeader className="px-5 pt-5 pb-3 shrink-0 flex flex-row items-center justify-between gap-3">
+          <DialogTitle className="flex-1 min-w-0 truncate" title={selectedFile}>
+            {t.diff.title}
+            {selectedFile && (
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                {selectedFile}
+              </span>
+            )}
+          </DialogTitle>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="hidden sm:inline-flex rounded-md border border-border overflow-hidden">
+              {(
+                [
+                  { value: "unified", label: t.diff.mode.unified },
+                  { value: "split", label: t.diff.mode.split },
+                ] as const
+              ).map((m, idx) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => setMode(m.value)}
+                  className={cn(
+                    "text-xs px-2 py-1 transition-colors cursor-pointer",
+                    idx > 0 && "border-l border-border",
+                    mode === m.value
+                      ? "bg-accent text-accent-foreground"
+                      : "text-muted-foreground hover:bg-muted/50",
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => navigate(-1)}
+                disabled={changeCount === 0}
+                aria-label={t.diff.previous}
+                title={t.diff.previous}
+              >
+                <ChevronUp className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => navigate(1)}
+                disabled={changeCount === 0}
+                aria-label={t.diff.next}
+                title={t.diff.next}
+              >
+                <ChevronDown className="w-4 h-4" />
+              </Button>
+              {changeCount > 0 && (
+                <span className="text-[11px] text-muted-foreground tabular-nums w-12 text-right">
+                  {t.diff.changeCount
+                    .replace("{current}", String(changeIdx + 1))
+                    .replace("{total}", String(changeCount))}
+                </span>
+              )}
+            </div>
+          </div>
         </DialogHeader>
 
-        {/* Mobile: top file bar + vertical diff */}
-        {/* Desktop: left sidebar + right diff */}
         <div className="flex flex-col sm:flex-row flex-1 min-h-0 overflow-hidden">
-          {/* File list: horizontal scroll on mobile, vertical sidebar on desktop */}
           <div
             className={cn(
               "shrink-0 border-b sm:border-b-0 sm:border-r border-border/50",
@@ -84,6 +159,7 @@ export function DiffModal({ conversationId, messageId, onClose }: DiffModalProps
               <button
                 key={f.path}
                 onClick={() => setSelectedFile(f.path)}
+                title={f.path}
                 className={cn(
                   "text-xs whitespace-nowrap sm:whitespace-normal text-left px-2 py-1.5 rounded cursor-pointer shrink-0 sm:truncate",
                   selectedFile === f.path
@@ -105,10 +181,15 @@ export function DiffModal({ conversationId, messageId, onClose }: DiffModalProps
               </button>
             ))}
           </div>
-          {/* Diff view */}
           <div className="flex-1 overflow-auto bg-muted/20">
             {diffChanges.length > 0 ? (
-              <DiffView changes={diffChanges} />
+              <DiffViewer
+                path={selectedFile}
+                changes={diffChanges}
+                mode={mode}
+                jumpTo={jumpTo}
+                onChangeCount={handleChangeCount}
+              />
             ) : (
               <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
                 {t.diff.selectFile}
@@ -118,62 +199,5 @@ export function DiffModal({ conversationId, messageId, onClose }: DiffModalProps
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function DiffView({ changes }: { changes: Change[] }) {
-  const lines: { key: string; className: string; prefix: string; text: string; lineNo: string }[] = [];
-  let oldLine = 1;
-  let newLine = 1;
-
-  for (let i = 0; i < changes.length; i++) {
-    const change = changes[i];
-    const rawLines = change.value.split("\n");
-    if (rawLines[rawLines.length - 1] === "") rawLines.pop();
-
-    for (let j = 0; j < rawLines.length; j++) {
-      const key = `${i}-${j}`;
-      if (change.added) {
-        lines.push({
-          key,
-          className: "bg-green-500/10 text-green-700 dark:text-green-400",
-          prefix: "+",
-          text: rawLines[j],
-          lineNo: String(newLine++),
-        });
-      } else if (change.removed) {
-        lines.push({
-          key,
-          className: "bg-red-500/10 text-red-700 dark:text-red-400",
-          prefix: "-",
-          text: rawLines[j],
-          lineNo: String(oldLine++),
-        });
-      } else {
-        lines.push({
-          key,
-          className: "",
-          prefix: " ",
-          text: rawLines[j],
-          lineNo: String(newLine),
-        });
-        oldLine++;
-        newLine++;
-      }
-    }
-  }
-
-  return (
-    <pre className="text-xs font-mono leading-5 p-2">
-      {lines.map((l) => (
-        <div key={l.key} className={l.className}>
-          <span className="inline-block w-10 text-right pr-3 text-muted-foreground/60 select-none">
-            {l.lineNo}
-          </span>
-          <span className="select-none">{l.prefix} </span>
-          {l.text}
-        </div>
-      ))}
-    </pre>
   );
 }

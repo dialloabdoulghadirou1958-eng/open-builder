@@ -1,4 +1,5 @@
 import { useState, useEffect, memo } from "react";
+import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import {
   ChevronDown,
   ChevronRight,
@@ -7,6 +8,8 @@ import {
   Undo2,
   RefreshCw,
   FileText,
+  Check,
+  Copy,
 } from "lucide-react";
 import { MarkdownContent } from "./MarkdownContent";
 import { ToolCallCard } from "./ToolCallCard";
@@ -117,10 +120,20 @@ export const MessageBubble = memo(function MessageBubble({
     );
   }
 
-  // Check if the message contains an error
-  const isError = message.blocks.some(
-    (b) => b.type === "text" && b.content.startsWith("⚠️"),
-  );
+  // Prefer the structured isError flag carried on the merged message.
+  // Fall back to scanning the leading "⚠️" prefix for backward compatibility
+  // with messages persisted before the flag existed.
+  const isError =
+    message.isError ??
+    message.blocks.some(
+      (b) => b.type === "text" && b.content.startsWith("⚠️"),
+    );
+
+  const assistantText = message.blocks
+    .filter((b): b is TextBlock => b.type === "text")
+    .map((b) => b.content)
+    .join("\n\n")
+    .trim();
 
   return (
     <div className="flex-1 min-w-0 space-y-2">
@@ -177,40 +190,68 @@ export const MessageBubble = memo(function MessageBubble({
         }
         return null;
       })}
-      {(snapshotExists || isError) && !(isGenerating && isLastAssistant) && (
-        <div className="flex items-center gap-3 mt-2 pt-2 border-t border-border/30">
-          {snapshotExists && (
-            <>
+      {(snapshotExists || isError || assistantText) &&
+        !(isGenerating && isLastAssistant) && (
+          <div className="flex items-center gap-3 mt-2 pt-2 border-t border-border/30">
+            {snapshotExists && (
+              <>
+                <button
+                  onClick={() => onShowDiff?.(message.id)}
+                  aria-label={t.diff.showDiff}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                >
+                  <GitCompareArrows className="w-3.5 h-3.5" />
+                  <span>{t.diff.showDiff}</span>
+                </button>
+                <button
+                  onClick={() => onRollback?.(message.id)}
+                  aria-label={t.message.rollback}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                >
+                  <Undo2 className="w-3.5 h-3.5" />
+                  <span>{t.message.rollback}</span>
+                </button>
+              </>
+            )}
+            {assistantText && !isError && (
+              <CopyMessageButton text={assistantText} />
+            )}
+            {isError && onRetry && (
               <button
-                onClick={() => onShowDiff?.(message.id)}
+                onClick={() => onRetry()}
+                aria-label={t.message.retry}
                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               >
-                <GitCompareArrows className="w-3.5 h-3.5" />
-                <span>Diff</span>
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>{t.message.retry}</span>
               </button>
-              <button
-                onClick={() => onRollback?.(message.id)}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-              >
-                <Undo2 className="w-3.5 h-3.5" />
-                <span>{t.message.rollback}</span>
-              </button>
-            </>
-          )}
-          {isError && onRetry && (
-            <button
-              onClick={() => onRetry()}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>{t.message.retry}</span>
-            </button>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
     </div>
   );
 });
+
+function CopyMessageButton({ text }: { text: string }) {
+  const t = useT();
+  const [copied, copy] = useCopyToClipboard();
+
+  return (
+    <button
+      type="button"
+      onClick={() => copy(text)}
+      aria-label={copied ? t.message.copied : t.message.copy}
+      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+    >
+      {copied ? (
+        <Check className="w-3.5 h-3.5" />
+      ) : (
+        <Copy className="w-3.5 h-3.5" />
+      )}
+      <span>{copied ? t.message.copied : t.message.copy}</span>
+    </button>
+  );
+}
 
 function ThinkingBlockCard({
   content,
@@ -230,7 +271,10 @@ function ThinkingBlockCard({
   return (
     <div className="border border-border/50 rounded-lg overflow-hidden bg-muted/30">
       <button
+        type="button"
         onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        aria-label={t.message.thinking}
         className="flex items-center gap-2 w-full px-3 py-2 text-muted-foreground hover:bg-muted/50 transition-colors"
       >
         <Lightbulb className="w-3.5 h-3.5 text-purple-500" />

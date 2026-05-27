@@ -70,7 +70,8 @@ export const useSettingsStore = create<SettingsState>()(
       version: SETTINGS_VERSION,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
-        ai: state.ai,
+        // Strip apiKey before persistence — it lives in the encrypted vault.
+        ai: { ...state.ai, apiKey: "" },
         webSearch: state.webSearch,
         assetSearch: state.assetSearch,
         system: state.system,

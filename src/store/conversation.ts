@@ -2,7 +2,11 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import localforage from "localforage";
 import { useSnapshotStore } from "./snapshot";
+import { runMigrations, type MigrationStep } from "./utils/migrate";
 import type { Conversation, CompressedContext, Message, ProjectFiles } from "../types";
+
+const CONVERSATION_STORE_VERSION = 1;
+const conversationMigrations: MigrationStep[] = [];
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -268,11 +272,19 @@ export const useConversationStore = create<ConversationState>()(
     }),
     {
       name: "open-builder-conversations",
+      version: CONVERSATION_STORE_VERSION,
       storage: createJSONStorage(() => localforageStorage),
       partialize: (state) => ({
         conversations: state.conversations,
         activeId: state.activeId,
       }),
+      migrate: (persisted, version) =>
+        runMigrations(
+          conversationMigrations,
+          persisted,
+          version,
+          CONVERSATION_STORE_VERSION,
+        ),
       onRehydrateStorage: () => (state) => {
         if (state) {
           // Migrate old hardcoded default titles to sentinel value

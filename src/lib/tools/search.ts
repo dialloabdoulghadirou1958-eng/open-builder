@@ -110,31 +110,41 @@ async function tavilyExtract(
   }
 }
 
-async function jinaFallback(urls: string[]): Promise<string> {
-  const pages: {
-    url: string;
-    ok: boolean;
-    content?: string;
-    error?: string;
-  }[] = [];
-  for (const url of urls) {
-    try {
-      const res = await fetch(`https://r.jina.ai/${url}`, {
-        headers: { Accept: "text/plain" },
-      });
-      if (!res.ok) {
-        pages.push({
-          url,
-          ok: false,
-          error: `Jina fetch failed (${res.status})`,
-        });
-        continue;
-      }
-      pages.push({ url, ok: true, content: await res.text() });
-    } catch (err: any) {
-      pages.push({ url, ok: false, error: err.message });
+const JINA_TIMEOUT_MS = 15_000;
+
+async function fetchSinglePageViaJina(url: string): Promise<{
+  url: string;
+  ok: boolean;
+  content?: string;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(`https://r.jina.ai/${url}`, {
+      headers: { Accept: "text/plain" },
+      signal: AbortSignal.timeout(JINA_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      return {
+        url,
+        ok: false,
+        error: `Jina fetch failed (${res.status})`,
+      };
     }
+    return { url, ok: true, content: await res.text() };
+  } catch (err: any) {
+    const isTimeout = err?.name === "TimeoutError" || err?.name === "AbortError";
+    return {
+      url,
+      ok: false,
+      error: isTimeout
+        ? `Jina fetch timed out after ${JINA_TIMEOUT_MS}ms`
+        : err?.message || "Jina fetch error",
+    };
   }
+}
+
+async function jinaFallback(urls: string[]): Promise<string> {
+  const pages = await Promise.all(urls.map(fetchSinglePageViaJina));
   return JSON.stringify({ ok: pages.some((p) => p.ok), pages });
 }
 
@@ -184,39 +194,36 @@ async function firecrawlScrape(
   urls: string[],
 ): Promise<string> {
   const baseUrl = settings.firecrawlApiUrl || "https://api.firecrawl.dev";
-  const res = await fetch(`${baseUrl}/v2/batch/scrape`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${settings.firecrawlApiKey}`,
-    },
-    body: JSON.stringify({
-      urls,
-      formats: ["markdown"],
-    }),
-  });
+  try {
+    const res = await fetch(`${baseUrl}/v2/batch/scrape`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${settings.firecrawlApiKey}`,
+      },
+      body: JSON.stringify({
+        urls,
+        formats: ["markdown"],
+      }),
+    });
 
-  if (!res.ok) {
-    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(`Firecrawl failed (${res.status}): ${await res.text()}`);
+    }
+
+    const data = await res.json();
     return JSON.stringify({
-      ok: false,
-      pages: urls.map((url) => ({
-        url,
-        ok: false,
-        error: `Firecrawl failed (${res.status}): ${text}`,
+      ok: true,
+      pages: (data.data ?? []).map((r: any) => ({
+        url: r.metadata?.sourceURL || r.url,
+        ok: r.success ?? true,
+        content: r.markdown || r.content,
       })),
     });
+  } catch (err: any) {
+    console.warn("Firecrawl scrape failed, falling back to Jina:", err?.message);
+    return jinaFallback(urls);
   }
-
-  const data = await res.json();
-  return JSON.stringify({
-    ok: true,
-    pages: (data.data ?? []).map((r: any) => ({
-      url: r.metadata?.sourceURL || r.url,
-      ok: r.success ?? true,
-      content: r.markdown || r.content,
-    })),
-  });
 }
 
 // ═══════════════════════════════ 工具处理器 ═══════════════════════════════════

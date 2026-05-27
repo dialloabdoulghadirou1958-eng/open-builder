@@ -6,8 +6,10 @@ import {
   LogOut,
   LogIn,
   Loader2,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useConversationStore, DEFAULT_TITLE } from "../../store/conversation";
 import { useSettingsStore } from "../../store/settings";
 import { useAuthStore } from "../../store/auth";
@@ -56,15 +58,30 @@ export function SessionList({ onClose }: SessionListProps) {
   };
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const [pinnedOpen, setPinnedOpen] = useState(true);
   const [normalOpen, setNormalOpen] = useState(true);
   const [archivedOpen, setArchivedOpen] = useState(false);
 
+  const matchesQuery = useCallback(
+    (conv: Conversation) => {
+      const q = query.trim().toLowerCase();
+      if (!q) return true;
+      const title = (
+        conv.title === DEFAULT_TITLE ? t.chat.newApp : conv.title
+      ).toLowerCase();
+      return title.includes(q);
+    },
+    [query, t.chat.newApp],
+  );
+
   const sorted = useMemo(
     () =>
-      Object.values(conversations).sort((a, b) => b.updatedAt - a.updatedAt),
-    [conversations],
+      Object.values(conversations)
+        .filter(matchesQuery)
+        .sort((a, b) => b.updatedAt - a.updatedAt),
+    [conversations, matchesQuery],
   );
 
   const pinned = useMemo(
@@ -78,7 +95,7 @@ export function SessionList({ onClose }: SessionListProps) {
   const archived = useMemo(() => sorted.filter((c) => c.archived), [sorted]);
 
   const hasGroups = pinned.length > 0 || archived.length > 0;
-  const deleteDisabled = sorted.length <= 1;
+  const deleteDisabled = Object.keys(conversations).length <= 1;
 
   const handleNew = () => {
     createConversation();
@@ -167,8 +184,26 @@ export function SessionList({ onClose }: SessionListProps) {
           <Plus size={18} />
         </Button>
       </div>
+      <div className="px-3 py-2 border-b">
+        <div className="relative">
+          <Search
+            size={14}
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
+          />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t.sessions.searchPlaceholder}
+            className="h-8 pl-8 text-sm"
+          />
+        </div>
+      </div>
       <div className="flex-1 overflow-y-auto">
-        {hasGroups ? (
+        {sorted.length === 0 ? (
+          <p className="px-3 py-4 text-xs text-muted-foreground text-center">
+            {t.sessions.emptySearch}
+          </p>
+        ) : hasGroups ? (
           <>
             <SessionGroup
               label={t.sessions.pinned}

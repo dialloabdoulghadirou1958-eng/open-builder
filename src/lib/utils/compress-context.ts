@@ -1,6 +1,6 @@
 import { generateText } from "ai";
 import type { Message } from "../ai/generator";
-import type { CompressedContext } from "../../types";
+import type { CompressedContext, ProjectFiles } from "../../types";
 import type { ProviderConfig } from "../ai/provider";
 import { getProviderModel } from "../ai/provider";
 
@@ -9,10 +9,61 @@ export interface CompressResult {
   fromIndex: number;
 }
 
+const TOOL_RESULT_MAX_CHARS = 600;
+
+function truncateForSummary(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return text.slice(0, max) + `... [truncated ${text.length - max} chars]`;
+}
+
+function formatMessageForSummary(m: Message): string | null {
+  if (m.role === "system") return null;
+
+  if (m.role === "tool") {
+    const body =
+      typeof m.content === "string"
+        ? m.content
+        : JSON.stringify(m.content);
+    return `tool_result: ${truncateForSummary(body, TOOL_RESULT_MAX_CHARS)}`;
+  }
+
+  const body =
+    typeof m.content === "string"
+      ? m.content
+      : m.content == null
+        ? ""
+        : JSON.stringify(m.content);
+
+  if (m.role === "assistant" && m.tool_calls?.length) {
+    const calls = m.tool_calls
+      .map((tc) => {
+        const args = truncateForSummary(tc.function.arguments ?? "", 200);
+        return `${tc.function.name}(${args})`;
+      })
+      .join(", ");
+    return body
+      ? `assistant: ${body}\nassistant_tool_calls: ${calls}`
+      : `assistant_tool_calls: ${calls}`;
+  }
+
+  return `${m.role}: ${body}`;
+}
+
+function buildFileInventory(files: ProjectFiles | undefined): string {
+  if (!files) return "";
+  const paths = Object.keys(files).sort();
+  if (paths.length === 0) return "";
+  return (
+    `\n\n[Current project files (${paths.length})]\n` +
+    paths.map((p) => `- ${p}`).join("\n")
+  );
+}
+
 export async function compressContext(
   messages: Message[],
   cfg: ProviderConfig,
   existingContext?: CompressedContext,
+  files?: ProjectFiles,
 ): Promise<CompressResult | null> {
   const userIndices = messages.reduce<number[]>((acc, m, i) => {
     if (m.role === "user") acc.push(i);
@@ -27,21 +78,15 @@ export async function compressContext(
   if (existingContext && existingContext.fromIndex > 0) {
     const newer = messages
       .slice(existingContext.fromIndex, fromIndex)
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map(
-        (m) =>
-          `${m.role}: ${typeof m.content === "string" ? m.content : JSON.stringify(m.content)}`,
-      )
+      .map(formatMessageForSummary)
+      .filter((line): line is string => line !== null)
       .join("\n");
     text = `[Previous summary]\n${existingContext.summary}\n\n[Recent conversation]\n${newer}`;
   } else {
     const older = messages.slice(0, fromIndex);
     text = older
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map(
-        (m) =>
-          `${m.role}: ${typeof m.content === "string" ? m.content : JSON.stringify(m.content)}`,
-      )
+      .map(formatMessageForSummary)
+      .filter((line): line is string => line !== null)
       .join("\n");
   }
 
@@ -53,13 +98,13 @@ export async function compressContext(
       {
         role: "system",
         content:
-          "Summarize the following conversation concisely. Focus on: what the user requested, what was built/modified, key decisions, and current project state. Be brief but preserve all information needed to continue.",
+          "Summarize the following conversation concisely. Focus on: what the user requested, what was built/modified, key tool operations (files read/written, searches run, results), key decisions, and current project state. Be brief but preserve all information needed to continue.",
       },
       { role: "user", content: [{ type: "text", text }] },
     ],
   });
 
-  const summary = result.text || "";
+  const summary = (result.text || "") + buildFileInventory(files);
 
   return { summary, fromIndex };
 }

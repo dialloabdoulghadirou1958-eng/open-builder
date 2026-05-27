@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { AuthResult, SSOUser, refreshAccessToken } from '../lib/services/sso';
+import { useSecretsStore } from './secrets';
 
 interface AuthState {
   accessToken: string | null;
@@ -38,12 +39,18 @@ export const useAuthStore = create<AuthState>()(
       },
 
       setAuth: (data: AuthResult) => {
-        set({
+        const next = {
           accessToken: data.accessToken,
           refreshToken: data.refreshToken || get().refreshToken,
           tokenExpiresAt: data.expiresAt,
           user: data.user ?? get().user,
           isLoggingIn: false,
+        };
+        set(next);
+        void useSecretsStore.getState().setAuthTokens({
+          accessToken: next.accessToken,
+          refreshToken: next.refreshToken,
+          tokenExpiresAt: next.tokenExpiresAt,
         });
       },
 
@@ -54,6 +61,11 @@ export const useAuthStore = create<AuthState>()(
           tokenExpiresAt: null,
           user: null,
           isLoggingIn: false,
+        });
+        void useSecretsStore.getState().setAuthTokens({
+          accessToken: null,
+          refreshToken: null,
+          tokenExpiresAt: null,
         });
       },
 
@@ -116,10 +128,9 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'open-builder-auth',
+      // Tokens are stored in the encrypted vault, not localStorage. Only the
+      // user profile (display name, avatar) is persisted here.
       partialize: (state) => ({
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
-        tokenExpiresAt: state.tokenExpiresAt,
         user: state.user,
       }),
     }

@@ -11,6 +11,7 @@ export async function runCompress(
     conv.messages,
     cfg,
     conv.compressedContext,
+    conv.files,
   );
   if (result) {
     useConversationStore.getState().setCompressedContext(result);

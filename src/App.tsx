@@ -7,10 +7,14 @@ import {
 import { ChatInterface } from "./components/ChatInterface";
 import { CodeViewer } from "./components/CodeViewer";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
+import { UnlockDialog } from "./components/secrets/UnlockDialog";
+import { CommandPalette } from "./components/command-palette/CommandPalette";
 import { useAppState } from "./hooks/useAppState";
 import { useGenerator } from "./hooks/useGenerator";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { useTheme } from "./hooks/useTheme";
+import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
+import { useCommandPaletteActions } from "./hooks/useCommandPaletteActions";
 import { useAuthStore } from "./store/auth";
 import { useConversationStore } from "./store/conversation";
 import { useT } from "./i18n";
@@ -105,6 +109,28 @@ export default function App() {
     restartSandpack();
   }, [activeId]);
 
+  useGlobalShortcuts({
+    newConversation: () => createConversation(),
+    openSettings: () => setIsSettingsOpen(true),
+    focusChatInput: () => {
+      const el = document.querySelector<HTMLTextAreaElement>(
+        "textarea[placeholder]",
+      );
+      el?.focus();
+    },
+    stopGenerating: () => stop(),
+    isGenerating,
+  });
+
+  const paletteActions = useCommandPaletteActions({
+    createConversation,
+    openSettings: () => setIsSettingsOpen(true),
+    isGenerating,
+    stop,
+    compressContext,
+    messagesEmpty: messages.length === 0,
+  });
+
   if (!hasHydrated) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-background">
@@ -173,6 +199,9 @@ export default function App() {
           </ResizablePanel>
         </>
       ) : null}
+
+      <UnlockDialog />
+      <CommandPalette actions={paletteActions} />
 
       <SettingsDialog
         isOpen={isSettingsOpen}

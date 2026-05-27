@@ -1,4 +1,14 @@
-export const SETTINGS_VERSION = 8;
+export const SETTINGS_VERSION = 9;
+
+let stashedApiKey: string | null = null;
+
+/** Drain the apiKey that v8→v9 migration peeled off the persisted state.
+ *  Consumed once by the secrets store boot — returns null on subsequent reads. */
+export function takeStashedApiKey(): string | null {
+  const v = stashedApiKey;
+  stashedApiKey = null;
+  return v;
+}
 
 export function migrateSettings(persisted: unknown, version: number): unknown {
   const state = persisted as Record<string, any>;
@@ -54,6 +64,15 @@ export function migrateSettings(persisted: unknown, version: number): unknown {
     if (!state.system) state.system = {};
     if (state.system.planModeEnabled === undefined) {
       state.system.planModeEnabled = false;
+    }
+  }
+  if (version < 9) {
+    // Move plaintext apiKey out of localStorage into the encrypted vault.
+    // The actual write happens asynchronously from the secrets store boot;
+    // stash the value here so it survives the rehydrate cycle.
+    if (state.ai && typeof state.ai.apiKey === "string" && state.ai.apiKey) {
+      stashedApiKey = state.ai.apiKey;
+      state.ai.apiKey = "";
     }
   }
   return state;

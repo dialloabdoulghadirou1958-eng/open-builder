@@ -104,6 +104,7 @@ export function mergeMessages(messages: Message[]): MergedMessage[] {
     } else if (msg.role === "assistant") {
       const thinkingParts: string[] = [];
       const otherBlocks: Block[] = [];
+      let isError = false;
       let j = i;
       let bi = 0;
 
@@ -113,6 +114,7 @@ export function mergeMessages(messages: Message[]): MergedMessage[] {
       ) {
         const cur = messages[j];
         if (cur.role === "assistant") {
+          if (cur.isError) isError = true;
           // Collect thinking from all assistant messages to merge later
           if (cur.thinking) {
             thinkingParts.push(cur.thinking);
@@ -204,7 +206,12 @@ export function mergeMessages(messages: Message[]): MergedMessage[] {
       blocks.push(...otherBlocks);
 
       if (blocks.length > 0) {
-        merged.push({ role: "assistant", blocks, id: `assistant-${i}` });
+        merged.push({
+          role: "assistant",
+          blocks,
+          id: `assistant-${i}`,
+          ...(isError ? { isError: true } : {}),
+        });
       }
       i = j - 1;
     }

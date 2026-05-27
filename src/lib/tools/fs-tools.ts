@@ -114,6 +114,8 @@ export function fsPatchFile(
 
   let content = files[path];
   const log: string[] = [];
+  let applied = 0;
+  let failed = 0;
 
   for (let i = 0; i < patches.length; i++) {
     const { search, replace } = patches[i];
@@ -123,13 +125,30 @@ export function fsPatchFile(
       content =
         content.slice(0, idx) + replace + content.slice(idx + search.length);
       log.push(`patch #${i + 1}: applied`);
+      applied++;
     } else {
       log.push(`patch #${i + 1}: not found — "${truncate(search, 60)}"`);
+      failed++;
     }
   }
 
+  if (applied === 0) {
+    return {
+      result:
+        `Error: none of ${patches.length} patches matched in "${path}" — file was not modified.\n` +
+        log.join("\n") +
+        `\nTip: re-read the file to verify its current content, then retry with an exact search string.`,
+      changes: [],
+    };
+  }
+
+  const header =
+    failed > 0
+      ? `Warning: ${failed} of ${patches.length} patches did not match — those edits were skipped. Re-read the file and retry the failed patches if needed.\n`
+      : "";
+
   return {
-    result: log.join("\n"),
+    result: header + log.join("\n"),
     changes: [{ path, action: "modified" }],
     newFiles: { ...files, [path]: content },
   };

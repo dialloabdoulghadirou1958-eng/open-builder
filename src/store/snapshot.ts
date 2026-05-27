@@ -4,6 +4,31 @@ import localforage from "localforage";
 import { createPatch, applyPatch } from "diff";
 import type { ProjectFiles, ProjectSnapshot } from "../types";
 import { createLocalforageStorage } from "./utils/localforage-storage";
+import { runMigrations, type MigrationStep } from "./utils/migrate";
+
+const SNAPSHOT_STORE_VERSION = 2;
+/** How many patch snapshots to write between checkpoints. The first snapshot
+ *  in a chain is always a checkpoint so reconstruction is anchored even for
+ *  short chains. */
+const CHECKPOINT_INTERVAL = 10;
+
+const snapshotMigrations: MigrationStep[] = [
+  // v1 -> v2: stamp every persisted snapshot with `kind: "patch"`. The shape
+  // didn't change otherwise; legacy chains will get their first checkpoint
+  // appended naturally on the next snapshot write.
+  (state: any) => {
+    if (state && state.snapshots && typeof state.snapshots === "object") {
+      for (const convId of Object.keys(state.snapshots)) {
+        const chain = state.snapshots[convId];
+        if (!Array.isArray(chain)) continue;
+        for (const snap of chain) {
+          if (snap && !snap.kind) snap.kind = "patch";
+        }
+      }
+    }
+    return state;
+  },
+];
 
 const snapshotStorage = createLocalforageStorage(
   localforage.createInstance({ name: "open-builder-snapshots" }),
@@ -40,18 +65,33 @@ interface SnapshotState {
   ) => void;
 }
 
-/** Reconstruct full file state by replaying snapshots up to (and including) targetId */
+/** Reconstruct full file state by replaying snapshots up to (and including)
+ *  `targetId`. Starts from the nearest preceding checkpoint when available;
+ *  otherwise replays from the head of the chain. */
 function replaySnapshots(
   chain: ProjectSnapshot[],
   targetId: string,
 ): ProjectFiles {
-  const files: ProjectFiles = {};
-  for (const snap of chain) {
-    // Apply added files
+  // Locate target index. If not found, replay everything (best-effort).
+  let targetIdx = chain.findIndex((s) => s.id === targetId);
+  if (targetIdx < 0) targetIdx = chain.length - 1;
+
+  // Walk backwards to find the nearest checkpoint at or before targetIdx.
+  let startIdx = 0;
+  let files: ProjectFiles = {};
+  for (let i = targetIdx; i >= 0; i--) {
+    if (chain[i].kind === "checkpoint" && chain[i].fullFiles) {
+      files = { ...chain[i].fullFiles! };
+      startIdx = i + 1;
+      break;
+    }
+  }
+
+  for (let i = startIdx; i <= targetIdx; i++) {
+    const snap = chain[i];
     for (const [path, content] of Object.entries(snap.addedFiles)) {
       files[path] = content;
     }
-    // Apply patches (modified files)
     for (const [path, patch] of Object.entries(snap.patches)) {
       const old = files[path] ?? "";
       const result = applyPatch(old, patch);
@@ -59,13 +99,21 @@ function replaySnapshots(
         files[path] = result;
       }
     }
-    // Apply deletions
     for (const path of snap.deletedFiles) {
       delete files[path];
     }
-    if (snap.id === targetId) break;
   }
   return files;
+}
+
+/** Count patch snapshots that have accumulated since the most recent checkpoint. */
+function patchesSinceCheckpoint(chain: ProjectSnapshot[]): number {
+  for (let i = chain.length - 1; i >= 0; i--) {
+    if (chain[i].kind === "checkpoint") {
+      return chain.length - 1 - i;
+    }
+  }
+  return chain.length;
 }
 
 export const useSnapshotStore = create<SnapshotState>()(
@@ -116,7 +164,16 @@ export const useSnapshotStore = create<SnapshotState>()(
           return;
         }
 
-        const snapshot: ProjectSnapshot = {
+        // Decide whether this snapshot should be a checkpoint. The first
+        // snapshot in a chain is always a checkpoint; otherwise we emit one
+        // every CHECKPOINT_INTERVAL patches so future reconstructions don't
+        // walk the entire history.
+        const isFirst = chain.length === 0;
+        const dueForCheckpoint =
+          patchesSinceCheckpoint(chain) >= CHECKPOINT_INTERVAL;
+        const asCheckpoint = isFirst || dueForCheckpoint;
+
+        const base: ProjectSnapshot = {
           id: crypto.randomUUID(),
           conversationId,
           messageId,
@@ -124,7 +181,11 @@ export const useSnapshotStore = create<SnapshotState>()(
           addedFiles,
           deletedFiles,
           createdAt: Date.now(),
+          kind: asCheckpoint ? "checkpoint" : "patch",
         };
+        const snapshot: ProjectSnapshot = asCheckpoint
+          ? { ...base, fullFiles: { ...currentFiles } }
+          : base;
 
         set((s) => ({
           snapshots: {
@@ -184,6 +245,11 @@ export const useSnapshotStore = create<SnapshotState>()(
           patches,
           addedFiles,
           deletedFiles,
+          // Keep checkpoint metadata in sync with the new file state so a
+          // future replay anchored at this snapshot stays correct.
+          ...(latest.kind === "checkpoint"
+            ? { fullFiles: { ...currentFiles } }
+            : {}),
         };
 
         set((s) => ({
@@ -203,10 +269,18 @@ export const useSnapshotStore = create<SnapshotState>()(
     }),
     {
       name: "open-builder-snapshots",
+      version: SNAPSHOT_STORE_VERSION,
       storage: createJSONStorage(() => snapshotStorage),
       partialize: (state) => ({
         snapshots: state.snapshots,
       }),
+      migrate: (persisted, version) =>
+        runMigrations(
+          snapshotMigrations,
+          persisted,
+          version,
+          SNAPSHOT_STORE_VERSION,
+        ),
       onRehydrateStorage: () => () => {
         useSnapshotStore.setState({ _hasHydrated: true });
       },

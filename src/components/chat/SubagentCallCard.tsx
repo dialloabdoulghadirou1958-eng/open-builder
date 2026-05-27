@@ -7,6 +7,7 @@ import { ToolCallCard } from "./ToolCallCard";
 import { useT } from "../../i18n";
 import { truncate } from "../../lib/utils/truncate";
 import { useSubagentStore } from "../../store/subagent";
+import { getSubagentByName } from "../../lib/ai/subagents/registry";
 import type {
   SubagentEvent,
   SubagentStatus,
@@ -131,6 +132,8 @@ export const SubagentCallCard = memo(function SubagentCallCard({
   const displayName =
     t.subagent.names[data.subagent as keyof typeof t.subagent.names] ??
     data.subagent;
+  const def = getSubagentByName(data.subagent);
+  const writePolicy = def?.writePolicy ?? "readonly";
   const taskSummary = truncate(data.task, 80);
   const durationLabel =
     data.durationMs != null
@@ -155,6 +158,14 @@ export const SubagentCallCard = memo(function SubagentCallCard({
             · {taskSummary}
           </span>
         )}
+        <Badge
+          variant="outline"
+          className="text-[10px] font-mono h-5 px-1.5 text-muted-foreground border-border/80"
+        >
+          {writePolicy === "fullWrite"
+            ? t.subagent.policyFullWrite
+            : t.subagent.policyReadonly}
+        </Badge>
         <StatusBadge status={data.status} t={t} />
         <ChevronRight
           size={13}

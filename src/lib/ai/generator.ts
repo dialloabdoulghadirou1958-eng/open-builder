@@ -193,8 +193,20 @@ export class WebAppGenerator {
 
     try {
       for (let iter = 0; iter < this.maxIterations; iter++) {
+        const isLastIter = iter === this.maxIterations - 1;
         const requestMessages: Message[] = [
           { role: "system", content: systemContent },
+          ...(isLastIter
+            ? [
+                {
+                  role: "system" as const,
+                  content:
+                    `Tool call iteration budget exhausted (limit: ${this.maxIterations}). ` +
+                    `This is your final iteration — do not call any more tools. ` +
+                    `Summarize what has been accomplished, what is still pending, and stop so the user can resume in a follow-up message.`,
+                },
+              ]
+            : []),
           ...this.messages,
         ];
 
@@ -573,13 +585,38 @@ export class WebAppGenerator {
           break;
         }
         try {
-          result = await this.dispatchSubagent(
+          const dispatched = await this.dispatchSubagent(
             subagentName,
             subagentTask,
             this.files,
             this.ctrl!.signal,
             toolCall.id,
           );
+          result = dispatched.text;
+          // A fullWrite subagent returns its inner file tree; reconcile by
+          // diffing against the parent's current state and emitting an
+          // onFileChange event with the resolved changes.
+          if (dispatched.files) {
+            const beforeFiles = this.files;
+            const afterFiles = dispatched.files;
+            const changes: FileChange[] = [];
+            for (const path of Object.keys(afterFiles)) {
+              if (!(path in beforeFiles)) {
+                changes.push({ path, action: "created" });
+              } else if (beforeFiles[path] !== afterFiles[path]) {
+                changes.push({ path, action: "modified" });
+              }
+            }
+            for (const path of Object.keys(beforeFiles)) {
+              if (!(path in afterFiles)) {
+                changes.push({ path, action: "deleted" });
+              }
+            }
+            this.files = { ...afterFiles };
+            if (changes.length > 0) {
+              this.events.onFileChange?.(this.getFiles(), changes);
+            }
+          }
         } catch (err) {
           if ((err as { name?: string })?.name === "AbortError") throw err;
           const message =

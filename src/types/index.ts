@@ -76,11 +76,21 @@ export interface MergedMessage {
   role: "user" | "assistant";
   blocks: Block[];
   id: string;
+  /** True when this assistant message was synthesized to report a local error
+   *  (network failure, aborted retry, etc.). Drives the retry affordance in the
+   *  UI without relying on string-prefix sniffing. */
+  isError?: boolean;
 }
 
 // ─── Snapshot types ─────────────────────────────────────────────────────────
 
-/** Incremental project snapshot (git-like) */
+/** Incremental project snapshot (git-like).
+ *  Snapshots come in two flavours:
+ *    - "patch" (default): records adds/patches/deletes relative to the prior snapshot
+ *    - "checkpoint": records the full file tree, anchoring future replays so we
+ *      don't have to walk the entire chain. Inserted automatically every
+ *      CHECKPOINT_INTERVAL patches.
+ */
 export interface ProjectSnapshot {
   id: string;
   /** The conversation this snapshot belongs to */
@@ -94,6 +104,10 @@ export interface ProjectSnapshot {
   /** Paths of deleted files */
   deletedFiles: string[];
   createdAt: number;
+  /** Snapshot type — older records lack this field and are implicitly "patch". */
+  kind?: "patch" | "checkpoint";
+  /** Full file tree at this point. Only present on checkpoint snapshots. */
+  fullFiles?: _ProjectFiles;
 }
 
 // ─── Memory types ───────────────────────────────────────────────────────────

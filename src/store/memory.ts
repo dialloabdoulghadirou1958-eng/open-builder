@@ -3,6 +3,10 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import localforage from "localforage";
 import type { MemoryItem, MemoryOperation } from "../types";
 import { createLocalforageStorage } from "./utils/localforage-storage";
+import { runMigrations, type MigrationStep } from "./utils/migrate";
+
+const MEMORY_STORE_VERSION = 1;
+const memoryMigrations: MigrationStep[] = [];
 
 const memoryStorage = createLocalforageStorage(
   localforage.createInstance({ name: "open-builder-memories" }),
@@ -146,10 +150,18 @@ export const useMemoryStore = create<MemoryState>()(
     }),
     {
       name: "open-builder-memories",
+      version: MEMORY_STORE_VERSION,
       storage: createJSONStorage(() => memoryStorage),
       partialize: (state) => ({
         memories: state.memories,
       }),
+      migrate: (persisted, version) =>
+        runMigrations(
+          memoryMigrations,
+          persisted,
+          version,
+          MEMORY_STORE_VERSION,
+        ),
       onRehydrateStorage: () => () => {
         useMemoryStore.setState({ _hasHydrated: true });
       },

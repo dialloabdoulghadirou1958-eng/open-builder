@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Languages, Sun, Info, Trash2, Shield } from "lucide-react";
+import { Languages, Sun, Info, Trash2, Shield, Lock } from "lucide-react";
 import localforage from "localforage";
 import {
   useSettingsStore,
@@ -12,8 +12,10 @@ import type {
 import { useConversationStore } from "../../../store/conversation";
 import { useSnapshotStore } from "../../../store/snapshot";
 import { useMemoryStore } from "../../../store/memory";
+import { useSecretsStore } from "../../../store/secrets";
 import { isTauri, setProxyEnabled } from "../../../lib/infra/proxy";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { version } from "../../../../package.json";
@@ -34,6 +36,7 @@ export function SystemTab({ form, setForm }: SystemTabProps) {
     useSnapshotStore.persist.clearStorage();
     useMemoryStore.persist.clearStorage();
     await localforage.clear();
+    await useSecretsStore.getState().reset();
 
     window.location.reload();
   };
@@ -100,6 +103,8 @@ export function SystemTab({ form, setForm }: SystemTabProps) {
         </div>
       )}
 
+      <VaultPanel />
+
       <div className="space-y-2">
         <Label>
           <Trash2 size={16} className="inline mr-1" />
@@ -156,6 +161,154 @@ export function SystemTab({ form, setForm }: SystemTabProps) {
         </p>
       </div>
     </>
+  );
+}
+
+function VaultPanel() {
+  const t = useT();
+  const mode = useSecretsStore((s) => s.mode);
+  const unlocked = useSecretsStore((s) => s.unlocked);
+  const lock = useSecretsStore((s) => s.lock);
+  const upgradeToPassphrase = useSecretsStore((s) => s.upgradeToPassphrase);
+  const downgradeToDevice = useSecretsStore((s) => s.downgradeToDevice);
+
+  const [showEnable, setShowEnable] = useState(false);
+  const [p1, setP1] = useState("");
+  const [p2, setP2] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const handleEnable = async () => {
+    if (p1.length < 8) {
+      setError(t.settings.vault.tooShort);
+      return;
+    }
+    if (p1 !== p2) {
+      setError(t.settings.vault.mismatch);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await upgradeToPassphrase(p1);
+      setShowEnable(false);
+      setP1("");
+      setP2("");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDisable = async () => {
+    setBusy(true);
+    try {
+      await downgradeToDevice();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label>
+        <Lock size={16} className="inline mr-1" />
+        {t.settings.vault.label}
+      </Label>
+      <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs space-y-1">
+        <p>
+          <span className="text-muted-foreground">
+            {mode === "passphrase"
+              ? t.settings.vault.modePassphrase
+              : t.settings.vault.modeDevice}
+          </span>
+          <span className="mx-1.5 text-muted-foreground">·</span>
+          <span
+            className={
+              unlocked ? "text-foreground" : "text-destructive"
+            }
+          >
+            {unlocked
+              ? t.settings.vault.statusUnlocked
+              : t.settings.vault.statusLocked}
+          </span>
+        </p>
+        <p className="text-muted-foreground">
+          {mode === "passphrase"
+            ? t.settings.vault.hintPassphrase
+            : t.settings.vault.hintDevice}
+        </p>
+      </div>
+
+      {mode === "device" && !showEnable && (
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={() => setShowEnable(true)}
+          disabled={!unlocked}
+        >
+          {t.settings.vault.enablePassphrase}
+        </Button>
+      )}
+
+      {mode === "device" && showEnable && (
+        <div className="space-y-2">
+          <Input
+            type="password"
+            placeholder={t.settings.vault.newPassphrase}
+            value={p1}
+            onChange={(e) => setP1(e.target.value)}
+            disabled={busy}
+          />
+          <Input
+            type="password"
+            placeholder={t.settings.vault.confirmPassphrase}
+            value={p2}
+            onChange={(e) => setP2(e.target.value)}
+            disabled={busy}
+          />
+          {error && <p className="text-xs text-destructive">{error}</p>}
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => {
+                setShowEnable(false);
+                setError(null);
+                setP1("");
+                setP2("");
+              }}
+              disabled={busy}
+            >
+              {t.settings.vault.cancel}
+            </Button>
+            <Button className="flex-1" onClick={handleEnable} disabled={busy}>
+              {t.settings.vault.confirm}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {mode === "passphrase" && (
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => lock()}
+            disabled={!unlocked}
+          >
+            {t.settings.vault.lock}
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={handleDisable}
+            disabled={!unlocked || busy}
+          >
+            {t.settings.vault.disablePassphrase}
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
