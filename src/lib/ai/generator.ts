@@ -11,6 +11,7 @@ import type { ApiType } from "./provider";
 import { messagesToModelMessages } from "./messages";
 import { BUILTIN_TOOLS } from "./tools-schema";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt";
+import { buildProjectGuidelinesSection } from "./project-guidelines";
 import { dispatchFsTool } from "../tools/fs-tools";
 import { formatAskUserAnswers } from "../utils/tool-result";
 import {
@@ -372,7 +373,8 @@ export class WebAppGenerator {
       paths.length > 0
         ? "\n\nCurrent project files:\n" + paths.map((p) => `- ${p}`).join("\n")
         : "\n\nThe project is empty — no files yet.";
-    return this.systemPrompt + listing + this.systemPromptSuffix;
+    const guidelines = buildProjectGuidelinesSection(this.files);
+    return this.systemPrompt + listing + guidelines + this.systemPromptSuffix;
   }
 
   private async requestAI(messages: Message[]): Promise<Message> {

@@ -26,12 +26,26 @@ import { getSkillRegistry } from "../skills/instance";
 import { scriptExecutor } from "../skills/script-executor";
 import { isSkillsAvailable } from "../skills/fs";
 import { skillActiveContext } from "../skills/active-context";
+import {
+  INSTALL_COMPONENT_TOOL,
+  createInstallComponentHandler,
+} from "./install-component";
+import {
+  SCREENSHOT_TO_CODE_TOOL,
+  createScreenshotToCodeHandler,
+} from "./screenshot-to-code";
+import {
+  APPLY_DESIGN_STYLE_TOOL,
+  createApplyDesignStyleHandler,
+} from "./design-styles";
 import { getBuiltinSearchConfig } from "../ai/provider";
 import type { ApiType } from "../ai/provider";
 import type {
   WebSearchSettings,
   AssetSearchSettings,
+  ProjectFiles,
 } from "../../types";
+import type { FileChange } from "../ai/generator-types";
 
 interface ConsoleLog {
   method: string;
@@ -43,6 +57,14 @@ export interface ToolFeatures {
   builtinSearch: boolean;
   webSearch: boolean;
   assetSearch: boolean;
+}
+
+/** Read/write bridge for tools that fetch or mutate project files asynchronously
+ *  (install_component, screenshot_to_code). When absent these tools are not
+ *  registered, so the model never sees a tool it cannot actually run. */
+export interface ProjectFilesBridge {
+  getFiles: () => ProjectFiles;
+  onFilesChanged: (newFiles: ProjectFiles, changes: FileChange[]) => void;
 }
 
 export interface BuildToolHandlersArgs {
@@ -57,6 +79,7 @@ export interface BuildToolHandlersArgs {
   };
   getConsoleLogs: () => ConsoleLog[];
   memoryDeps: MemoryDeps;
+  filesBridge?: ProjectFilesBridge;
 }
 
 export interface BuiltToolHandlers {
@@ -75,6 +98,7 @@ export function buildToolHandlers(
     apiConfig,
     getConsoleLogs,
     memoryDeps,
+    filesBridge,
   } = args;
 
   let builtinSearchTools: Record<string, unknown> = {};
@@ -99,6 +123,15 @@ export function buildToolHandlers(
     : undefined;
   const memoryHandler = createMemoryToolHandler(memoryDeps);
   const npmSearchHandler = createNpmSearchToolHandler();
+  const installComponentHandler = filesBridge
+    ? createInstallComponentHandler(filesBridge)
+    : null;
+  const screenshotToCodeHandler = filesBridge
+    ? createScreenshotToCodeHandler({ apiConfig, ...filesBridge })
+    : null;
+  const applyDesignStyleHandler = filesBridge
+    ? createApplyDesignStyleHandler(filesBridge)
+    : null;
   const skillsAvailable = isSkillsAvailable();
   const skillToolHandler = skillsAvailable
     ? createSkillToolHandler({
@@ -140,6 +173,15 @@ export function buildToolHandlers(
     if (name === "search_npm_packages" || name === "get_npm_package_detail") {
       return npmSearchHandler(name, handlerArgs);
     }
+    if (name === "install_component" && installComponentHandler) {
+      return installComponentHandler(name, handlerArgs);
+    }
+    if (name === "screenshot_to_code" && screenshotToCodeHandler) {
+      return screenshotToCodeHandler(name, handlerArgs);
+    }
+    if (name === "apply_design_style" && applyDesignStyleHandler) {
+      return applyDesignStyleHandler(name, handlerArgs);
+    }
     if (name === "image_search" && assetSearchHandler) {
       return assetSearchHandler(name, handlerArgs);
     }
@@ -158,6 +200,13 @@ export function buildToolHandlers(
     ...NPM_SEARCH_TOOLS,
     ...MEMORY_TOOLS,
     ...DISPATCH_SUBAGENT_TOOL,
+    ...(filesBridge
+      ? {
+          ...INSTALL_COMPONENT_TOOL,
+          ...SCREENSHOT_TO_CODE_TOOL,
+          ...APPLY_DESIGN_STYLE_TOOL,
+        }
+      : {}),
     ...(skillsAvailable ? SKILL_TOOLS : {}),
   };
 

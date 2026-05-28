@@ -111,6 +111,72 @@ export const BUILTIN_TOOLS = {
     }),
   }),
 
+  rename_file: tool({
+    description:
+      "Rename or move a file (or directory prefix) to a new path. " +
+      "ALWAYS auto-updates relative-path import references (./, ../) across " +
+      ".ts/.tsx/.js/.jsx/.mjs/.cjs/.vue/.svelte/.css/.scss files, so callers do not need " +
+      "to follow up with patch_file to fix imports. Path-alias imports (e.g. '@/foo') are NOT updated yet. " +
+      "Use this instead of write_file + delete_file when changing a file's location.",
+    inputSchema: z.object({
+      old_path: z.string().describe("Current file path relative to project root"),
+      new_path: z.string().describe("New file path relative to project root"),
+    }),
+  }),
+
+  move_file: tool({
+    description:
+      "Move a file into another directory, preserving its file name. " +
+      "Auto-updates relative-path import references just like rename_file.",
+    inputSchema: z.object({
+      path: z.string().describe("Source file path"),
+      target_dir: z
+        .string()
+        .describe("Target directory (empty string = project root)"),
+    }),
+  }),
+
+  read_env_schema: tool({
+    description:
+      "Inspect the project's environment variable schema. " +
+      "Returns the keys declared in .env.example, whether each is set in .env, " +
+      "and whether it is public (VITE_*) or private. Values are NOT returned for safety.",
+    inputSchema: z.object({}),
+  }),
+
+  manage_env: tool({
+    description:
+      "Read/write the project's .env and .env.example. " +
+      "Use this instead of write_file when touching env files — it parses lines safely, " +
+      "preserves existing keys, and (by default) auto-generates a typed src/env.ts " +
+      "with a Zod schema so the project gets type-safe env access. " +
+      "Mark public keys with the VITE_ prefix (vite convention).",
+    inputSchema: z.object({
+      operations: z
+        .array(
+          z.object({
+            target: z
+              .enum(["env", "example"])
+              .describe('"env" writes to .env; "example" writes to .env.example'),
+            action: z.enum(["set", "unset"]),
+            key: z.string().describe("Variable name, e.g. DATABASE_URL"),
+            value: z
+              .string()
+              .optional()
+              .describe('Value for "set" actions; ignored for "unset"'),
+          }),
+        )
+        .min(1)
+        .describe("Ordered list of env operations to apply"),
+      generate_typed_env: z
+        .boolean()
+        .optional()
+        .describe(
+          "Auto-generate src/env.ts (Zod schema + type) after applying ops. Default: true.",
+        ),
+    }),
+  }),
+
   get_console_logs: tool({
     description:
       "Get the browser console output from the running Sandpack preview. " +
@@ -199,3 +265,19 @@ export const BUILTIN_TOOLS = {
     }),
   }),
 };
+
+// Builtin tool names that mutate project files. Single source of truth used by
+// plan-mode filtering (useGenerator) and the subagent readonly policy (runner).
+export const BUILTIN_WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "init_project",
+  "manage_dependencies",
+  "write_file",
+  "patch_file",
+  "delete_file",
+  "rename_file",
+  "move_file",
+  "manage_env",
+  "install_component",
+  "screenshot_to_code",
+  "apply_design_style",
+]);

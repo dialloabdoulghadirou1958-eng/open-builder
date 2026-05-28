@@ -7,7 +7,7 @@ import { useConversationStore } from "../store/conversation";
 import { useSettingsStore } from "../store/settings";
 import { useInteractiveStore } from "../store/interactive";
 import { useSubagentStore } from "../store/subagent";
-import { BUILTIN_TOOLS } from "../lib/ai/tools-schema";
+import { BUILTIN_TOOLS, BUILTIN_WRITE_TOOL_NAMES } from "../lib/ai/tools-schema";
 import { filterToolSet } from "../lib/tools/tool-set-utils";
 import { useSandpackStore } from "../store/sandpack";
 import { buildMemoryPromptSection } from "../lib/tools/memory";
@@ -118,20 +118,11 @@ function getMessagesForAPI(conv: Conversation): Message[] {
   ];
 }
 
-// Builtin tools that mutate project files. Filtered out when plan mode is on.
-const WRITE_BUILTIN_TOOLS = new Set([
-  "init_project",
-  "manage_dependencies",
-  "write_file",
-  "patch_file",
-  "delete_file",
-]);
-
 const PLAN_MODE_SYSTEM_SUFFIX = `
 
 ## PLAN MODE ACTIVE
 You are in Plan Mode. You MUST NOT write, modify, or delete any project files.
-The write tools (init_project, write_file, patch_file, delete_file, manage_dependencies) are NOT available right now.
+All write tools (init_project, manage_dependencies, write_file, patch_file, delete_file, rename_file, move_file, manage_env, install_component, screenshot_to_code) are NOT available right now.
 Workflow:
   1. Use list_files / read_files / search_in_files to fully understand the existing project.
   2. If a key requirement is ambiguous, call ask_user_question before continuing.
@@ -142,7 +133,7 @@ After the user approves the plan, exit_plan_mode will return success and the wri
 function buildToolSet(args: { custom: ToolSet; planMode: boolean }): ToolSet {
   const { custom, planMode } = args;
   const builtins = filterToolSet(BUILTIN_TOOLS, (name) =>
-    planMode ? !WRITE_BUILTIN_TOOLS.has(name) : name !== "exit_plan_mode",
+    planMode ? !BUILTIN_WRITE_TOOL_NAMES.has(name) : name !== "exit_plan_mode",
   );
   return { ...builtins, ...custom };
 }
@@ -340,6 +331,19 @@ export function useGenerator({
             getAll: () => useMemoryStore.getState().getAll(),
             processBatch: (ops) =>
               useMemoryStore.getState().processBatch(ops),
+          },
+          filesBridge: {
+            getFiles: () => generatorRef.current?.getFiles() ?? {},
+            onFilesChanged: (newFiles, changes) => {
+              generatorRef.current?.setFiles(newFiles);
+              setFiles(newFiles);
+              const depsChanged = changes.some(
+                (c) =>
+                  c.path === "package.json" ||
+                  c.path.endsWith("/package.json"),
+              );
+              if (depsChanged) restartSandpack();
+            },
           },
         });
 

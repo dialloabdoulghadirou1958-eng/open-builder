@@ -4,6 +4,8 @@ import type {
   FileChange,
 } from "../ai/generator-types";
 import { truncate } from "../utils/truncate";
+import { renamePathInProject, basename } from "./file-refs";
+import { fsReadEnvSchema, fsManageEnv, type ManageEnvOp } from "./env-tools";
 
 export interface FsToolResult {
   result: string;
@@ -199,6 +201,83 @@ export function fsDeleteFile(
   };
 }
 
+export function fsRenameFile(
+  oldPath: string,
+  newPath: string,
+  files: ProjectFiles,
+): FsToolResult {
+  if (!oldPath || !newPath) {
+    return { result: "Error: both old_path and new_path are required", changes: [] };
+  }
+  if (oldPath === newPath) {
+    return { result: "Error: old_path and new_path are identical", changes: [] };
+  }
+  const prefix = oldPath + "/";
+  const exists =
+    oldPath in files ||
+    Object.keys(files).some((k) => k.startsWith(prefix));
+  if (!exists) {
+    return { result: `Error: path not found — "${oldPath}"`, changes: [] };
+  }
+  if (newPath in files) {
+    return {
+      result: `Error: destination already exists — "${newPath}"`,
+      changes: [],
+    };
+  }
+
+  const { newFiles, movedPaths, refCount, fileCount } = renamePathInProject(
+    files,
+    oldPath,
+    newPath,
+  );
+
+  const changes: FileChange[] = [];
+  const movedDests = new Set<string>();
+  for (const [from, to] of movedPaths) {
+    changes.push({ path: from, action: "deleted" });
+    changes.push({ path: to, action: "created" });
+    movedDests.add(to);
+  }
+  for (const path of Object.keys(newFiles)) {
+    if (
+      path in files &&
+      files[path] !== newFiles[path] &&
+      !movedDests.has(path)
+    ) {
+      changes.push({ path, action: "modified" });
+    }
+  }
+
+  const movedCount = movedPaths.length;
+  const movedSummary =
+    movedCount === 1
+      ? `${movedPaths[0][0]} → ${movedPaths[0][1]}`
+      : `${oldPath}/ → ${newPath}/ (${movedCount} files)`;
+  return {
+    result:
+      `OK — renamed ${movedSummary}, ` +
+      `updated ${refCount} ${refCount === 1 ? "ref" : "refs"} ` +
+      `in ${fileCount} ${fileCount === 1 ? "file" : "files"}`,
+    changes,
+    newFiles,
+  };
+}
+
+export function fsMoveFile(
+  path: string,
+  targetDir: string,
+  files: ProjectFiles,
+): FsToolResult {
+  if (!path) {
+    return { result: "Error: 'path' is required", changes: [] };
+  }
+  const base = basename(path);
+  const dir = (targetDir || "").replace(/\/+$/, "");
+  const newPath = dir ? `${dir}/${base}` : base;
+  return fsRenameFile(path, newPath, files);
+}
+
 /** Dispatch a file-system tool call. Returns null if the tool is not a recognized fs tool. */
 export function dispatchFsTool(
   name: string,
@@ -224,6 +303,17 @@ export function dispatchFsTool(
       return fsDeleteFile(args.path, files);
     case "search_in_files":
       return fsSearchInFiles(args.pattern, files);
+    case "rename_file":
+      return fsRenameFile(args.old_path, args.new_path, files);
+    case "move_file":
+      return fsMoveFile(args.path, args.target_dir ?? "", files);
+    case "read_env_schema":
+      return fsReadEnvSchema(files);
+    case "manage_env": {
+      const ops = Array.isArray(args.operations) ? (args.operations as ManageEnvOp[]) : [];
+      const gen = args.generate_typed_env !== false;
+      return fsManageEnv(ops, gen, files);
+    }
     default:
       return null;
   }

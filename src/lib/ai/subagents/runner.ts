@@ -6,7 +6,7 @@ import type {
   GeneratorOptions,
   ProjectFiles,
 } from "../generator-types";
-import { BUILTIN_TOOLS } from "../tools-schema";
+import { BUILTIN_TOOLS, BUILTIN_WRITE_TOOL_NAMES } from "../tools-schema";
 import type { ApiType } from "../provider";
 import { useSubagentStore } from "../../../store/subagent";
 import { useSkillsStore } from "../../../store/skills";
@@ -50,16 +50,6 @@ export interface CreateDispatcherOpts {
   ) => Promise<string>;
 }
 
-/** Tool names that mutate project files. Stripped from any subagent whose
- *  writePolicy is "readonly" (the default). */
-const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
-  "init_project",
-  "manage_dependencies",
-  "write_file",
-  "patch_file",
-  "delete_file",
-]);
-
 type WritePolicy = "readonly" | "fullWrite";
 
 function effectiveSubagentWhitelist(
@@ -68,7 +58,7 @@ function effectiveSubagentWhitelist(
 ): Set<string> {
   const whitelist = new Set(def.toolWhitelist);
   if (policy === "readonly") {
-    for (const name of WRITE_TOOL_NAMES) whitelist.delete(name);
+    for (const name of BUILTIN_WRITE_TOOL_NAMES) whitelist.delete(name);
   }
   if (isSkillsAvailable()) {
     for (const name of SKILL_TOOL_NAME_SET) whitelist.add(name);

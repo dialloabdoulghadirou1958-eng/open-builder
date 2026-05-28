@@ -8,6 +8,7 @@ import type {
 } from "../../types";
 import { getT } from "../../i18n";
 import { truncate } from "./truncate";
+import { TOOL_METADATA } from "../ai/tool-metadata";
 
 /** Extract plain text from message content (string or multi-part array),
  *  excluding file attachment parts (prefixed with [File: ...]) */
@@ -154,7 +155,6 @@ export function mergeMessages(messages: Message[]): MergedMessage[] {
                 : undefined;
               const toolName = tc.function.name as keyof typeof t.tool.names;
 
-              // Generate title based on tool type
               let title = t.tool.names[toolName] || tc.function.name;
               if (isReadFiles) {
                 title = `${t.tool.found}${paths?.length ?? 0} ${t.tool.files}`;
@@ -174,6 +174,12 @@ export function mergeMessages(messages: Message[]): MergedMessage[] {
                   subName ??
                   "subagent";
                 title = subTask ? `${subDisplay}: ${subTask}` : subDisplay;
+              } else {
+                const custom = TOOL_METADATA[tc.function.name]?.titleBuilder?.(
+                  args,
+                  t,
+                );
+                if (custom !== undefined) title = custom;
               }
 
               otherBlocks.push({

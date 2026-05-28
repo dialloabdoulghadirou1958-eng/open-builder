@@ -1,48 +1,18 @@
 import { useState, memo } from "react";
-import {
-  ChevronRight,
-  FolderOpen,
-  Eye,
-  Files,
-  FilePen,
-  Wrench,
-  Trash2,
-  Search,
-  Globe,
-  Terminal,
-  Image,
-  Package,
-  Blocks,
-  BookOpen,
-  Play,
-  Check,
-  X,
-  AlertTriangle,
-} from "lucide-react";
+import { ChevronRight, Wrench, Check, X, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { FileTreeView } from "./FileTreeView";
 import { useT } from "../../i18n";
 import type { ToolBlock } from "../../types";
+import { TOOL_METADATA } from "../../lib/ai/tool-metadata";
 
-const TOOL_ICONS: Record<string, React.ReactNode> = {
-  list_files: <FolderOpen size={14} className="text-yellow-500" />,
-  read_file: <Eye size={14} className="text-blue-400" />,
-  read_files: <Files size={14} className="text-blue-400" />,
-  write_file: <FilePen size={14} className="text-green-500" />,
-  patch_file: <Wrench size={14} className="text-orange-400" />,
-  delete_file: <Trash2 size={14} className="text-red-400" />,
-  search_in_files: <Search size={14} className="text-amber-500" />,
-  web_search: <Search size={14} className="text-purple-500" />,
-  web_reader: <Globe size={14} className="text-teal-500" />,
-  image_search: <Image size={14} className="text-pink-500" />,
-  search_npm_packages: <Package size={14} className="text-blue-500" />,
-  get_npm_package_detail: <Package size={14} className="text-blue-500" />,
-  get_console_logs: <Terminal size={14} className="text-sky-500" />,
-  list_skills: <Blocks size={14} className="text-indigo-500" />,
-  read_skill: <BookOpen size={14} className="text-indigo-500" />,
-  execute_skill_script: <Play size={14} className="text-indigo-500" />,
-};
+const TOOL_ICONS: Record<string, React.ReactNode> = Object.fromEntries(
+  Object.entries(TOOL_METADATA).map(([name, meta]) => {
+    const Icon = meta.iconComponent;
+    return [name, <Icon size={14} className={meta.iconClass} />];
+  }),
+);
 
 function countSearchResults(result: string): {
   ok: boolean;
