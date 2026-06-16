@@ -1,5 +1,15 @@
 import { tool } from "ai";
 import { z } from "zod";
+import {
+  NPM_DEPENDENCY_MAX_KEYS,
+  NPM_README_MAX_CHARS,
+  NPM_SEARCH_MAX_RESULTS,
+  clampInt,
+  fetchWithTimeout,
+  limitRecord,
+  safeErrorMessage,
+  truncateText,
+} from "./network-guard";
 
 const NPMS_API = "https://api.npms.io/v2";
 const NPM_REGISTRY = "https://registry.npmjs.org";
@@ -39,9 +49,8 @@ export const NPM_SEARCH_TOOLS = {
 async function fetchWithCache<T>(url: string): Promise<T> {
   const cached = cache.get(url);
   if (cached && cached.expiry > Date.now()) return cached.data as T;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(10000),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
   const data = (await res.json()) as T;
@@ -51,7 +60,7 @@ async function fetchWithCache<T>(url: string): Promise<T> {
 
 async function searchPackages(args: any): Promise<string> {
   const { query, maxResults = 5 } = args;
-  const size = Math.min(Math.max(maxResults, 1), 15);
+  const size = clampInt(maxResults, 5, 1, NPM_SEARCH_MAX_RESULTS);
   const params = new URLSearchParams({
     q: query,
     size: String(size),
@@ -75,9 +84,16 @@ async function searchPackages(args: any): Promise<string> {
         repository: item.package.links?.repository,
       },
     }));
-    return JSON.stringify({ success: true, data: packages });
+    return JSON.stringify({
+      success: true,
+      data: packages,
+      meta: {
+        maxResults: size,
+        truncatedResults: (data.results || []).length > size,
+      },
+    });
   } catch (err: any) {
-    return JSON.stringify({ success: false, error: err.message });
+    return JSON.stringify({ success: false, error: safeErrorMessage(err) });
   }
 }
 
@@ -96,6 +112,15 @@ async function getPackageDetail(args: any): Promise<string> {
       pkg.typings ||
       pkg.dependencies?.["@types/" + packageName.replace(/[@/]/g, "__")]
     );
+    const dependencies = limitRecord(
+      pkg.dependencies,
+      NPM_DEPENDENCY_MAX_KEYS,
+    );
+    const peerDependencies = limitRecord(
+      pkg.peerDependencies,
+      NPM_DEPENDENCY_MAX_KEYS,
+    );
+    const readme = truncateText(registry.readme || "", NPM_README_MAX_CHARS);
     const detail = {
       name: packageName,
       version: latest,
@@ -105,15 +130,25 @@ async function getPackageDetail(args: any): Promise<string> {
       homepage: pkg.homepage || registry.homepage,
       repository: extractRepo(pkg.repository),
       keywords: pkg.keywords || [],
-      dependencies: pkg.dependencies || {},
-      peerDependencies: pkg.peerDependencies || {},
+      dependencies: dependencies.value,
+      dependenciesTruncated: dependencies.truncated,
+      peerDependencies: peerDependencies.value,
+      peerDependenciesTruncated: peerDependencies.truncated,
       hasTypes,
-      readme: (registry.readme || "").slice(0, 2000),
+      readme: readme.text,
+      readmeTruncated: readme.truncated,
       versions: Object.keys(registry.versions).slice(-5).reverse(),
     };
-    return JSON.stringify({ success: true, data: detail });
+    return JSON.stringify({
+      success: true,
+      data: detail,
+      meta: {
+        dependencyLimit: NPM_DEPENDENCY_MAX_KEYS,
+        readmeLimit: NPM_README_MAX_CHARS,
+      },
+    });
   } catch (err: any) {
-    return JSON.stringify({ success: false, error: err.message });
+    return JSON.stringify({ success: false, error: safeErrorMessage(err) });
   }
 }
 

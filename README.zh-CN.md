@@ -11,7 +11,7 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4.x-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![Tauri](https://img.shields.io/badge/Tauri-2.x-FFC131?logo=tauri&logoColor=white)](https://tauri.app)
 
-[部署指南](#部署) · [快速开始](#快速开始) · [功能特性](#功能特性) · [技术架构](#技术架构) · [贡献指南](CONTRIBUTING.md)
+[部署指南](#部署) · [快速开始](#快速开始) · [功能特性](#功能特性) · [技术架构](#技术架构) · [项目审计](docs/PROJECT_AUDIT.zh-CN.md) · [贡献指南](CONTRIBUTING.md)
 
 [English](README.md) | 简体中文
 
@@ -23,7 +23,7 @@
 
 Open Builder 是一个完全运行在浏览器中的 AI 驱动 Web 应用生成器。你只需用自然语言描述想要构建的应用，AI 就会通过工具调用（Tool Call）循环，在内存文件系统中自动创建、修改、删除文件，并通过 [Sandpack](https://sandpack.codesandbox.io/) 实时预览运行结果。
 
-整个过程无需后端服务器，所有计算均在浏览器端完成。你的 API Key 仅保存在本地浏览器存储中，不会上传到任何服务器。
+整个过程无需后端服务器，所有计算均可在浏览器端完成。你的 API Key 会保存在本地加密凭据金库中，不会上传到任何服务器。
 
 同时支持通过 [Tauri](https://tauri.app) 构建为桌面应用（macOS / Windows / Linux）和移动应用（iOS / Android），享受原生应用体验。
 
@@ -48,17 +48,28 @@ Open Builder 是一个完全运行在浏览器中的 AI 驱动 Web 应用生成�
 - **多框架支持** — 支持 React、Vue、Svelte、Angular、SolidJS、Astro 等 20+ 模板
 - **智能文件操作** — AI 通过 `patch_file` 精确修改文件，避免不必要的全量重写
 - **依赖管理** — AI 可自动修改 `package.json` 并触发依赖重装
-- **项目快照** — 支持将代码一键回滚到任意历史版本
+- **项目快照** — 支持查看快照历史、命名快照、查看变更、导出 patch 并回滚到历史版本
+- **项目健康检查** — 支持 `/health` 和自动 QA 回合，检查结构、依赖、运行日志、可访问性和响应式风险
 - **上下文压缩** — 自动压缩长对话上下文，有效降低 Token 消耗
+- **Plan Mode** — 支持先探索代码并提交方案，用户批准后再写入文件
+- **子代理协作** — 内置代码浏览、代码审查、依赖建议、Bug 调查、UI 审查等只读子代理
 - **内置搜索** — 支持启用模型内置的搜索服务
 - **CORS 解决方案** — 客户端版本支持 API 反向代理转发，有效解决跨域问题
+- **统一服务端 API** — 可选接入 Mohua 服务端，在登录状态下统一代理 AI 调用、联网搜索与素材搜索
 
 ### 交互体验
 
+- **SSO 认证** — 通过 OAuth2 PKCE Authorization Code flow 登录 `u14.app`
 - **多会话管理** — 会话列表侧边栏支持创建、切换、删除，历史记录持久化保存
+- **会话整理** — 支持会话搜索、筛选、置顶、归档、复制、导入/导出与智能重命名
+- **项目模板** — 可将生成项目保存为本地模板，并从模板快速新建会话
+- **风格资产** — 可保存品牌色、字体语气、间距/圆角偏好和设计说明，供后续生成复用
 - **智能会话命名** — 根据对话内容自动生成会话标题，无需手动命名
 - **Slash 指令** — 输入框支持 `/compact`、`/review` 等斜杠快捷命令
 - **图片与文件输入** — 支持上传截图、设计稿或文件作为上下文输入
+- **技能系统** — 支持导入、启用、搜索、筛选和检查本地技能，可查看来源、权限、脚本和风险摘要
+- **凭据金库** — API Key 与登录凭据可使用设备密钥或主密码加密保存
+- **存储治理** — 可查看本地数据占用，并安全清理归档会话、空会话、旧快照和审计日志
 - **流式输出** — 实时展示 AI 思考过程和代码生成进度
 - **扩展思考** — 支持 Extended Thinking / Reasoning 模式（DeepSeek-R1、Claude 4.6 等）
 - **一键下载** — 将生成的项目打包为 ZIP 文件下载到本地
@@ -127,7 +138,7 @@ pnpm tauri:android:build
 | 模型名称       | 使用的模型 ID         | `gpt-5.3-codex`、`deepseek-chat`             |
 | Tavily API Key | （可选）联网搜索功能  | `tvly-...`                                   |
 
-> 所有配置均保存在浏览器 `localStorage` 中，不会离开你的设备。
+> 普通设置保存在本地浏览器存储中，API Key 与登录凭据保存在本地加密凭据金库中。登录用户会通过 Mohua 服务端安全代理请求，无需在本地配置 API Key。
 
 ---
 
@@ -135,7 +146,7 @@ pnpm tauri:android:build
 
 ### 核心引擎：WebAppGenerator
 
-[src/lib/generator.ts](src/lib/generator.ts) 是整个项目的核心，实现了完整的 AI Tool Call 循环引擎：
+[src/lib/ai/generator.ts](src/lib/ai/generator.ts) 是整个项目的核心，实现了完整的 AI Tool Call 循环引擎：
 
 ```
 用户消息 → AI 规划 → 工具调用 → 执行工具 → 返回结果 → AI 继续/结束
@@ -156,12 +167,21 @@ pnpm tauri:android:build
 | `write_file`             | 创建或覆写文件                              |
 | `patch_file`             | 精确搜索替换补丁（推荐用于小改动）          |
 | `delete_file`            | 删除文件                                    |
+| `rename_file` / `move_file` | 重命名或移动文件，并自动更新相对路径引用 |
 | `search_in_files`        | 全局搜索文件内容                            |
+| `get_console_logs`       | 读取 Sandpack 预览控制台输出               |
+| `compact_context`        | 压缩长对话上下文                            |
+| `ask_user_question`      | 在关键需求不明确时向用户提问                |
+| `exit_plan_mode`         | 提交实施方案并等待用户批准                  |
+| `dispatch_subagent`      | 调用只读子代理进行探索、审查或诊断          |
+| `project_health_check`   | 检查项目结构、依赖文件、环境变量、控制台日志、可访问性和响应式风险 |
 | `web_search`             | 联网搜索（支持模型内置、Tavily、Firecrawl） |
 | `web_reader`             | 读取网页内容                                |
 | `image_search`           | 图片搜索（支持 Pixabay、Unsplash）          |
 | `search_npm_packages`    | NPM 包搜索                                  |
 | `get_npm_package_detail` | 获取 NPM 包的详细信息                       |
+| `list_skills` / `read_skill` / `execute_skill_script` | 管理与使用本地技能 |
+| `read_env_schema` / `manage_env` | 安全读取与管理环境变量文件           |
 
 ### 技术栈
 

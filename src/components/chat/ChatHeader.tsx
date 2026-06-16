@@ -1,4 +1,4 @@
-import { PanelLeftOpen, Settings, Github } from "lucide-react";
+import { History, PanelLeftOpen, Settings, Github } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useConversationStore, DEFAULT_TITLE } from "../../store/conversation";
 import { useT } from "../../i18n";
@@ -7,11 +7,15 @@ interface ChatHeaderProps {
   isGenerating: boolean;
   onOpenSettings: () => void;
   onToggleSessionList: () => void;
+  onOpenSnapshotHistory: () => void;
+  snapshotCount: number;
 }
 
 export function ChatHeader({
   onOpenSettings,
   onToggleSessionList,
+  onOpenSnapshotHistory,
+  snapshotCount,
 }: ChatHeaderProps) {
   const t = useT();
   const rawTitle = useConversationStore((s) =>
@@ -35,6 +39,16 @@ export function ChatHeader({
         {title}
       </span>
       <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onOpenSnapshotHistory}
+          disabled={snapshotCount === 0}
+          title={t.snapshots.open}
+          className="h-8 w-8 shrink-0"
+        >
+          <History size={18} />
+        </Button>
         <a href="https://github.com/Amery2010/open-builder" target="_blank" rel="noreferrer">
           <Button
             variant="ghost"

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 use tauri::http::{Request as TauriRequest, Response as TauriResponse};
@@ -11,6 +11,68 @@ static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .build()
         .expect("failed to create HTTP client")
 });
+static PROXY_ALLOWED_HOSTS: LazyLock<Mutex<Vec<String>>> =
+    LazyLock::new(|| Mutex::new(Vec::new()));
+
+#[derive(serde::Deserialize)]
+pub struct ProxyPolicy {
+    allowed_hosts: Vec<String>,
+}
+
+#[tauri::command]
+pub fn set_proxy_policy(policy: ProxyPolicy) -> Result<(), String> {
+    let hosts = policy
+        .allowed_hosts
+        .into_iter()
+        .map(|host| host.trim().to_lowercase())
+        .filter(|host| !host.is_empty())
+        .collect::<Vec<_>>();
+    *PROXY_ALLOWED_HOSTS
+        .lock()
+        .map_err(|_| "proxy policy lock poisoned".to_string())? = hosts;
+    Ok(())
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    if host == "localhost" {
+        return true;
+    }
+    host.parse::<std::net::IpAddr>()
+        .map(|ip| ip.is_loopback())
+        .unwrap_or(false)
+}
+
+fn is_host_allowed(host: &str, allowed_hosts: &[String]) -> bool {
+    let host = host.trim_matches(&['[', ']'][..]).to_lowercase();
+    if allowed_hosts.is_empty() {
+        return is_loopback_host(&host);
+    }
+    allowed_hosts.iter().any(|allowed| {
+        if allowed == &host {
+            return true;
+        }
+        if let Some(suffix) = allowed.strip_prefix("*.") {
+            return host.ends_with(&format!(".{suffix}")) && host.len() > suffix.len() + 1;
+        }
+        false
+    })
+}
+
+pub fn is_url_allowed(target_url: &str) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(target_url)
+        .map_err(|err| format!("invalid proxy target URL: {err}"))?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "proxy target URL has no host".to_string())?;
+    let allowed_hosts = PROXY_ALLOWED_HOSTS
+        .lock()
+        .map_err(|_| "proxy policy lock poisoned".to_string())?;
+    if is_host_allowed(host, &allowed_hosts) {
+        Ok(())
+    } else {
+        Err(format!("host \"{host}\" is not allowed by the proxy policy"))
+    }
+}
 
 /// Determine the target scheme based on the host.
 /// - `localhost`, `127.0.0.1`, `[::1]`, or any pure IP address → HTTP
@@ -104,6 +166,9 @@ async fn handle_proxy(request: TauriRequest<Vec<u8>>) -> TauriResponse<Vec<u8>> 
         Ok(url) => url,
         Err(e) => return error_response(400, "Invalid proxy URL", &e),
     };
+    if let Err(e) = is_url_allowed(&target_url) {
+        return error_response(403, "Proxy target blocked", &e);
+    }
 
     // 2. Handle CORS preflight
     if request.method() == "OPTIONS" {

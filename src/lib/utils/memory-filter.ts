@@ -1,5 +1,6 @@
 import type { Message } from "../ai/generator";
-import { MEMORY_TOOL_NAME } from "../tools/memory";
+
+const MEMORY_TOOL_NAME = "manage_memories";
 
 /**
  * Drop memory-related messages (manage_memories tool calls and their results)

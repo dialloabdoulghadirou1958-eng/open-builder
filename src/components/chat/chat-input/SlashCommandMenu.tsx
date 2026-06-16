@@ -6,6 +6,7 @@ export const SLASH_COMMANDS = [
   "fork",
   "clear",
   "compact",
+  "health",
   "review",
   "continue",
   "retry",

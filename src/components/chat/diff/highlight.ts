@@ -51,10 +51,26 @@ export function highlightLine(line: string, lang: string | null): string {
   if (!lang || !line) return escapeHtml(line);
   ensureRegistered();
   try {
-    return hljs.highlight(line, { language: lang, ignoreIllegals: true }).value;
+    return sanitizeHighlightedHtml(
+      hljs.highlight(line, { language: lang, ignoreIllegals: true }).value,
+    );
   } catch {
     return escapeHtml(line);
   }
+}
+
+export function sanitizeHighlightedHtml(html: string): string {
+  return html.replace(/<\/?([a-zA-Z][\w-]*)([^>]*)>/g, (tag, rawName, rawAttrs) => {
+    const name = String(rawName).toLowerCase();
+    if (tag.startsWith("</")) return name === "span" ? "</span>" : "";
+    if (name !== "span") return "";
+    const classMatch = String(rawAttrs).match(/\sclass=(?:"([^"]*)"|'([^']*)')/);
+    const className = classMatch?.[1] ?? classMatch?.[2] ?? "";
+    if (!/^(?:hljs-[\w-]+)(?:\s+hljs-[\w-]+)*$/.test(className)) {
+      return "<span>";
+    }
+    return `<span class="${className}">`;
+  });
 }
 
 function escapeHtml(s: string): string {

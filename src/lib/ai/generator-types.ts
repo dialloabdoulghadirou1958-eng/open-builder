@@ -66,6 +66,42 @@ export interface GenerateResult {
   maxIterationsReached: boolean;
 }
 
+export type GeneratorRunState =
+  | "idle"
+  | "preparing"
+  | "streaming"
+  | "executingTool"
+  | "waitingUser"
+  | "awaitingPlanApproval"
+  | "autoQa"
+  | "completed"
+  | "error"
+  | "aborted";
+
+export type StructuredGenerationErrorKind =
+  | "auth"
+  | "network"
+  | "model"
+  | "tool"
+  | "context_length"
+  | "aborted"
+  | "runtime_check"
+  | "unknown";
+
+export interface StructuredGenerationError {
+  kind: StructuredGenerationErrorKind;
+  message: string;
+  status?: number;
+  retryable: boolean;
+}
+
+export interface GeneratorEvent {
+  state: GeneratorRunState;
+  at: number;
+  toolName?: string;
+  error?: StructuredGenerationError;
+}
+
 /** Constructor options */
 export interface GeneratorOptions {
   apiType?: ApiType;

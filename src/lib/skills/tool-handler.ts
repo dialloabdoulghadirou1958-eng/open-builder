@@ -1,6 +1,6 @@
 import type { SkillRegistry } from "./registry";
 import type { SkillEntry } from "./types";
-import type { ScriptExecutor } from "./script-executor";
+import type { ScriptExecutor, ScriptResult } from "./script-executor";
 import { SKILL_TOOL_NAMES } from "./tools";
 
 export interface SkillToolDeps {
@@ -8,6 +8,14 @@ export interface SkillToolDeps {
   getExecutor: () => Promise<ScriptExecutor>;
   /** Called after a successful read_skill. Caller can activate allowed-tools whitelist. */
   onActivate?: (skill: SkillEntry) => void;
+  onScriptExecuted?: (entry: {
+    skill: SkillEntry;
+    scriptPath: string;
+    args: string[];
+    startedAt: number;
+    finishedAt: number;
+    result: ScriptResult | null;
+  }) => void;
 }
 
 function findByName(
@@ -99,6 +107,7 @@ export function createSkillToolHandler(
       if (!executor.canExecute(scriptPath)) {
         return `Error: no executor available for script "${scriptPath}" in this environment.`;
       }
+      const startedAt = Date.now();
       try {
         const result = await executor.execute({
           skillId: skill.id,
@@ -106,12 +115,28 @@ export function createSkillToolHandler(
           scriptContent,
           args: scriptArgs ?? [],
         });
+        deps.onScriptExecuted?.({
+          skill,
+          scriptPath,
+          args: scriptArgs ?? [],
+          startedAt,
+          finishedAt: Date.now(),
+          result,
+        });
         const parts: string[] = [];
         parts.push(`Exit code: ${result.exitCode}`);
         if (result.stdout) parts.push(`stdout:\n${result.stdout}`);
         if (result.stderr) parts.push(`stderr:\n${result.stderr}`);
         return parts.join("\n\n");
       } catch (err: unknown) {
+        deps.onScriptExecuted?.({
+          skill,
+          scriptPath,
+          args: scriptArgs ?? [],
+          startedAt,
+          finishedAt: Date.now(),
+          result: null,
+        });
         const msg = err instanceof Error ? err.message : String(err);
         return `Error: script execution failed: ${msg}`;
       }

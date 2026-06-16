@@ -11,7 +11,7 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4.x-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![Tauri](https://img.shields.io/badge/Tauri-2.x-FFC131?logo=tauri&logoColor=white)](https://tauri.app)
 
-[Deployment](#deployment) · [Quick Start](#quick-start) · [Features](#features) · [Architecture](#architecture) · [Contributing](CONTRIBUTING.md)
+[Deployment](#deployment) · [Quick Start](#quick-start) · [Features](#features) · [Architecture](#architecture) · [Project Audit](docs/PROJECT_AUDIT.zh-CN.md) · [Contributing](CONTRIBUTING.md)
 
 English | [简体中文](README.zh-CN.md)
 
@@ -23,7 +23,7 @@ English | [简体中文](README.zh-CN.md)
 
 Open Builder is an AI-driven web app generator that runs entirely in the browser. Simply describe the application you want to build in natural language, and the AI will automatically create, modify, and delete files in an in-memory file system through a Tool Call loop, with live preview powered by [Sandpack](https://sandpack.codesandbox.io/).
 
-No backend server required — all computation happens in the browser. Your API Key is stored only in local browser storage and is never uploaded to any server.
+No backend server required — all computation can happen in the browser. Your API Key is stored in the local encrypted credential vault and is never uploaded to any server.
 
 It also supports building as a desktop app (macOS / Windows / Linux) and mobile app (iOS / Android) via [Tauri](https://tauri.app), delivering a native application experience.
 
@@ -48,8 +48,11 @@ It also supports building as a desktop app (macOS / Windows / Linux) and mobile 
 - **Multi-Framework Support** — 20+ templates including React, Vue, Svelte, Angular, SolidJS, Astro, etc.
 - **Smart File Operations** — AI uses `patch_file` for precise modifications, avoiding unnecessary full rewrites
 - **Dependency Management** — AI can modify `package.json` and trigger dependency reinstallation
-- **Project Snapshots** — Roll back code to any previous version with one click
+- **Project Snapshots** — Browse snapshot history, name snapshots, inspect diffs, export patches, and roll back to historical versions
+- **Project Health Check** — Run `/health` or automatic QA rounds to inspect structure, dependencies, runtime logs, accessibility, and responsive risks
 - **Context Compression** — Automatically compresses long conversation context to reduce token usage
+- **Plan Mode** — Explore the code and submit an implementation plan for approval before writing files
+- **Subagent Collaboration** — Built-in read-only subagents for code exploration, review, dependency advice, bug investigation, and UI critique
 - **Built-in Search** — Supports enabling the model's built-in search service
 - **CORS Resolution** — App Client-side (Tauri) API reverse proxy forwarding effectively resolves CORS issues
 - **Unified Backend API** — (Optional) Integrates with Mohua server to proxy AI calls, Asset Search, and Web Search under one authentication.
@@ -58,9 +61,15 @@ It also supports building as a desktop app (macOS / Windows / Linux) and mobile 
 
 - **SSO Authentication** — Simple, secure login using OAuth2 PKCE Authorization Code flow via `u14.app`.
 - **Multi-Session Management** — Sidebar with create, switch, delete sessions; history persisted locally
+- **Session Organization** — Search, filter, pin, archive, fork, import/export, and smart-rename conversations
+- **Project Templates** — Save generated projects as reusable local templates and start new sessions from them
+- **Style Assets** — Save reusable brand colors, typography notes, spacing/radius preferences, and design instructions for future generation
 - **Smart Session Naming** — Auto-generates session titles based on conversation content
 - **Slash Commands** — Input box supports `/compact`, `/review`, and other shortcut commands
 - **Image & File Input** — Upload screenshots, design mockups, or files as context input
+- **Skills System** — Import, enable, search, filter, and inspect local skills with source, permission, script, and risk summaries
+- **Credential Vault** — API keys and login credentials can be encrypted with a device key or passphrase
+- **Storage Governance** — Inspect local data usage and safely clean archived sessions, empty sessions, old snapshots, and audit logs
 - **Streaming Output** — Real-time display of AI thinking process and code generation progress
 - **Extended Thinking** — Supports Extended Thinking / Reasoning mode (DeepSeek-R1, Claude 4.6, etc.)
 - **One-Click Download** — Export generated project as a ZIP file
@@ -129,8 +138,8 @@ Click the settings button in the top-right corner and fill in:
 | Model Name     | Model ID to use               | `gpt-5.3-codex`, `deepseek-chat`             |
 | Tavily API Key | (Optional) Web search feature | `tvly-...`                                   |
 
-> All settings are stored in browser `localStorage` and never leave your device.
-> Users logged in via the SSO mechanism will bypass these local credentials and proxy all requests securely through the Mohua unified server.
+> Regular settings are stored locally in the browser. API keys and login credentials are stored in the local encrypted credential vault.
+> Users logged in via SSO bypass local API keys and proxy requests securely through the Mohua unified server.
 
 ---
 
@@ -138,7 +147,7 @@ Click the settings button in the top-right corner and fill in:
 
 ### Core Engine: WebAppGenerator
 
-[src/lib/generator.ts](src/lib/generator.ts) is the project's core, implementing the full AI Tool Call loop engine:
+[src/lib/ai/generator.ts](src/lib/ai/generator.ts) is the project's core, implementing the full AI Tool Call loop engine:
 
 ```
 User Message → AI Planning → Tool Call → Execute → Return Result → AI Continue/End
@@ -159,12 +168,21 @@ Built-in tools:
 | `write_file`             | Create or overwrite a file                        |
 | `patch_file`             | Precise search-and-replace patch                  |
 | `delete_file`            | Delete a file                                     |
+| `rename_file` / `move_file` | Rename or move files while updating relative imports |
 | `search_in_files`        | Global file content search                        |
+| `get_console_logs`       | Read Sandpack preview console output              |
+| `compact_context`        | Compress long conversation context                |
+| `ask_user_question`      | Ask the user for key clarifications               |
+| `exit_plan_mode`         | Submit a plan and wait for user approval          |
+| `dispatch_subagent`      | Dispatch read-only subagents for exploration, review, or diagnosis |
+| `project_health_check`   | Inspect project structure, package files, env schema, console logs, accessibility, and responsive risks |
 | `web_search`             | Web search (supports Built-in, Tavily, Firecrawl) |
 | `web_reader`             | Read web page content                             |
 | `image_search`           | Image search (supports Pixabay, Unsplash)         |
 | `search_npm_packages`    | NPM package search                                |
 | `get_npm_package_detail` | Get detailed information about NPM package        |
+| `list_skills` / `read_skill` / `execute_skill_script` | Manage and use local skills |
+| `read_env_schema` / `manage_env` | Safely inspect and manage env files       |
 
 ### Tech Stack
 

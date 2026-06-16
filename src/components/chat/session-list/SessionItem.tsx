@@ -8,6 +8,8 @@ import {
   Pin,
   Archive,
   Sparkles,
+  Download,
+  Library,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +31,9 @@ export interface SessionItemProps {
   onSelect: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onSmartRename: (convId: string) => void;
+  onExport: (convId: string) => void;
+  onSaveAsTemplate: (convId: string) => void;
+  canSaveAsTemplate: boolean;
   pin: (id: string) => void;
   unpin: (id: string) => void;
   archive: (id: string) => void;
@@ -46,6 +51,9 @@ export const SessionItem = memo(function SessionItem({
   onSelect,
   onRename,
   onSmartRename,
+  onExport,
+  onSaveAsTemplate,
+  canSaveAsTemplate,
   pin,
   unpin,
   archive,
@@ -187,6 +195,17 @@ export const SessionItem = memo(function SessionItem({
               >
                 <Sparkles size={14} />
                 {t.sessions.smartRename}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onExport(conv.id)}>
+                <Download size={14} />
+                {t.sessions.export}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => onSaveAsTemplate(conv.id)}
+                disabled={!canSaveAsTemplate}
+              >
+                <Library size={14} />
+                {t.sessions.templates.saveAs}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem

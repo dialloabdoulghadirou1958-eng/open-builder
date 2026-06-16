@@ -150,18 +150,18 @@ export function ChatInputToolbar({
             size="icon"
             onClick={onStop}
             variant={isHoveringStop ? "destructive" : "secondary"}
-            className="w-7 h-7 transition-all duration-200 rounded-full relative"
+            className="w-7 h-7 transition-[opacity,transform,color,background-color,border-color] duration-200 rounded-full relative"
             title={t.chat.stopGeneration}
             onMouseEnter={() => onHoveringStopChange(true)}
             onMouseLeave={() => onHoveringStopChange(false)}
           >
             <span
-              className={`absolute inset-0 flex items-center justify-center transition-all duration-200 ${isHoveringStop ? "opacity-0 scale-50" : "opacity-100 scale-100"}`}
+              className={`absolute inset-0 flex items-center justify-center transition-[opacity,transform,color,background-color,border-color] duration-200 ${isHoveringStop ? "opacity-0 scale-50" : "opacity-100 scale-100"}`}
             >
               <Loader2 size={16} className="animate-spin" />
             </span>
             <span
-              className={`absolute inset-0 flex items-center justify-center transition-all duration-200 ${isHoveringStop ? "opacity-100 scale-100" : "opacity-0 scale-50"}`}
+              className={`absolute inset-0 flex items-center justify-center transition-[opacity,transform,color,background-color,border-color] duration-200 ${isHoveringStop ? "opacity-100 scale-100" : "opacity-0 scale-50"}`}
             >
               <Square size={14} fill="currentColor" />
             </span>

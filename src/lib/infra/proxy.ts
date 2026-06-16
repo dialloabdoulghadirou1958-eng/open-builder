@@ -9,6 +9,7 @@
 // ============================================================================
 
 import { createSseResponse } from "./sse-bridge";
+import { invoke } from "@tauri-apps/api/core";
 
 const PROXY_SCHEME = "proxy";
 const SETTINGS_STORAGE_KEY = "open-builder-settings";
@@ -16,7 +17,17 @@ const SETTINGS_STORAGE_KEY = "open-builder-settings";
 // ─── State ───────────────────────────────────────────────────────────────────
 
 let proxyEnabled = false;
+let proxyAllowedHosts: string[] = [];
+let proxyLog: ProxyLogEntry[] = [];
 let installed = false;
+
+export interface ProxyLogEntry {
+  timestamp: number;
+  kind: "fetch" | "xhr" | "sse";
+  method: string;
+  host: string;
+  path: string;
+}
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
@@ -26,6 +37,84 @@ let installed = false;
  */
 export function setProxyEnabled(enabled: boolean) {
   proxyEnabled = enabled;
+}
+
+export function parseProxyAllowedHosts(value: string): string[] {
+  return value
+    .split(/[\n,]/)
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+export function setProxyAllowedHosts(hosts: string[] | string) {
+  proxyAllowedHosts = Array.isArray(hosts)
+    ? hosts.map((host) => host.trim().toLowerCase()).filter(Boolean)
+    : parseProxyAllowedHosts(hosts);
+  syncProxyPolicy();
+}
+
+export function isHostAllowed(hostname: string, allowedHosts: string[]): boolean {
+  if (allowedHosts.length === 0) return isLoopbackHost(hostname);
+  const host = hostname.toLowerCase();
+  return allowedHosts.some((allowed) => {
+    if (allowed === host) return true;
+    if (allowed.startsWith("*.")) {
+      const suffix = allowed.slice(1);
+      return host.endsWith(suffix) && host.length > suffix.length;
+    }
+    return false;
+	  });
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+function addHostFromUrl(out: Set<string>, rawUrl: unknown): void {
+  if (typeof rawUrl !== "string" || !rawUrl) return;
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.hostname) out.add(parsed.hostname.toLowerCase());
+  } catch {
+    // Ignore incomplete settings while the user is typing.
+  }
+}
+
+function readConfiguredApiHosts(): string[] {
+  const hosts = new Set<string>();
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return [];
+    const data = JSON.parse(raw);
+    addHostFromUrl(hosts, data?.state?.ai?.apiBaseUrl);
+  } catch {
+    // Ignore malformed local settings.
+  }
+  addHostFromUrl(hosts, import.meta.env.VITE_MOHUA_API_URL);
+  return [...hosts];
+}
+
+function effectiveAllowedHosts(): string[] {
+  return [...new Set([...proxyAllowedHosts, ...readConfiguredApiHosts()])];
+}
+
+function syncProxyPolicy(): void {
+  if (!isTauri()) return;
+  void invoke("set_proxy_policy", {
+    policy: { allowed_hosts: effectiveAllowedHosts() },
+  })
+    .catch((err) => {
+      console.warn("[proxy] Failed to sync proxy policy:", err);
+    });
+}
+
+export function getProxyLog(): ProxyLogEntry[] {
+  return [...proxyLog];
+}
+
+export function clearProxyLog(): void {
+  proxyLog = [];
 }
 
 /**
@@ -56,8 +145,10 @@ export function installProxy(): void {
     return;
   }
 
-  // Read initial setting from localStorage
-  proxyEnabled = readProxySetting();
+	  // Read initial setting from localStorage
+	  proxyEnabled = readProxySetting();
+	  setProxyAllowedHosts(readProxyAllowedHosts());
+	  syncProxyPolicy();
 
   hijackFetch();
   hijackXHR();
@@ -89,9 +180,33 @@ function shouldProxy(url: string): boolean {
     // Don't proxy same-origin requests (dev server, tauri app, etc.)
     if (parsed.origin === window.location.origin) return false;
 
+	    if (!isHostAllowed(parsed.hostname, effectiveAllowedHosts())) return false;
+
     return true;
   } catch {
     return false;
+  }
+}
+
+function recordProxyRequest(
+  kind: ProxyLogEntry["kind"],
+  method: string,
+  rawUrl: string,
+): void {
+  try {
+    const parsed = new URL(rawUrl, window.location.href);
+    proxyLog = [
+      ...proxyLog.slice(-99),
+      {
+        timestamp: Date.now(),
+        kind,
+        method,
+        host: parsed.host,
+        path: parsed.pathname,
+      },
+    ];
+  } catch {
+    // Ignore malformed URLs; shouldProxy already rejects them.
   }
 }
 
@@ -131,6 +246,17 @@ function readProxySetting(): boolean {
     return data?.state?.system?.reverseProxy === true;
   } catch {
     return false;
+  }
+}
+
+function readProxyAllowedHosts(): string {
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return "";
+    const data = JSON.parse(raw);
+    return data?.state?.system?.reverseProxyAllowedHosts ?? "";
+  } catch {
+    return "";
   }
 }
 
@@ -194,6 +320,11 @@ function hijackFetch(): void {
     // Streaming requests → SSE bridge (Tauri invoke + Events)
     if (isStreamingRequest(rawUrl, init)) {
       console.debug(`[proxy] SSE stream: ${rawUrl}`);
+      recordProxyRequest(
+        "sse",
+        init?.method ?? (input instanceof Request ? input.method : "POST"),
+        rawUrl,
+      );
       return createSseResponse({
         url: rawUrl,
         method:
@@ -208,6 +339,11 @@ function hijackFetch(): void {
     // Non-streaming requests → proxy:// custom protocol
     const proxiedUrl = toProxyUrl(rawUrl);
     console.debug(`[proxy] fetch: ${rawUrl} → ${proxiedUrl}`);
+    recordProxyRequest(
+      "fetch",
+      init?.method ?? (input instanceof Request ? input.method : "GET"),
+      rawUrl,
+    );
 
     // Preserve Request properties (method, headers, body, signal, etc.)
     if (input instanceof Request) {
@@ -236,6 +372,7 @@ function hijackXHR(): void {
     if (shouldProxy(rawUrl)) {
       const proxiedUrl = toProxyUrl(rawUrl);
       console.debug(`[proxy] XHR: ${rawUrl} → ${proxiedUrl}`);
+      recordProxyRequest("xhr", method, rawUrl);
       return originalOpen.call(
         this,
         method,

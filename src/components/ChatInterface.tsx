@@ -1,13 +1,21 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import {
+  lazy,
+  Suspense,
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+  useCallback,
+} from "react";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ChatInput } from "./chat/ChatInput";
 import { EmptyState } from "./chat/EmptyState";
 import { MessageBubble } from "./chat/MessageBubble";
-import { MobilePreview } from "./chat/MobilePreview";
 import { GeneratingIndicator } from "./chat/GeneratingIndicator";
 import { SettingsWarning } from "./chat/SettingsWarning";
 import { SessionList } from "./chat/SessionList";
 import { DiffModal } from "./chat/DiffModal";
+import { SnapshotHistoryDialog } from "./chat/SnapshotHistoryDialog";
 import {
   RollbackHint,
   RollbackConfirmDialog,
@@ -27,6 +35,11 @@ import type {
 } from "../types";
 
 const EMPTY_SNAPSHOTS: ProjectSnapshot[] = [];
+const MobilePreview = lazy(() =>
+  import("./chat/MobilePreview").then((module) => ({
+    default: module.MobilePreview,
+  })),
+);
 
 interface ChatInterfaceProps {
   messages: Message[];
@@ -44,6 +57,7 @@ interface ChatInterfaceProps {
   onRetry: () => Promise<void>;
   onContinue: () => Promise<void>;
   onReview: () => Promise<void>;
+  onHealthCheck: () => Promise<void>;
 }
 
 export function ChatInterface({
@@ -62,6 +76,7 @@ export function ChatInterface({
   onRetry,
   onContinue,
   onReview,
+  onHealthCheck,
 }: ChatInterfaceProps) {
   const t = useT();
   const [input, setInput] = useState("");
@@ -85,6 +100,7 @@ export function ChatInterface({
     [snapshots],
   );
   const [diffMessageId, setDiffMessageId] = useState<string | null>(null);
+  const [showSnapshotHistory, setShowSnapshotHistory] = useState(false);
 
   const {
     rollbackConfirmId,
@@ -117,6 +133,9 @@ export function ChatInterface({
         case "compact":
           onCompressContext();
           break;
+        case "health":
+          onHealthCheck();
+          break;
         case "review":
           onReview();
           break;
@@ -128,7 +147,14 @@ export function ChatInterface({
           break;
       }
     },
-    [onCompressContext, onReview, onRetry, onContinue, onSetFiles],
+    [
+      onCompressContext,
+      onHealthCheck,
+      onReview,
+      onRetry,
+      onContinue,
+      onSetFiles,
+    ],
   );
 
   const lastAssistantId = useMemo(() => {
@@ -139,14 +165,34 @@ export function ChatInterface({
   }, [mergedMessages]);
 
   const handleShowDiff = useCallback((id: string) => setDiffMessageId(id), []);
+  const handleShowDiffFromHistory = useCallback((id: string) => {
+    setShowSnapshotHistory(false);
+    setDiffMessageId(id);
+  }, []);
   const handleRollbackConfirm = useCallback(
     (id: string) => setRollbackConfirmId(id),
     [setRollbackConfirmId],
   );
+  const handleRollbackFromHistory = useCallback(
+    (id: string) => {
+      setShowSnapshotHistory(false);
+      setRollbackConfirmId(id);
+    },
+    [setRollbackConfirmId],
+  );
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+	  useEffect(() => {
+	    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+	  }, [messages]);
+
+	  useEffect(() => {
+	    if (!showSessionList) return;
+	    const onKeyDown = (event: KeyboardEvent) => {
+	      if (event.key === "Escape") setShowSessionList(false);
+	    };
+	    document.addEventListener("keydown", onKeyDown);
+	    return () => document.removeEventListener("keydown", onKeyDown);
+	  }, [showSessionList]);
 
   const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -177,21 +223,23 @@ export function ChatInterface({
         isGenerating={isGenerating}
         onOpenSettings={onOpenSettings}
         onToggleSessionList={() => setShowSessionList(true)}
+        onOpenSnapshotHistory={() => setShowSnapshotHistory(true)}
+        snapshotCount={snapshots.length}
       />
 
-      {showSessionList && (
-        <div
-          className="absolute inset-0 top-0 z-40 backdrop-blur-sm bg-black/20 animate-in fade-in duration-200"
-          onClick={() => setShowSessionList(false)}
-        >
-          <div
-            className="h-full w-full max-w-80 bg-background border-r shadow-lg animate-in slide-in-from-left duration-200"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <SessionList onClose={() => setShowSessionList(false)} />
-          </div>
-        </div>
-      )}
+	      {showSessionList && (
+	        <div className="absolute inset-0 top-0 z-40">
+	          <button
+	            type="button"
+	            aria-label={t.sessions.close}
+	            className="absolute inset-0 cursor-default backdrop-blur-sm bg-black/20 animate-in fade-in duration-200"
+	            onClick={() => setShowSessionList(false)}
+	          />
+	          <aside className="relative h-full w-full max-w-80 bg-background border-r shadow-lg animate-in slide-in-from-left duration-200">
+	            <SessionList onClose={() => setShowSessionList(false)} />
+	          </aside>
+	        </div>
+	      )}
 
       <div
         className="flex flex-col flex-1 p-4 pb-0 overflow-y-auto space-y-4"
@@ -237,11 +285,21 @@ export function ChatInterface({
         })}
 
         {isMobile && isProjectInitialized && !isGenerating && (
-          <MobilePreview
-            files={files}
-            template={template}
-            sandpackKey={sandpackKey}
-          />
+          <Suspense
+            fallback={
+              <div className="flex min-h-40 items-center justify-center rounded-lg border bg-muted/30">
+                <p className="text-sm text-muted-foreground">
+                  {t.app.loading}
+                </p>
+              </div>
+            }
+          >
+            <MobilePreview
+              files={files}
+              template={template}
+              sandpackKey={sandpackKey}
+            />
+          </Suspense>
         )}
 
         {isGenerating && <GeneratingIndicator />}
@@ -290,6 +348,16 @@ export function ChatInterface({
           conversationId={activeId}
           messageId={diffMessageId}
           onClose={() => setDiffMessageId(null)}
+        />
+      )}
+
+      {showSnapshotHistory && activeId && (
+        <SnapshotHistoryDialog
+          conversationId={activeId}
+          messages={messages}
+          onClose={() => setShowSnapshotHistory(false)}
+          onShowDiff={handleShowDiffFromHistory}
+          onRollback={handleRollbackFromHistory}
         />
       )}
 

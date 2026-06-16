@@ -1,11 +1,6 @@
 import { X, FileText } from "lucide-react";
 import type { Attachment } from "../../../types";
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+import { formatAttachmentBytes } from "../../../lib/utils/attachments";
 
 function getFileExt(name: string): string {
   const dot = name.lastIndexOf(".");
@@ -52,17 +47,18 @@ export function AttachmentPreview({
                 </span>
               </div>
               <span className="text-[10px] text-muted-foreground pl-5.5">
-                {getFileExt(att.name)}
-                {getFileExt(att.name) && " · "}
-                {formatFileSize(att.size)}
+	                {getFileExt(att.name)}
+	                {getFileExt(att.name) && " · "}
+	                {formatAttachmentBytes(att.size)}
               </span>
             </div>
           )}
           <button
-            type="button"
-            onClick={() => onRemove(i)}
-            className="absolute top-0.5 right-0.5 bg-black/60 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-          >
+	            type="button"
+	            onClick={() => onRemove(i)}
+	            aria-label={`Remove ${att.name}`}
+	            className="absolute top-0.5 right-0.5 bg-black/60 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+	          >
             <X size={12} />
           </button>
         </div>

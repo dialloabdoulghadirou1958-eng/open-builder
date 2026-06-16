@@ -7,14 +7,18 @@ export interface SystemSettings {
   language: Language;
   theme: Theme;
   reverseProxy: boolean;
+  reverseProxyAllowedHosts: string;
   planModeEnabled: boolean;
+  autoQaEnabled: boolean;
 }
 
 export const systemDefaults: SystemSettings = {
   language: "system",
   theme: "system",
   reverseProxy: false,
+  reverseProxyAllowedHosts: "",
   planModeEnabled: false,
+  autoQaEnabled: false,
 };
 
 export interface SystemSlice {

@@ -3,6 +3,15 @@ import { z } from "zod";
 import { type AssetSearchSettings, SERVER_ENGINE } from "../../store/settings";
 import { serverAssetSearch } from "../services/mohua-api";
 import { toolResult } from "../utils/tool-result";
+import {
+  ASSET_DESCRIPTION_MAX_CHARS,
+  ASSET_SEARCH_MAX_RESULTS,
+  clampInt,
+  fetchWithTimeout,
+  limitArray,
+  safeErrorMessage,
+  truncateText,
+} from "./network-guard";
 
 export const ASSET_SEARCH_TOOLS = {
   image_search: tool({
@@ -41,35 +50,53 @@ async function pixabaySearch(
   perPage: number = 10,
 ): Promise<string> {
   const baseUrl = settings.pixabayApiUrl || "https://pixabay.com/api";
+  const size = clampInt(perPage, 10, 1, ASSET_SEARCH_MAX_RESULTS);
   const params = new URLSearchParams({
     key: settings.pixabayApiKey,
     q: query,
     image_type: imageType,
     orientation: orientation,
-    per_page: Math.min(perPage, 20).toString(),
+    per_page: size.toString(),
   });
   if (color) params.append("colors", color);
 
-  const res = await fetch(`${baseUrl}/?${params}`);
-  if (!res.ok) {
-    const text = await res.text();
-    return JSON.stringify({
-      ok: false,
-      error: `Pixabay search failed (${res.status}): ${text}`,
-    });
-  }
+  try {
+    const res = await fetchWithTimeout(`${baseUrl}/?${params}`);
+    if (!res.ok) {
+      const text = await res.text();
+      return JSON.stringify({
+        ok: false,
+        error: `Pixabay search failed (${res.status}): ${text}`,
+      });
+    }
 
-  const data = await res.json();
-  return JSON.stringify({
-    ok: true,
-    images: (data.hits ?? []).map((img: any) => ({
-      url: `https://i0.wp.com/${img.webformatURL.replace(/^https?:\/\//, "")}`,
-      thumbnail: `https://i0.wp.com/${img.previewURL.replace(/^https?:\/\//, "")}`,
-      width: img.webformatWidth,
-      height: img.webformatHeight,
-      description: img.tags,
-    })),
-  });
+    const data = await res.json();
+    const limited = limitArray(data.hits ?? [], size);
+    return JSON.stringify({
+      ok: true,
+      images: limited.items.map((img: any) => {
+        const description = truncateText(
+          img.tags,
+          ASSET_DESCRIPTION_MAX_CHARS,
+        );
+        return {
+          url: `https://i0.wp.com/${img.webformatURL.replace(/^https?:\/\//, "")}`,
+          thumbnail: `https://i0.wp.com/${img.previewURL.replace(/^https?:\/\//, "")}`,
+          width: img.webformatWidth,
+          height: img.webformatHeight,
+          description: description.text,
+          descriptionTruncated: description.truncated,
+        };
+      }),
+      meta: {
+        engine: "pixabay",
+        maxResults: size,
+        truncatedResults: limited.truncated,
+      },
+    });
+  } catch (err) {
+    return JSON.stringify({ ok: false, error: safeErrorMessage(err) });
+  }
 }
 
 async function unsplashSearch(
@@ -80,36 +107,54 @@ async function unsplashSearch(
   perPage: number = 10,
 ): Promise<string> {
   const baseUrl = settings.unsplashApiUrl || "https://api.unsplash.com";
+  const size = clampInt(perPage, 10, 1, ASSET_SEARCH_MAX_RESULTS);
   const params = new URLSearchParams({
     query,
     client_id: settings.unsplashApiKey,
-    per_page: Math.min(perPage, 20).toString(),
+    per_page: size.toString(),
   });
 
   if (orientation === "horizontal") params.append("orientation", "landscape");
   if (orientation === "vertical") params.append("orientation", "portrait");
   if (color) params.append("color", color);
 
-  const res = await fetch(`${baseUrl}/search/photos?${params}`);
-  if (!res.ok) {
-    const text = await res.text();
-    return JSON.stringify({
-      ok: false,
-      error: `Unsplash search failed (${res.status}): ${text}`,
-    });
-  }
+  try {
+    const res = await fetchWithTimeout(`${baseUrl}/search/photos?${params}`);
+    if (!res.ok) {
+      const text = await res.text();
+      return JSON.stringify({
+        ok: false,
+        error: `Unsplash search failed (${res.status}): ${text}`,
+      });
+    }
 
-  const data = await res.json();
-  return JSON.stringify({
-    ok: true,
-    images: (data.results ?? []).map((img: any) => ({
-      url: img.urls.regular,
-      thumbnail: img.urls.thumb,
-      width: 1080,
-      height: Math.round((1080 * img.height) / img.width),
-      description: img.description || img.alt_description || "",
-    })),
-  });
+    const data = await res.json();
+    const limited = limitArray(data.results ?? [], size);
+    return JSON.stringify({
+      ok: true,
+      images: limited.items.map((img: any) => {
+        const description = truncateText(
+          img.description || img.alt_description || "",
+          ASSET_DESCRIPTION_MAX_CHARS,
+        );
+        return {
+          url: img.urls.regular,
+          thumbnail: img.urls.thumb,
+          width: 1080,
+          height: Math.round((1080 * img.height) / img.width),
+          description: description.text,
+          descriptionTruncated: description.truncated,
+        };
+      }),
+      meta: {
+        engine: "unsplash",
+        maxResults: size,
+        truncatedResults: limited.truncated,
+      },
+    });
+  } catch (err) {
+    return JSON.stringify({ ok: false, error: safeErrorMessage(err) });
+  }
 }
 
 export function createAssetSearchToolHandler(
@@ -141,6 +186,12 @@ export function createAssetSearchToolHandler(
     }
 
     if (engine === SERVER_ENGINE && name === "image_search") {
+      const maxResults = clampInt(
+        a.per_page,
+        10,
+        1,
+        ASSET_SEARCH_MAX_RESULTS,
+      );
       return toolResult(
         serverAssetSearch({
           query: a.query,
@@ -148,9 +199,35 @@ export function createAssetSearchToolHandler(
           image_type: a.image_type,
           orientation: a.orientation,
           color: a.color,
-          per_page: a.per_page,
+          per_page: maxResults,
         }),
-        (res) => ({ ...res }),
+        (res) => {
+          const images = Array.isArray((res as any).images)
+            ? (res as any).images
+            : Array.isArray((res as any).results)
+              ? (res as any).results
+              : [];
+          const limited = limitArray(images, maxResults);
+          return {
+            ...res,
+            images: limited.items.map((img: any) => {
+              const description = truncateText(
+                img.description || img.alt_description || "",
+                ASSET_DESCRIPTION_MAX_CHARS,
+              );
+              return {
+                ...img,
+                description: description.text,
+                descriptionTruncated: description.truncated,
+              };
+            }),
+            meta: {
+              engine: SERVER_ENGINE,
+              maxResults,
+              truncatedResults: limited.truncated,
+            },
+          };
+        },
       );
     }
 

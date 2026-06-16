@@ -96,7 +96,7 @@ export function CodeViewer({
             {/* Preview */}
             <div
               className={cn(
-                "transition-all duration-300 mx-auto",
+                "transition-[width,height,transform,opacity] duration-300 mx-auto",
                 viewMode === "preview" ? "block" : "hidden",
                 deviceSize === "desktop" && "w-full h-full",
                 deviceSize !== "desktop" &&
@@ -117,7 +117,7 @@ export function CodeViewer({
               <div className="grid grid-rows-3 h-full">
                 <div
                   className={cn(
-                    "transition-all duration-300 ease-in-out",
+                    "transition-[width,height,transform,opacity] duration-300 ease-in-out",
                     showConsole ? "row-span-2" : "row-span-3",
                   )}
                 >

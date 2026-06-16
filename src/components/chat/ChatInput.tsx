@@ -13,11 +13,17 @@ import { AttachmentPreview } from "./chat-input/AttachmentPreview";
 import { ChatInputToolbar } from "./chat-input/ChatInputToolbar";
 import { SkillsPanel } from "../skills/SkillsPanel";
 import { isSkillsAvailable } from "../../lib/skills/fs";
+import {
+  isAcceptedFileMime,
+  isImageMime,
+  validateAttachmentFile,
+} from "../../lib/utils/attachments";
 
 const NEEDS_MESSAGES = new Set([
   "fork",
   "clear",
   "compact",
+  "health",
   "review",
   "continue",
   "retry",
@@ -25,31 +31,6 @@ const NEEDS_MESSAGES = new Set([
 
 const FILE_ACCEPT =
   "text/*,application/json,application/xml,application/javascript,application/xhtml+xml,application/x-yaml,application/sql,application/graphql,application/ld+json,application/x-sh,application/x-httpd-php,application/typescript,application/pdf";
-
-const FILE_MIME_PREFIXES = ["text/"];
-const FILE_MIME_EXACT = new Set([
-  "application/json",
-  "application/xml",
-  "application/javascript",
-  "application/xhtml+xml",
-  "application/x-yaml",
-  "application/sql",
-  "application/graphql",
-  "application/ld+json",
-  "application/x-sh",
-  "application/x-httpd-php",
-  "application/typescript",
-  "application/pdf",
-]);
-
-function isAcceptedFileType(mime: string): boolean {
-  if (FILE_MIME_EXACT.has(mime)) return true;
-  return FILE_MIME_PREFIXES.some((p) => mime.startsWith(p));
-}
-
-function isImageType(mime: string): boolean {
-  return mime.startsWith("image/");
-}
 
 interface ChatInputProps {
   input: string;
@@ -81,6 +62,7 @@ export function ChatInput({
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const skillsAvailable = isSkillsAvailable();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -168,65 +150,76 @@ export function ChatInput({
     }
   };
 
-  const processFile = useCallback(
-    (file: File) => {
-      if (isImageType(file.type)) {
+  const readFile = useCallback(
+    (file: File, readAsDataUrl: boolean) =>
+      new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
+        reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
         reader.onload = () => {
-          if (typeof reader.result === "string") {
-            onAttachmentsChange([
-              ...attachments,
-              {
-                type: "image",
-                name: file.name || "pasted-image",
-                content: reader.result,
-                size: file.size,
-              },
-            ]);
-          }
+          if (typeof reader.result === "string") resolve(reader.result);
+          else reject(new Error(`Failed to read ${file.name}`));
         };
-        reader.readAsDataURL(file);
-      } else if (isAcceptedFileType(file.type)) {
-        const reader = new FileReader();
-        reader.onload = () => {
-          if (typeof reader.result === "string") {
-            onAttachmentsChange([
-              ...attachments,
-              {
-                type: "file",
-                name: file.name,
-                content: reader.result,
-                size: file.size,
-              },
-            ]);
-          }
-        };
-        if (file.type === "application/pdf") {
-          reader.readAsDataURL(file);
-        } else {
-          reader.readAsText(file);
+        if (readAsDataUrl) reader.readAsDataURL(file);
+        else reader.readAsText(file);
+      }),
+    [],
+  );
+
+  const processFiles = useCallback(
+    async (files: File[]) => {
+      let next = [...attachments];
+      const accepted: Attachment[] = [];
+      const errors: string[] = [];
+
+      for (const file of files) {
+        const validation = validateAttachmentFile(file, next);
+        if (!validation.ok) {
+          errors.push(validation.reason);
+          continue;
+        }
+        try {
+          const image = isImageMime(file.type);
+          const content = await readFile(
+            file,
+            image || file.type === "application/pdf",
+          );
+          const attachment: Attachment = {
+            type: image ? "image" : "file",
+            name: file.name || (image ? "pasted-image" : "pasted-file"),
+            content,
+            size: file.size,
+          };
+          accepted.push(attachment);
+          next = [...next, attachment];
+        } catch (err) {
+          errors.push(err instanceof Error ? err.message : String(err));
         }
       }
+
+      if (accepted.length > 0) {
+        onAttachmentsChange([...attachments, ...accepted]);
+      }
+      setAttachmentError(errors[0] ?? null);
     },
-    [attachments, onAttachmentsChange],
+    [attachments, onAttachmentsChange, readFile],
   );
 
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData.items;
     for (const item of items) {
-      if (isImageType(item.type)) {
+      if (isImageMime(item.type)) {
         const file = item.getAsFile();
         if (file) {
           e.preventDefault();
-          processFile(file);
+          void processFiles([file]);
           return;
         }
       }
-      if (isAcceptedFileType(item.type)) {
+      if (isAcceptedFileMime(item.type)) {
         const file = item.getAsFile();
         if (file) {
           e.preventDefault();
-          processFile(file);
+          void processFiles([file]);
           return;
         }
       }
@@ -236,14 +229,14 @@ export function ChatInput({
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    Array.from(files).forEach(processFile);
+    void processFiles(Array.from(files));
     e.target.value = "";
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    Array.from(files).forEach(processFile);
+    void processFiles(Array.from(files));
     e.target.value = "";
   };
 
@@ -278,11 +271,7 @@ export function ChatInput({
 
     const files = e.dataTransfer.files;
     if (!files || files.length === 0) return;
-    Array.from(files).forEach((file) => {
-      if (isImageType(file.type) || isAcceptedFileType(file.type)) {
-        processFile(file);
-      }
-    });
+    void processFiles(Array.from(files));
   };
 
   const removeAttachment = (index: number) => {
@@ -304,6 +293,14 @@ export function ChatInput({
           attachments={attachments}
           onRemove={removeAttachment}
         />
+        {attachmentError && (
+          <p
+            className="mb-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-xs text-destructive"
+            aria-live="polite"
+          >
+            {attachmentError}
+          </p>
+        )}
         <div className="relative">
           {showSlashMenu && (
             <SlashCommandMenu

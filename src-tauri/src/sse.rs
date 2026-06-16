@@ -5,6 +5,8 @@ use futures_util::StreamExt;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
+use crate::proxy::is_url_allowed;
+
 /// Shared reqwest client for SSE connections — NO timeout.
 /// Streaming responses can last indefinitely (long reasoning chains, etc.).
 static SSE_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
@@ -63,6 +65,7 @@ pub async fn sse_connect(
     headers: HashMap<String, String>,
     body: Option<String>,
 ) -> Result<(), String> {
+    is_url_allowed(&url)?;
     let event_name = format!("sse://{id}");
 
     let task = tauri::async_runtime::spawn(async move {

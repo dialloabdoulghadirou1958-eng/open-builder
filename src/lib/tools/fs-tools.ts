@@ -1,4 +1,3 @@
-import { SANDBOX_TEMPLATES } from "@codesandbox/sandpack-react";
 import type {
   ProjectFiles,
   FileChange,
@@ -6,6 +5,94 @@ import type {
 import { truncate } from "../utils/truncate";
 import { renamePathInProject, basename } from "./file-refs";
 import { fsReadEnvSchema, fsManageEnv, type ManageEnvOp } from "./env-tools";
+
+type SandboxTemplateFile = string | { code: string };
+type SandboxTemplate = {
+  files: Record<string, SandboxTemplateFile>;
+};
+type SandboxTemplates = Record<string, SandboxTemplate>;
+
+const ENV_MANAGED_PATHS = new Set([".env"]);
+const SENSITIVE_HIDDEN_PATHS = [
+  ".ssh/",
+  ".aws/",
+  ".gnupg/",
+  ".kube/",
+  ".docker/",
+  ".config/gh/",
+];
+
+export function normalizeProjectPath(path: unknown): {
+  ok: true;
+  path: string;
+} | {
+  ok: false;
+  error: string;
+} {
+  if (typeof path !== "string") {
+    return { ok: false, error: "path must be a string" };
+  }
+  const trimmed = path.trim().replace(/\\/g, "/");
+  if (!trimmed) return { ok: false, error: "path must not be empty" };
+  if (trimmed.startsWith("/") || /^[a-zA-Z]:\//.test(trimmed)) {
+    return { ok: false, error: `absolute paths are not allowed — "${path}"` };
+  }
+  const parts = trimmed.split("/").filter(Boolean);
+  if (parts.some((part) => part === "..")) {
+    return { ok: false, error: `path traversal is not allowed — "${path}"` };
+  }
+  if (parts.some((part) => part === ".")) {
+    return { ok: false, error: `dot path segments are not allowed — "${path}"` };
+  }
+  const normalized = parts.join("/");
+  if (!normalized) return { ok: false, error: "path must not be empty" };
+  if (
+    SENSITIVE_HIDDEN_PATHS.some(
+      (prefix) => normalized === prefix.slice(0, -1) || normalized.startsWith(prefix),
+    )
+  ) {
+    return { ok: false, error: `sensitive hidden paths are not allowed — "${path}"` };
+  }
+  return { ok: true, path: normalized };
+}
+
+function normalizePathList(paths: unknown): {
+  ok: true;
+  paths: string[];
+} | {
+  ok: false;
+  error: string;
+} {
+  if (!Array.isArray(paths) || paths.length === 0) {
+    return { ok: false, error: "no paths provided" };
+  }
+  const normalized: string[] = [];
+  for (const path of paths) {
+    const result = normalizeProjectPath(path);
+    if (!result.ok) return { ok: false, error: result.error };
+    normalized.push(result.path);
+  }
+  return { ok: true, paths: normalized };
+}
+
+function rejectEnvManagedPath(path: string): FsToolResult | null {
+  if (ENV_MANAGED_PATHS.has(path)) {
+    return {
+      result: `Error: "${path}" is managed by manage_env. Use manage_env instead of generic file tools.`,
+      changes: [],
+    };
+  }
+  return null;
+}
+
+let sandboxTemplatesPromise: Promise<SandboxTemplates> | null = null;
+
+async function loadSandboxTemplates(): Promise<SandboxTemplates> {
+  sandboxTemplatesPromise ??= import("@codesandbox/sandpack-react").then(
+    (mod) => mod.SANDBOX_TEMPLATES as SandboxTemplates,
+  );
+  return sandboxTemplatesPromise;
+}
 
 export interface FsToolResult {
   result: string;
@@ -19,11 +106,12 @@ export interface FsToolResult {
   dependenciesChanged?: boolean;
 }
 
-export function fsInitProject(template: string): FsToolResult {
-  const tmpl = SANDBOX_TEMPLATES[template as keyof typeof SANDBOX_TEMPLATES];
+export async function fsInitProject(template: string): Promise<FsToolResult> {
+  const templates = await loadSandboxTemplates();
+  const tmpl = templates[template];
   if (!tmpl) {
     return {
-      result: `Error: unknown template "${template}". Use one of: ${Object.keys(SANDBOX_TEMPLATES).join(", ")}`,
+      result: `Error: unknown template "${template}". Use one of: ${Object.keys(templates).join(", ")}`,
       changes: [],
     };
   }
@@ -78,10 +166,9 @@ export function fsReadFiles(
   paths: string[],
   files: ProjectFiles,
 ): FsToolResult {
-  if (!Array.isArray(paths) || paths.length === 0) {
-    return { result: "Error: no paths provided", changes: [] };
-  }
-  const out = paths
+  const checked = normalizePathList(paths);
+  if (!checked.ok) return { result: `Error: ${checked.error}`, changes: [] };
+  const out = checked.paths
     .map((path) => {
       if (!(path in files)) {
         return `=== ${path} ===\nError: file not found`;
@@ -97,11 +184,16 @@ export function fsWriteFile(
   content: string,
   files: ProjectFiles,
 ): FsToolResult {
-  const action: FileChange["action"] = path in files ? "modified" : "created";
+  const checked = normalizeProjectPath(path);
+  if (!checked.ok) return { result: `Error: ${checked.error}`, changes: [] };
+  const envRejected = rejectEnvManagedPath(checked.path);
+  if (envRejected) return envRejected;
+  const action: FileChange["action"] =
+    checked.path in files ? "modified" : "created";
   return {
-    result: `OK — ${action}: ${path} (${content.length} chars)`,
-    changes: [{ path, action }],
-    newFiles: { ...files, [path]: content },
+    result: `OK — ${action}: ${checked.path} (${content.length} chars)`,
+    changes: [{ path: checked.path, action }],
+    newFiles: { ...files, [checked.path]: content },
   };
 }
 
@@ -110,11 +202,15 @@ export function fsPatchFile(
   patches: Array<{ search: string; replace: string }>,
   files: ProjectFiles,
 ): FsToolResult {
-  if (!(path in files)) {
-    return { result: `Error: file not found — "${path}"`, changes: [] };
+  const checked = normalizeProjectPath(path);
+  if (!checked.ok) return { result: `Error: ${checked.error}`, changes: [] };
+  const envRejected = rejectEnvManagedPath(checked.path);
+  if (envRejected) return envRejected;
+  if (!(checked.path in files)) {
+    return { result: `Error: file not found — "${checked.path}"`, changes: [] };
   }
 
-  let content = files[path];
+  let content = files[checked.path];
   const log: string[] = [];
   let applied = 0;
   let failed = 0;
@@ -135,9 +231,9 @@ export function fsPatchFile(
   }
 
   if (applied === 0) {
-    return {
-      result:
-        `Error: none of ${patches.length} patches matched in "${path}" — file was not modified.\n` +
+	    return {
+	      result:
+	        `Error: none of ${patches.length} patches matched in "${checked.path}" — file was not modified.\n` +
         log.join("\n") +
         `\nTip: re-read the file to verify its current content, then retry with an exact search string.`,
       changes: [],
@@ -149,12 +245,12 @@ export function fsPatchFile(
       ? `Warning: ${failed} of ${patches.length} patches did not match — those edits were skipped. Re-read the file and retry the failed patches if needed.\n`
       : "";
 
-  return {
-    result: header + log.join("\n"),
-    changes: [{ path, action: "modified" }],
-    newFiles: { ...files, [path]: content },
-  };
-}
+	  return {
+	    result: header + log.join("\n"),
+	    changes: [{ path: checked.path, action: "modified" }],
+	    newFiles: { ...files, [checked.path]: content },
+	  };
+	}
 
 export function fsSearchInFiles(
   pattern: string,
@@ -189,14 +285,18 @@ export function fsDeleteFile(
   path: string,
   files: ProjectFiles,
 ): FsToolResult {
-  if (!(path in files)) {
-    return { result: `Error: file not found — "${path}"`, changes: [] };
+  const checked = normalizeProjectPath(path);
+  if (!checked.ok) return { result: `Error: ${checked.error}`, changes: [] };
+  const envRejected = rejectEnvManagedPath(checked.path);
+  if (envRejected) return envRejected;
+  if (!(checked.path in files)) {
+    return { result: `Error: file not found — "${checked.path}"`, changes: [] };
   }
   const newFiles = { ...files };
-  delete newFiles[path];
+  delete newFiles[checked.path];
   return {
-    result: `OK — deleted: ${path}`,
-    changes: [{ path, action: "deleted" }],
+    result: `OK — deleted: ${checked.path}`,
+    changes: [{ path: checked.path, action: "deleted" }],
     newFiles,
   };
 }
@@ -206,30 +306,33 @@ export function fsRenameFile(
   newPath: string,
   files: ProjectFiles,
 ): FsToolResult {
-  if (!oldPath || !newPath) {
-    return { result: "Error: both old_path and new_path are required", changes: [] };
-  }
-  if (oldPath === newPath) {
+  const checkedOld = normalizeProjectPath(oldPath);
+  if (!checkedOld.ok) return { result: `Error: old_path ${checkedOld.error}`, changes: [] };
+  const checkedNew = normalizeProjectPath(newPath);
+  if (!checkedNew.ok) return { result: `Error: new_path ${checkedNew.error}`, changes: [] };
+  const envRejected = rejectEnvManagedPath(checkedOld.path) ?? rejectEnvManagedPath(checkedNew.path);
+  if (envRejected) return envRejected;
+  if (checkedOld.path === checkedNew.path) {
     return { result: "Error: old_path and new_path are identical", changes: [] };
   }
-  const prefix = oldPath + "/";
+  const prefix = checkedOld.path + "/";
   const exists =
-    oldPath in files ||
+    checkedOld.path in files ||
     Object.keys(files).some((k) => k.startsWith(prefix));
   if (!exists) {
-    return { result: `Error: path not found — "${oldPath}"`, changes: [] };
+    return { result: `Error: path not found — "${checkedOld.path}"`, changes: [] };
   }
-  if (newPath in files) {
+  if (checkedNew.path in files) {
     return {
-      result: `Error: destination already exists — "${newPath}"`,
+      result: `Error: destination already exists — "${checkedNew.path}"`,
       changes: [],
     };
   }
 
   const { newFiles, movedPaths, refCount, fileCount } = renamePathInProject(
     files,
-    oldPath,
-    newPath,
+    checkedOld.path,
+    checkedNew.path,
   );
 
   const changes: FileChange[] = [];
@@ -250,10 +353,10 @@ export function fsRenameFile(
   }
 
   const movedCount = movedPaths.length;
-  const movedSummary =
-    movedCount === 1
-      ? `${movedPaths[0][0]} → ${movedPaths[0][1]}`
-      : `${oldPath}/ → ${newPath}/ (${movedCount} files)`;
+	  const movedSummary =
+	    movedCount === 1
+	      ? `${movedPaths[0][0]} → ${movedPaths[0][1]}`
+	      : `${checkedOld.path}/ → ${checkedNew.path}/ (${movedCount} files)`;
   return {
     result:
       `OK — renamed ${movedSummary}, ` +
@@ -269,21 +372,25 @@ export function fsMoveFile(
   targetDir: string,
   files: ProjectFiles,
 ): FsToolResult {
-  if (!path) {
-    return { result: "Error: 'path' is required", changes: [] };
-  }
-  const base = basename(path);
-  const dir = (targetDir || "").replace(/\/+$/, "");
+  const checkedPath = normalizeProjectPath(path);
+  if (!checkedPath.ok) return { result: `Error: path ${checkedPath.error}`, changes: [] };
+  const checkedDir =
+    targetDir && targetDir.trim()
+      ? normalizeProjectPath(targetDir)
+      : ({ ok: true, path: "" } as const);
+  if (!checkedDir.ok) return { result: `Error: target_dir ${checkedDir.error}`, changes: [] };
+  const base = basename(checkedPath.path);
+  const dir = checkedDir.path.replace(/\/+$/, "");
   const newPath = dir ? `${dir}/${base}` : base;
-  return fsRenameFile(path, newPath, files);
+  return fsRenameFile(checkedPath.path, newPath, files);
 }
 
 /** Dispatch a file-system tool call. Returns null if the tool is not a recognized fs tool. */
-export function dispatchFsTool(
+export async function dispatchFsTool(
   name: string,
   args: any,
   files: ProjectFiles,
-): FsToolResult | null {
+): Promise<FsToolResult | null> {
   switch (name) {
     case "init_project":
       return fsInitProject(args.template);

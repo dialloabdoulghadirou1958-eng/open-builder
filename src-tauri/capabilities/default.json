@@ -21,39 +21,7 @@
       "identifier": "fs:scope",
       "allow": [
         { "path": "$APPDATA/**" },
-        { "path": "$APPLOCALDATA/**" },
-        { "path": "$HOME/**" }
-      ],
-      "deny": [
-        { "path": "$HOME/.ssh/**" },
-        { "path": "$HOME/.aws/**" },
-        { "path": "$HOME/.gnupg/**" },
-        { "path": "$HOME/.kube/**" },
-        { "path": "$HOME/.docker/**" },
-        { "path": "$HOME/.config/gh/**" }
-      ]
-    },
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "python3",
-          "cmd": "python3",
-          "args": true,
-          "sidecar": false
-        },
-        {
-          "name": "node",
-          "cmd": "node",
-          "args": true,
-          "sidecar": false
-        },
-        {
-          "name": "sh",
-          "cmd": "sh",
-          "args": true,
-          "sidecar": false
-        }
+        { "path": "$APPLOCALDATA/**" }
       ]
     }
   ]

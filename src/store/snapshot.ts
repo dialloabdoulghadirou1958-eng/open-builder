@@ -1,10 +1,17 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import localforage from "localforage";
-import { createPatch, applyPatch } from "diff";
+import { createPatch } from "diff";
 import type { ProjectFiles, ProjectSnapshot } from "../types";
 import { createLocalforageStorage } from "./utils/localforage-storage";
 import { runMigrations, type MigrationStep } from "./utils/migrate";
+import {
+  rebuildSnapshotChainWithoutSnapshot,
+  replaySnapshots,
+} from "./snapshot-replay";
+import { pruneSnapshotRecord } from "../lib/utils/storage-governance";
+
+export { replaySnapshots } from "./snapshot-replay";
 
 const SNAPSHOT_STORE_VERSION = 2;
 /** How many patch snapshots to write between checkpoints. The first snapshot
@@ -58,52 +65,26 @@ interface SnapshotState {
 
   deleteSnapshotsForConversation: (conversationId: string) => void;
 
+  renameSnapshot: (
+    conversationId: string,
+    snapshotId: string,
+    label: string,
+  ) => void;
+
+  deleteSnapshot: (conversationId: string, snapshotId: string) => void;
+
+  importSnapshotsForConversation: (
+    conversationId: string,
+    snapshots: ProjectSnapshot[],
+  ) => void;
+
+  pruneSnapshots: (maxPerConversation: number) => number;
+
   /** Update the latest snapshot to include manual file edits */
   updateLatestSnapshot: (
     conversationId: string,
     currentFiles: ProjectFiles,
   ) => void;
-}
-
-/** Reconstruct full file state by replaying snapshots up to (and including)
- *  `targetId`. Starts from the nearest preceding checkpoint when available;
- *  otherwise replays from the head of the chain. */
-function replaySnapshots(
-  chain: ProjectSnapshot[],
-  targetId: string,
-): ProjectFiles {
-  // Locate target index. If not found, replay everything (best-effort).
-  let targetIdx = chain.findIndex((s) => s.id === targetId);
-  if (targetIdx < 0) targetIdx = chain.length - 1;
-
-  // Walk backwards to find the nearest checkpoint at or before targetIdx.
-  let startIdx = 0;
-  let files: ProjectFiles = {};
-  for (let i = targetIdx; i >= 0; i--) {
-    if (chain[i].kind === "checkpoint" && chain[i].fullFiles) {
-      files = { ...chain[i].fullFiles! };
-      startIdx = i + 1;
-      break;
-    }
-  }
-
-  for (let i = startIdx; i <= targetIdx; i++) {
-    const snap = chain[i];
-    for (const [path, content] of Object.entries(snap.addedFiles)) {
-      files[path] = content;
-    }
-    for (const [path, patch] of Object.entries(snap.patches)) {
-      const old = files[path] ?? "";
-      const result = applyPatch(old, patch);
-      if (typeof result === "string") {
-        files[path] = result;
-      }
-    }
-    for (const path of snap.deletedFiles) {
-      delete files[path];
-    }
-  }
-  return files;
 }
 
 /** Count patch snapshots that have accumulated since the most recent checkpoint. */
@@ -265,6 +246,64 @@ export const useSnapshotStore = create<SnapshotState>()(
           const { [conversationId]: _, ...rest } = s.snapshots;
           return { snapshots: rest };
         });
+      },
+
+      renameSnapshot: (conversationId, snapshotId, label) => {
+        set((s) => {
+          const chain = s.snapshots[conversationId] ?? [];
+          return {
+            snapshots: {
+              ...s.snapshots,
+              [conversationId]: chain.map((snapshot) =>
+                snapshot.id === snapshotId
+                  ? { ...snapshot, label: label.trim() || undefined }
+                  : snapshot,
+              ),
+            },
+          };
+        });
+      },
+
+      deleteSnapshot: (conversationId, snapshotId) => {
+        set((s) => {
+          const chain = s.snapshots[conversationId] ?? [];
+          return {
+            snapshots: {
+              ...s.snapshots,
+              [conversationId]: rebuildSnapshotChainWithoutSnapshot(
+                chain,
+                snapshotId,
+                CHECKPOINT_INTERVAL,
+              ),
+            },
+          };
+        });
+      },
+
+      importSnapshotsForConversation: (conversationId, snapshots) => {
+        set((s) => ({
+          snapshots: {
+            ...s.snapshots,
+            [conversationId]: snapshots.map((snapshot) => ({
+              ...snapshot,
+              conversationId,
+            })),
+          },
+        }));
+      },
+
+      pruneSnapshots: (maxPerConversation) => {
+        let removedCount = 0;
+        set((s) => {
+          const result = pruneSnapshotRecord(
+            s.snapshots,
+            maxPerConversation,
+            CHECKPOINT_INTERVAL,
+          );
+          removedCount = result.removedCount;
+          return { snapshots: result.snapshots };
+        });
+        return removedCount;
       },
     }),
     {

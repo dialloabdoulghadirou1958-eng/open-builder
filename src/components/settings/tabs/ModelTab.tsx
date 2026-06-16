@@ -17,8 +17,8 @@ import {
   fetchModelList,
   DEFAULT_BASE_URLS,
   resolveBaseURL,
-} from "@/lib/ai/provider";
-import type { ApiType } from "@/lib/ai/provider";
+} from "@/lib/ai/provider-config";
+import type { ApiType } from "@/lib/ai/provider-config";
 import { useT } from "../../../i18n";
 
 const API_ENDPOINTS: Record<ApiType, string> = {

@@ -43,6 +43,7 @@ interface ConversationState {
   _hasHydrated: boolean;
 
   createConversation: () => string;
+  importConversation: (conversation: Conversation) => string;
   deleteConversation: (id: string) => void;
   switchConversation: (id: string) => void;
 
@@ -79,6 +80,25 @@ export const useConversationStore = create<ConversationState>()(
           isProjectInitialized: false,
           createdAt: Date.now(),
           updatedAt: Date.now(),
+        };
+        set((s) => ({
+          conversations: { ...s.conversations, [id]: conv },
+          activeId: id,
+        }));
+        return id;
+      },
+
+      importConversation: (conversation) => {
+        const id = conversation.id || crypto.randomUUID();
+        const now = Date.now();
+        const conv: Conversation = {
+          ...conversation,
+          id,
+          title: conversation.title || DEFAULT_TITLE,
+          messages: [...conversation.messages],
+          files: { ...conversation.files },
+          createdAt: conversation.createdAt || now,
+          updatedAt: now,
         };
         set((s) => ({
           conversations: { ...s.conversations, [id]: conv },

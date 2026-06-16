@@ -1,4 +1,4 @@
-export const SETTINGS_VERSION = 9;
+export const SETTINGS_VERSION = 11;
 
 let stashedApiKey: string | null = null;
 
@@ -48,6 +48,9 @@ export function migrateSettings(persisted: unknown, version: number): unknown {
     if (state.system.reverseProxy === undefined) {
       state.system.reverseProxy = false;
     }
+    if (state.system.reverseProxyAllowedHosts === undefined) {
+      state.system.reverseProxyAllowedHosts = "";
+    }
   }
   if (version < 7) {
     if (!state.serverService) {
@@ -73,6 +76,18 @@ export function migrateSettings(persisted: unknown, version: number): unknown {
     if (state.ai && typeof state.ai.apiKey === "string" && state.ai.apiKey) {
       stashedApiKey = state.ai.apiKey;
       state.ai.apiKey = "";
+    }
+  }
+  if (version < 10) {
+    if (!state.system) state.system = {};
+    if (state.system.reverseProxyAllowedHosts === undefined) {
+      state.system.reverseProxyAllowedHosts = "";
+    }
+  }
+  if (version < 11) {
+    if (!state.system) state.system = {};
+    if (state.system.autoQaEnabled === undefined) {
+      state.system.autoQaEnabled = false;
     }
   }
   return state;

@@ -1,11 +1,10 @@
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { ChatInterface } from "./components/ChatInterface";
-import { CodeViewer } from "./components/CodeViewer";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { UnlockDialog } from "./components/secrets/UnlockDialog";
 import { CommandPalette } from "./components/command-palette/CommandPalette";
@@ -18,6 +17,12 @@ import { useCommandPaletteActions } from "./hooks/useCommandPaletteActions";
 import { useAuthStore } from "./store/auth";
 import { useConversationStore } from "./store/conversation";
 import { useT } from "./i18n";
+
+const CodeViewer = lazy(() =>
+  import("./components/CodeViewer").then((module) => ({
+    default: module.CodeViewer,
+  })),
+);
 
 export default function App() {
   const t = useT();
@@ -92,6 +97,7 @@ export default function App() {
     moveFile,
     compressContext,
     review,
+    healthCheck,
   } = useGenerator({
     settings,
     webSearchSettings,
@@ -163,6 +169,7 @@ export default function App() {
           onRetry={retry}
           onContinue={continueTask}
           onReview={review}
+          onHealthCheck={healthCheck}
         />
       </ResizablePanel>
 
@@ -172,17 +179,27 @@ export default function App() {
 
           <ResizablePanel className="w-full h-full min-w-0 hidden md:flex overflow-hidden">
             {isProjectInitialized && !isMobile ? (
-              <CodeViewer
-                files={files}
-                currentFile={currentFile}
-                onFileSelect={setCurrentFile}
-                onFileChange={updateFiles}
-                onRenameFile={renameFile}
-                onDeleteFile={deleteFile}
-                onMoveFile={moveFile}
-                template={template}
-                sandpackKey={sandpackKey}
-              />
+              <Suspense
+                fallback={
+                  <div className="flex h-full w-full items-center justify-center bg-muted/30">
+                    <p className="text-sm text-muted-foreground">
+                      {t.app.loading}
+                    </p>
+                  </div>
+                }
+              >
+                <CodeViewer
+                  files={files}
+                  currentFile={currentFile}
+                  onFileSelect={setCurrentFile}
+                  onFileChange={updateFiles}
+                  onRenameFile={renameFile}
+                  onDeleteFile={deleteFile}
+                  onMoveFile={moveFile}
+                  template={template}
+                  sandpackKey={sandpackKey}
+                />
+              </Suspense>
             ) : (
               <div className="flex w-full h-full min-w-0 items-center justify-center bg-muted/30">
                 <div className="text-center max-w-md px-6">

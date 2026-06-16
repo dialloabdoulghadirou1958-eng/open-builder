@@ -26,6 +26,7 @@ import { getSkillRegistry } from "../skills/instance";
 import { scriptExecutor } from "../skills/script-executor";
 import { isSkillsAvailable } from "../skills/fs";
 import { skillActiveContext } from "../skills/active-context";
+import { useSecurityAuditStore } from "../../store/security-audit";
 import {
   INSTALL_COMPONENT_TOOL,
   createInstallComponentHandler,
@@ -38,6 +39,10 @@ import {
   APPLY_DESIGN_STYLE_TOOL,
   createApplyDesignStyleHandler,
 } from "./design-styles";
+import {
+  PROJECT_HEALTH_CHECK_TOOL,
+  createProjectHealthCheckHandler,
+} from "./project-health";
 import { getBuiltinSearchConfig } from "../ai/provider";
 import type { ApiType } from "../ai/provider";
 import type {
@@ -132,6 +137,12 @@ export function buildToolHandlers(
   const applyDesignStyleHandler = filesBridge
     ? createApplyDesignStyleHandler(filesBridge)
     : null;
+  const projectHealthCheckHandler = filesBridge
+    ? createProjectHealthCheckHandler({
+        getFiles: filesBridge.getFiles,
+        getConsoleLogs,
+      })
+    : null;
   const skillsAvailable = isSkillsAvailable();
   const skillToolHandler = skillsAvailable
     ? createSkillToolHandler({
@@ -144,6 +155,25 @@ export function buildToolHandlers(
             skillName: skill.name,
             allowedTools: skill.allowedTools,
             activatedAt: Date.now(),
+          });
+        },
+        onScriptExecuted: ({
+          skill,
+          scriptPath,
+          args,
+          startedAt,
+          finishedAt,
+          result,
+        }) => {
+          useSecurityAuditStore.getState().recordSkillScriptExecution({
+            skillId: skill.id,
+            skillName: skill.name,
+            scriptPath,
+            args,
+            startedAt,
+            finishedAt,
+            exitCode: result?.exitCode ?? null,
+            status: result && result.exitCode === 0 ? "success" : "failed",
           });
         },
       })
@@ -182,6 +212,9 @@ export function buildToolHandlers(
     if (name === "apply_design_style" && applyDesignStyleHandler) {
       return applyDesignStyleHandler(name, handlerArgs);
     }
+    if (name === "project_health_check" && projectHealthCheckHandler) {
+      return projectHealthCheckHandler(name, handlerArgs);
+    }
     if (name === "image_search" && assetSearchHandler) {
       return assetSearchHandler(name, handlerArgs);
     }
@@ -205,6 +238,7 @@ export function buildToolHandlers(
           ...INSTALL_COMPONENT_TOOL,
           ...SCREENSHOT_TO_CODE_TOOL,
           ...APPLY_DESIGN_STYLE_TOOL,
+          ...PROJECT_HEALTH_CHECK_TOOL,
         }
       : {}),
     ...(skillsAvailable ? SKILL_TOOLS : {}),

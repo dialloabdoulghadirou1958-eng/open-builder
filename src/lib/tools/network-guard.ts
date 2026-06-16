@@ -1,0 +1,122 @@
+export const TOOL_FETCH_TIMEOUT_MS = 12_000;
+export const TOOL_MAX_CONCURRENCY = 3;
+export const WEB_SEARCH_MAX_RESULTS = 10;
+export const WEB_READER_MAX_URLS = 5;
+export const WEB_PAGE_MAX_CHARS = 12_000;
+export const SEARCH_SNIPPET_MAX_CHARS = 1_000;
+export const ASSET_SEARCH_MAX_RESULTS = 20;
+export const ASSET_DESCRIPTION_MAX_CHARS = 400;
+export const NPM_SEARCH_MAX_RESULTS = 10;
+export const NPM_README_MAX_CHARS = 2_000;
+export const NPM_DEPENDENCY_MAX_KEYS = 50;
+
+export class ToolTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Request timed out after ${timeoutMs}ms`);
+    this.name = "ToolTimeoutError";
+  }
+}
+
+export function clampInt(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value)
+        : NaN;
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(Math.floor(parsed), min), max);
+}
+
+export function limitArray<T>(
+  items: T[],
+  max: number,
+): { items: T[]; truncated: boolean; originalCount: number } {
+  return {
+    items: items.slice(0, max),
+    truncated: items.length > max,
+    originalCount: items.length,
+  };
+}
+
+export function limitRecord<T>(
+  record: Record<string, T> | undefined,
+  maxKeys: number,
+): { value: Record<string, T>; truncated: boolean; originalCount: number } {
+  const entries = Object.entries(record ?? {});
+  return {
+    value: Object.fromEntries(entries.slice(0, maxKeys)),
+    truncated: entries.length > maxKeys,
+    originalCount: entries.length,
+  };
+}
+
+export function truncateText(
+  text: unknown,
+  maxChars: number,
+): { text: string; truncated: boolean; originalLength: number } {
+  const value = typeof text === "string" ? text : text == null ? "" : String(text);
+  return {
+    text: value.length > maxChars ? value.slice(0, maxChars) : value,
+    truncated: value.length > maxChars,
+    originalLength: value.length,
+  };
+}
+
+export function safeErrorMessage(error: unknown): string {
+  if (error instanceof ToolTimeoutError) return error.message;
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return "Request was aborted";
+  }
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+export async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs = TOOL_FETCH_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (
+      error instanceof DOMException &&
+      (error.name === "AbortError" || error.name === "TimeoutError")
+    ) {
+      throw new ToolTimeoutError(timeoutMs);
+    }
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timer);
+  }
+}
+
+export async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const concurrency = clampInt(limit, TOOL_MAX_CONCURRENCY, 1, items.length || 1);
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
+  );
+  return results;
+}

@@ -26,9 +26,13 @@ export const BUILTIN_TOOLS = {
       "svelte (Svelte with JavaScript), " +
       "angular (Angular with TypeScript), " +
       "solid (SolidJS with TypeScript), " +
+      "node (Node.js), " +
+      "nextjs (Next.js), " +
       "vite (Vite vanilla), " +
       "vite-react (Vite + React JS), " +
       "vite-react-ts (Vite + React TypeScript), " +
+      "vite-preact (Vite + Preact JS), " +
+      "vite-preact-ts (Vite + Preact TypeScript), " +
       "vite-vue (Vite + Vue JS), " +
       "vite-vue-ts (Vite + Vue TypeScript), " +
       "vite-svelte (Vite + Svelte JS), " +
@@ -266,9 +270,16 @@ export const BUILTIN_TOOLS = {
   }),
 };
 
-// Builtin tool names that mutate project files. Single source of truth used by
-// plan-mode filtering (useGenerator) and the subagent readonly policy (runner).
-export const BUILTIN_WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
+export interface ToolPolicy {
+  readonly name: string;
+  readonly access: "read" | "write";
+  readonly planModeVisible: boolean;
+  readonly subagentVisible: boolean;
+}
+
+// Tool names that mutate project files or generated project state. This covers
+// both BUILTIN_TOOLS and custom tools registered by handler-factory.
+export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "init_project",
   "manage_dependencies",
   "write_file",
@@ -281,3 +292,57 @@ export const BUILTIN_WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "screenshot_to_code",
   "apply_design_style",
 ]);
+
+export const READONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "list_files",
+  "read_files",
+  "search_in_files",
+  "read_env_schema",
+  "get_console_logs",
+  "compact_context",
+  "ask_user_question",
+  "exit_plan_mode",
+  "dispatch_subagent",
+  "web_search",
+  "web_reader",
+  "image_search",
+  "search_npm_packages",
+  "get_npm_package_detail",
+  "list_skills",
+  "read_skill",
+  "execute_skill_script",
+  "memory",
+  "project_health_check",
+]);
+
+export const TOOL_POLICIES: Record<string, ToolPolicy> = Object.fromEntries(
+  [...WRITE_TOOL_NAMES].map((name) => [
+    name,
+    {
+      name,
+      access: "write",
+      planModeVisible: false,
+      subagentVisible: false,
+    } satisfies ToolPolicy,
+  ]),
+);
+
+for (const name of READONLY_TOOL_NAMES) {
+  TOOL_POLICIES[name] = {
+    name,
+    access: "read",
+    planModeVisible: true,
+    subagentVisible: true,
+  };
+}
+
+export function isWriteToolName(name: string): boolean {
+  return WRITE_TOOL_NAMES.has(name);
+}
+
+export function isPlanModeToolVisible(name: string): boolean {
+  return !isWriteToolName(name);
+}
+
+// Backward-compatible alias while callers migrate to WRITE_TOOL_NAMES.
+export const BUILTIN_WRITE_TOOL_NAMES = WRITE_TOOL_NAMES;

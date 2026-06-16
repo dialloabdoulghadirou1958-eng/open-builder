@@ -8,13 +8,16 @@ export type {
   ToolDefinition,
   FileChange,
   GenerateResult,
+  GeneratorRunState,
+  GeneratorEvent,
+  StructuredGenerationError,
   GeneratorOptions,
   GeneratorEvents,
 } from "../lib/ai/generator-types";
 
 export type { AISettings, WebSearchSettings, AssetSearchSettings } from "../store/settings";
 export type { OpenAIClientConfig } from "../lib/ai/client";
-export type { ApiType } from "../lib/ai/provider";
+export type { ApiType } from "../lib/ai/provider-config";
 
 // ─── Chat UI types ────────────────────────────────────────────────────────────
 
@@ -27,6 +30,17 @@ export interface Attachment {
   /** Original file size in bytes */
   size: number;
 }
+
+export interface AttachmentConstraints {
+  maxCount: number;
+  maxImageBytes: number;
+  maxFileBytes: number;
+  maxTotalBytes: number;
+}
+
+export type AttachmentValidationResult =
+  | { ok: true }
+  | { ok: false; reason: string };
 
 export interface TextBlock {
   type: "text";
@@ -106,6 +120,8 @@ export interface ProjectSnapshot {
   createdAt: number;
   /** Snapshot type — older records lack this field and are implicitly "patch". */
   kind?: "patch" | "checkpoint";
+  /** Optional user-facing label for the snapshot history panel. */
+  label?: string;
   /** Full file tree at this point. Only present on checkpoint snapshots. */
   fullFiles?: _ProjectFiles;
 }
@@ -148,6 +164,41 @@ export interface Conversation {
   compressedContext?: CompressedContext;
   pinned?: boolean;
   archived?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ─── Project template types ─────────────────────────────────────────────────
+
+export interface ProjectTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  files: _ProjectFiles;
+  template: string;
+  sourceConversationId?: string;
+  tags: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ─── Style asset types ──────────────────────────────────────────────────────
+
+export interface StyleAssetTokens {
+  colors: string[];
+  typography?: string;
+  radius?: string;
+  spacing?: string;
+}
+
+export interface StyleAsset {
+  id: string;
+  name: string;
+  description?: string;
+  instructions: string;
+  tokens: StyleAssetTokens;
+  tags: string[];
+  enabled: boolean;
   createdAt: number;
   updatedAt: number;
 }

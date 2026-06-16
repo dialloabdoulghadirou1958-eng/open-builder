@@ -1,5 +1,5 @@
 import type { StateCreator } from "zustand";
-import type { ApiType } from "../../lib/ai/provider";
+import type { ApiType } from "../../lib/ai/provider-config";
 import { useSecretsStore } from "../secrets";
 
 export interface AISettings {

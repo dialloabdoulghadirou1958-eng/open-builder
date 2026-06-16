@@ -1,9 +1,7 @@
 import { useCallback } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { runCompress } from "../lib/utils/run-compress";
-import { generateSmartTitle } from "../lib/utils/smart-title";
 import { useConversationStore, DEFAULT_TITLE } from "../store/conversation";
-import type { ProviderConfig } from "../lib/ai/provider";
+import type { ProviderConfig } from "../lib/ai/provider-config";
 import type { Message } from "../types";
 
 interface UseTitleAndCompressionArgs {
@@ -25,7 +23,8 @@ export function useTitleAndCompression({
       : null;
     if (!conv || conv.title !== DEFAULT_TITLE) return;
 
-    generateSmartTitle(conv.messages, cfg)
+    import("../lib/utils/smart-title")
+      .then(({ generateSmartTitle }) => generateSmartTitle(conv.messages, cfg))
       .then((title) => {
         if (!title) return;
         const current = useConversationStore.getState();
@@ -47,6 +46,7 @@ export function useTitleAndCompression({
     setIsGenerating(true);
     try {
       const cfg = await resolveConfig();
+      const { runCompress } = await import("../lib/utils/run-compress");
       await runCompress(cfg, conv);
     } catch (err: any) {
       setMessages((prev) => [

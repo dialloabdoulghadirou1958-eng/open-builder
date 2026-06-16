@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import type { SkillEntry } from "../../lib/skills/types";
+import type { SkillCatalogItem } from "../../lib/skills/catalog";
 import { useT } from "../../i18n";
 
 interface SkillCardProps {
   skill: SkillEntry;
+  catalog?: Omit<SkillCatalogItem, "skill">;
   onToggleEnabled: (id: string, enabled: boolean) => void;
   onDelete: (id: string) => void;
   details?: {
@@ -20,6 +22,7 @@ interface SkillCardProps {
 
 export function SkillCard({
   skill,
+  catalog,
   onToggleEnabled,
   onDelete,
   details,
@@ -64,6 +67,24 @@ export function SkillCard({
             <span className="text-[10px] text-muted-foreground font-mono">
               v{skill.version}
             </span>
+            {catalog && (
+              <Badge
+                variant={
+                  catalog.risk === "high"
+                    ? "destructive"
+                    : catalog.risk === "medium"
+                      ? "outline"
+                      : "secondary"
+                }
+                className="text-[10px] h-4 px-1.5"
+              >
+                {catalog.risk === "high"
+                  ? t.skills.market.riskHigh
+                  : catalog.risk === "medium"
+                    ? t.skills.market.riskMedium
+                    : t.skills.market.riskLow}
+              </Badge>
+            )}
             <ChevronRight
               size={13}
               className={cn(
@@ -75,6 +96,20 @@ export function SkillCard({
           <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
             {skill.description}
           </p>
+          {catalog && (
+            <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+              <span>
+                {t.skills.market.permissions}: {catalog.permissionCount}
+              </span>
+              <span>
+                {t.skills.market.scripts}: {catalog.scriptCount}
+              </span>
+              <span>
+                {t.skills.market.references}: {catalog.referenceCount}
+              </span>
+              <span>{new Date(skill.installedAt).toLocaleDateString()}</span>
+            </div>
+          )}
         </button>
         <Button
           type="button"

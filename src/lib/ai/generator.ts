@@ -12,6 +12,11 @@ import { messagesToModelMessages } from "./messages";
 import { BUILTIN_TOOLS } from "./tools-schema";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt";
 import { buildProjectGuidelinesSection } from "./project-guidelines";
+import { isWriteToolName } from "./tools-schema";
+import {
+  PLAN_APPROVED_PREFIX,
+  PLAN_REJECTED_PREFIX,
+} from "./plan-mode";
 import { dispatchFsTool } from "../tools/fs-tools";
 import { formatAskUserAnswers } from "../utils/tool-result";
 import {
@@ -47,9 +52,6 @@ export type {
   GeneratorEvents,
 } from "./generator-types";
 
-export const PLAN_APPROVED_PREFIX = "Plan approved";
-export const PLAN_REJECTED_PREFIX = "Plan rejected";
-
 export class WebAppGenerator {
   // ── internal state ──
   private files: ProjectFiles;
@@ -78,6 +80,7 @@ export class WebAppGenerator {
   private readonly onPlanApproved?: GeneratorOptions["onPlanApproved"];
   private readonly dispatchSubagent?: GeneratorOptions["dispatchSubagent"];
   private systemPromptSuffix: string = "";
+  private readOnlyMode = false;
 
   constructor(options: GeneratorOptions, events: GeneratorEvents = {}) {
     this.apiType = options.apiType ?? "openai-compatible";
@@ -138,6 +141,10 @@ export class WebAppGenerator {
    *  The provided set is used as-is — the caller is responsible for including any builtins it wants. */
   setTools(tools: ToolSet): void {
     this.tools = tools;
+  }
+
+  setReadOnlyMode(readOnly: boolean): void {
+    this.readOnlyMode = readOnly;
   }
 
   getCustomToolSet(): ToolSet {
@@ -517,6 +524,14 @@ export class WebAppGenerator {
     }
 
     const activeCtx = skillActiveContext.get();
+    if (this.readOnlyMode && isWriteToolName(name)) {
+      const errMsg =
+        `Error: tool "${name}" is not available while Plan Mode is active. ` +
+        "Submit or revise the plan first; write tools are enabled only after approval.";
+      this.events.onToolResult?.(name, args, errMsg, toolCall.id);
+      return { result: errMsg, changes: [] };
+    }
+
     if (
       activeCtx &&
       !ALWAYS_ALLOWED_TOOL_NAMES.has(name) &&
@@ -531,7 +546,7 @@ export class WebAppGenerator {
     }
 
     // File-system tools go through the shared dispatcher.
-    const fsOutcome = dispatchFsTool(name, args, this.files);
+    const fsOutcome = await dispatchFsTool(name, args, this.files);
     if (fsOutcome) {
       if (fsOutcome.newFiles) {
         this.files = fsOutcome.newFiles;

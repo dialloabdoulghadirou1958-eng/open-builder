@@ -9,6 +9,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { Copy, Check } from "lucide-react";
 import lightCss from "highlight.js/styles/github.min.css?raw";
 import darkCss from "highlight.js/styles/github-dark.min.css?raw";
@@ -16,6 +17,26 @@ import { useTheme } from "../../hooks/useTheme";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 
 const HLJS_STYLE_ID = "hljs-theme";
+const markdownSanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    code: [
+      ...(defaultSchema.attributes?.code ?? []),
+      ["className", /^language-[\w-]+$/, /^hljs(?:\s|$)/],
+    ],
+    span: [
+      ...(defaultSchema.attributes?.span ?? []),
+      ["className", /^hljs-[\w-]+$/],
+    ],
+    img: [
+      ...(defaultSchema.attributes?.img ?? []),
+      ["src", /^https?:\/\//, /^data:image\//],
+      "alt",
+      "title",
+    ],
+  },
+};
 
 function HljsTheme() {
   const isDark = useTheme();
@@ -72,11 +93,11 @@ function CodeBlockHeader({
         <span className="relative w-3.5 h-3.5">
           <Copy
             size={14}
-            className={`absolute inset-0 transition-all duration-200 ${copied ? "opacity-0 scale-50" : "opacity-100 scale-100"}`}
+            className={`absolute inset-0 transition-[opacity,transform,color,background-color,border-color] duration-200 ${copied ? "opacity-0 scale-50" : "opacity-100 scale-100"}`}
           />
           <Check
             size={14}
-            className={`absolute inset-0 transition-all duration-200 ${copied ? "opacity-100 scale-100 text-green-500" : "opacity-0 scale-50"}`}
+            className={`absolute inset-0 transition-[opacity,transform,color,background-color,border-color] duration-200 ${copied ? "opacity-100 scale-100 text-green-500" : "opacity-0 scale-50"}`}
           />
         </span>
       </button>
@@ -221,11 +242,14 @@ export const MarkdownContent = memo(
   ({ content, variant }: MarkdownContentProps) => (
     <div className="markdown-content">
       <HljsTheme />
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
-        components={variant === "user" ? userComponents : assistantComponents}
-      >
+	      <ReactMarkdown
+	        remarkPlugins={[remarkGfm]}
+	        rehypePlugins={[
+	          rehypeHighlight,
+	          [rehypeSanitize, markdownSanitizeSchema],
+	        ]}
+	        components={variant === "user" ? userComponents : assistantComponents}
+	      >
         {content}
       </ReactMarkdown>
     </div>
