@@ -6,6 +6,8 @@ export interface ScriptResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+  stdoutTruncated?: boolean;
+  stderrTruncated?: boolean;
 }
 
 export interface ScriptExecuteParams {

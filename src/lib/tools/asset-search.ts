@@ -8,7 +8,9 @@ import {
   ASSET_SEARCH_MAX_RESULTS,
   clampInt,
   fetchWithTimeout,
+  formatHttpError,
   limitArray,
+  normalizeToolQuery,
   safeErrorMessage,
   truncateText,
 } from "./network-guard";
@@ -49,11 +51,15 @@ async function pixabaySearch(
   color?: string,
   perPage: number = 10,
 ): Promise<string> {
+  const checkedQuery = normalizeToolQuery(query);
+  if (!checkedQuery.ok) {
+    return JSON.stringify({ ok: false, error: checkedQuery.error });
+  }
   const baseUrl = settings.pixabayApiUrl || "https://pixabay.com/api";
   const size = clampInt(perPage, 10, 1, ASSET_SEARCH_MAX_RESULTS);
   const params = new URLSearchParams({
     key: settings.pixabayApiKey,
-    q: query,
+    q: checkedQuery.query,
     image_type: imageType,
     orientation: orientation,
     per_page: size.toString(),
@@ -66,7 +72,7 @@ async function pixabaySearch(
       const text = await res.text();
       return JSON.stringify({
         ok: false,
-        error: `Pixabay search failed (${res.status}): ${text}`,
+        error: formatHttpError("Pixabay search failed", res.status, text),
       });
     }
 
@@ -106,10 +112,14 @@ async function unsplashSearch(
   color?: string,
   perPage: number = 10,
 ): Promise<string> {
+  const checkedQuery = normalizeToolQuery(query);
+  if (!checkedQuery.ok) {
+    return JSON.stringify({ ok: false, error: checkedQuery.error });
+  }
   const baseUrl = settings.unsplashApiUrl || "https://api.unsplash.com";
   const size = clampInt(perPage, 10, 1, ASSET_SEARCH_MAX_RESULTS);
   const params = new URLSearchParams({
-    query,
+    query: checkedQuery.query,
     client_id: settings.unsplashApiKey,
     per_page: size.toString(),
   });
@@ -124,7 +134,7 @@ async function unsplashSearch(
       const text = await res.text();
       return JSON.stringify({
         ok: false,
-        error: `Unsplash search failed (${res.status}): ${text}`,
+        error: formatHttpError("Unsplash search failed", res.status, text),
       });
     }
 
@@ -163,6 +173,13 @@ export function createAssetSearchToolHandler(
   return async (name: string, args: unknown): Promise<string> => {
     const a = args as Record<string, any>;
     const engine = settings.engine;
+    if (name === "image_search") {
+      const checkedQuery = normalizeToolQuery(a?.query);
+      if (!checkedQuery.ok) {
+        return JSON.stringify({ ok: false, error: checkedQuery.error });
+      }
+      a.query = checkedQuery.query;
+    }
 
     if (engine === "pixabay" && name === "image_search") {
       return pixabaySearch(

@@ -3,7 +3,13 @@ import { parseSkillMd } from "./parser";
 import type { SkillRegistry } from "./registry";
 import type { SkillEntry } from "./types";
 import { resolveSkillUrl } from "./url-resolver";
-import { MAX_FILE_BYTES, assertSafePath } from "./paths";
+import { SKILL_IMPORT_LIMITS, assertSafePath } from "./paths";
+import {
+  assertSkillArchiveSize,
+  assertSkillImportEntryCount,
+  createSkillImportBudget,
+  readResponseBytesWithLimit,
+} from "./import-limits";
 
 export interface ImportResult {
   entry: SkillEntry;
@@ -11,7 +17,21 @@ export interface ImportResult {
 }
 
 function sanitizeId(rawId: string): string {
-  return rawId.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  const cleaned = rawId
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, SKILL_IMPORT_LIMITS.maxIdChars);
+  return cleaned || "imported-skill";
+}
+
+function appendIdSuffix(id: string, suffix: string): string {
+  return `${id.slice(0, SKILL_IMPORT_LIMITS.maxIdChars - suffix.length)}${suffix}`;
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
 }
 
 interface StagedSkill {
@@ -45,11 +65,13 @@ async function stageZip(
   buffer: ArrayBuffer,
   subpath?: string,
 ): Promise<StagedSkill> {
+  assertSkillArchiveSize(buffer.byteLength);
   const zip = await JSZip.loadAsync(buffer);
   const entries: { path: string; file: JSZip.JSZipObject }[] = [];
   zip.forEach((path, file) => {
     if (!file.dir) entries.push({ path, file });
   });
+  assertSkillImportEntryCount(entries.length);
   if (entries.length === 0) {
     throw new Error("Zip archive contains no files.");
   }
@@ -76,16 +98,13 @@ async function stageZip(
   }
 
   const files: Record<string, string> = {};
+  const budget = createSkillImportBudget();
   for (const entry of working) {
     const relPath = entry.strippedPath;
     if (!relPath) continue;
     assertSafePath(relPath);
     const blob = await entry.file.async("uint8array");
-    if (blob.byteLength > MAX_FILE_BYTES) {
-      throw new Error(
-        `File "${relPath}" exceeds ${MAX_FILE_BYTES} byte limit.`,
-      );
-    }
+    budget.trackFile(relPath, blob.byteLength);
     const text = new TextDecoder("utf-8", { fatal: false }).decode(blob);
     files[relPath] = text;
   }
@@ -119,10 +138,20 @@ export async function importFromUrl(
     );
   }
   if (resolved.kind === "zip") {
-    const buf = await res.arrayBuffer();
+    const bytes = await readResponseBytesWithLimit(
+      res,
+      SKILL_IMPORT_LIMITS.maxArchiveBytes,
+      "Skill archive",
+    );
+    const buf = toArrayBuffer(bytes);
     return importFromZip(registry, buf, { subpath: resolved.subpath });
   }
-  const text = await res.text();
+  const bytes = await readResponseBytesWithLimit(
+    res,
+    SKILL_IMPORT_LIMITS.maxSkillMdBytes,
+    "SKILL.md",
+  );
+  const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
   const parsed = parseSkillMd(text);
   const proposedId = sanitizeId(parsed.frontmatter.name);
   const staged: StagedSkill = {
@@ -137,6 +166,7 @@ export async function importFromFolder(
   dirHandle: FileSystemDirectoryHandle,
 ): Promise<ImportResult> {
   const files: Record<string, string> = {};
+  const budget = createSkillImportBudget();
   async function walk(
     handle: FileSystemDirectoryHandle,
     prefix: string,
@@ -152,11 +182,7 @@ export async function importFromFolder(
       } else {
         assertSafePath(relPath);
         const file = await (child as FileSystemFileHandle).getFile();
-        if (file.size > MAX_FILE_BYTES) {
-          throw new Error(
-            `File "${relPath}" exceeds ${MAX_FILE_BYTES} byte limit.`,
-          );
-        }
+        budget.trackFile(relPath, file.size);
         files[relPath] = await file.text();
       }
     }
@@ -178,8 +204,10 @@ export async function importFromStaged(
   if (!files["SKILL.md"]) {
     throw new Error("Imported folder is missing SKILL.md at its root.");
   }
+  const budget = createSkillImportBudget();
   for (const path of Object.keys(files)) {
     assertSafePath(path);
+    budget.trackFile(path, new TextEncoder().encode(files[path]).byteLength);
   }
   return finalizeImport(registry, { proposedId: sanitizeId(proposedId), files });
 }
@@ -195,7 +223,7 @@ async function finalizeImport(
   const existing = registry.list().find((s) => s.id === id);
   if (existing) {
     if (existing.source === "builtin") {
-      id = `${id}-imported`;
+      id = appendIdSuffix(id, "-imported");
       warnings.push(
         `An installed built-in skill already uses id "${staged.proposedId}". Imported as "${id}".`,
       );

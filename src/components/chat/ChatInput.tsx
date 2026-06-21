@@ -14,10 +14,12 @@ import { ChatInputToolbar } from "./chat-input/ChatInputToolbar";
 import { SkillsPanel } from "../skills/SkillsPanel";
 import { isSkillsAvailable } from "../../lib/skills/fs";
 import {
+  formatAttachmentBytes,
   isAcceptedFileMime,
   isImageMime,
   validateAttachmentFile,
 } from "../../lib/utils/attachments";
+import type { Translations } from "../../i18n";
 
 const NEEDS_MESSAGES = new Set([
   "fork",
@@ -30,7 +32,7 @@ const NEEDS_MESSAGES = new Set([
 ]);
 
 const FILE_ACCEPT =
-  "text/*,application/json,application/xml,application/javascript,application/xhtml+xml,application/x-yaml,application/sql,application/graphql,application/ld+json,application/x-sh,application/x-httpd-php,application/typescript,application/pdf";
+  "text/*,application/json,application/xml,application/javascript,application/xhtml+xml,application/x-yaml,application/sql,application/graphql,application/ld+json,application/x-sh,application/x-httpd-php,application/typescript,application/pdf,.txt,.md,.mdx,.json,.xml,.js,.jsx,.ts,.tsx,.yaml,.yml,.sql,.graphql,.gql,.sh,.php,.css,.scss,.html,.pdf";
 
 interface ChatInputProps {
   input: string;
@@ -42,6 +44,44 @@ interface ChatInputProps {
   attachments: Attachment[];
   onAttachmentsChange: (attachments: Attachment[]) => void;
   onSlashCommand: (cmd: string) => void;
+}
+
+function formatAttachmentError(
+  validation: Extract<
+    ReturnType<typeof validateAttachmentFile>,
+    { ok: false }
+  >,
+  t: Translations,
+): string {
+  switch (validation.code) {
+    case "max_count":
+      return t.chat.attachmentErrors.maxCount.replace(
+        "{count}",
+        String(validation.limit ?? ""),
+      );
+    case "max_total_size":
+      return t.chat.attachmentErrors.maxTotalSize.replace(
+        "{size}",
+        formatAttachmentBytes(validation.limit ?? 0),
+      );
+    case "max_image_size":
+      return t.chat.attachmentErrors.maxImageSize.replace(
+        "{size}",
+        formatAttachmentBytes(validation.limit ?? 0),
+      );
+    case "max_file_size":
+      return t.chat.attachmentErrors.maxFileSize.replace(
+        "{size}",
+        formatAttachmentBytes(validation.limit ?? 0),
+      );
+    case "unsupported_type":
+      return t.chat.attachmentErrors.unsupportedType.replace(
+        "{name}",
+        validation.name ?? "unknown",
+      );
+    default:
+      return validation.reason;
+  }
 }
 
 export function ChatInput({
@@ -174,7 +214,7 @@ export function ChatInput({
       for (const file of files) {
         const validation = validateAttachmentFile(file, next);
         if (!validation.ok) {
-          errors.push(validation.reason);
+          errors.push(formatAttachmentError(validation, t));
           continue;
         }
         try {
@@ -191,8 +231,13 @@ export function ChatInput({
           };
           accepted.push(attachment);
           next = [...next, attachment];
-        } catch (err) {
-          errors.push(err instanceof Error ? err.message : String(err));
+        } catch {
+          errors.push(
+            t.chat.attachmentErrors.readFailed.replace(
+              "{name}",
+              file.name || "file",
+            ),
+          );
         }
       }
 
@@ -201,7 +246,7 @@ export function ChatInput({
       }
       setAttachmentError(errors[0] ?? null);
     },
-    [attachments, onAttachmentsChange, readFile],
+    [attachments, onAttachmentsChange, readFile, t],
   );
 
   const handlePaste = (e: React.ClipboardEvent) => {
@@ -215,13 +260,11 @@ export function ChatInput({
           return;
         }
       }
-      if (isAcceptedFileMime(item.type)) {
-        const file = item.getAsFile();
-        if (file) {
+      const file = item.getAsFile();
+      if (file && isAcceptedFileMime(item.type, file.name)) {
           e.preventDefault();
           void processFiles([file]);
           return;
-        }
       }
     }
   };

@@ -46,9 +46,11 @@ export function useTitleAndCompression({
     setIsGenerating(true);
     try {
       const cfg = await resolveConfig();
+      if (useConversationStore.getState().activeId !== conv.id) return;
       const { runCompress } = await import("../lib/utils/run-compress");
       await runCompress(cfg, conv);
     } catch (err: any) {
+      if (useConversationStore.getState().activeId !== conv.id) return;
       setMessages((prev) => [
         ...prev,
         {
@@ -57,7 +59,9 @@ export function useTitleAndCompression({
         },
       ]);
     } finally {
-      setIsGenerating(false);
+      if (useConversationStore.getState().activeId === conv.id) {
+        setIsGenerating(false);
+      }
     }
   }, [resolveConfig, setMessages, setIsGenerating]);
 

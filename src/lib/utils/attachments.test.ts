@@ -10,6 +10,7 @@ describe("attachment validation", () => {
   it("accepts known text-like file types and extension fallback", () => {
     expect(isAcceptedFileMime("application/json", "data.json")).toBe(true);
     expect(isAcceptedFileMime("", "notes.md")).toBe(true);
+    expect(isAcceptedFileMime("application/octet-stream", "App.tsx")).toBe(true);
     expect(isAcceptedFileMime("application/octet-stream", "app.bin")).toBe(false);
   });
 
@@ -23,7 +24,7 @@ describe("attachment validation", () => {
 
     expect(
       validateAttachmentFile(new File(["x"], "extra.txt", { type: "text/plain" }), existing),
-    ).toMatchObject({ ok: false });
+    ).toMatchObject({ ok: false, code: "max_count" });
 
     expect(
       validateAttachmentFile(
@@ -32,7 +33,7 @@ describe("attachment validation", () => {
         }),
         [],
       ),
-    ).toMatchObject({ ok: false });
+    ).toMatchObject({ ok: false, code: "max_file_size" });
 
     expect(
       validateAttachmentFile(
@@ -46,6 +47,6 @@ describe("attachment validation", () => {
           },
         ],
       ),
-    ).toMatchObject({ ok: false });
+    ).toMatchObject({ ok: false, code: "max_total_size" });
   });
 });

@@ -71,6 +71,7 @@ export function ViewToolbar({
               size="icon-sm"
               onClick={() => onDeviceSizeChange("desktop")}
               title={t.toolbar.desktop}
+              aria-label={t.toolbar.desktop}
               className="desktop"
             >
               <Monitor size={16} />
@@ -80,6 +81,7 @@ export function ViewToolbar({
               size="icon-sm"
               onClick={() => onDeviceSizeChange("tablet")}
               title={t.toolbar.tablet}
+              aria-label={t.toolbar.tablet}
               className="tablet"
             >
               <Tablet size={16} />
@@ -89,6 +91,7 @@ export function ViewToolbar({
               size="icon-sm"
               onClick={() => onDeviceSizeChange("mobile")}
               title={t.toolbar.mobile}
+              aria-label={t.toolbar.mobile}
               className="mobile"
             >
               <Smartphone size={16} />
@@ -102,6 +105,7 @@ export function ViewToolbar({
             size="icon-sm"
             onClick={() => downloadAsZip(files)}
             title={t.toolbar.download}
+            aria-label={t.toolbar.download}
           >
             <Download size={16} />
           </Button>

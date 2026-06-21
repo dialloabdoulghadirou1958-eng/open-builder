@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  STYLE_ASSET_LIMITS,
   buildStyleAssetPromptSection,
   createStyleAsset,
+  normalizeStyleAssetInstructions,
   normalizeStyleAssetTags,
   parseStyleAssetList,
 } from "./style-assets";
@@ -48,6 +50,26 @@ describe("style asset utilities", () => {
       "a",
       "b b",
     ]);
+  });
+
+  it("bounds stored instructions", () => {
+    const instructions = normalizeStyleAssetInstructions(
+      "x".repeat(STYLE_ASSET_LIMITS.maxStoredInstructionChars + 1),
+    );
+
+    expect(instructions).toHaveLength(
+      STYLE_ASSET_LIMITS.maxStoredInstructionChars,
+    );
+    expect(
+      createStyleAsset({
+        id: "long",
+        name: "Long",
+        instructions: "x".repeat(
+          STYLE_ASSET_LIMITS.maxStoredInstructionChars + 1,
+        ),
+        now: 1,
+      }).instructions,
+    ).toHaveLength(STYLE_ASSET_LIMITS.maxStoredInstructionChars);
   });
 
   it("builds a prompt section from enabled assets only", () => {

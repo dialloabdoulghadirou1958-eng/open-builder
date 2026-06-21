@@ -1,9 +1,16 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { ProjectFiles, FileChange } from "../ai/generator-types";
+import { validateProjectFileContent } from "./fs-tools";
+import {
+  fetchWithTimeout,
+  safeErrorMessage,
+  truncateText,
+} from "./network-guard";
 
 const RAW_BASE =
   "https://raw.githubusercontent.com/VoltAgent/awesome-design-md/main/design-md";
+const DESIGN_STYLE_RETURN_MAX_CHARS = 80_000;
 
 // Brand design-system slugs available in VoltAgent/awesome-design-md
 // (each lives at design-md/<slug>/DESIGN.md). Single source of truth —
@@ -81,7 +88,9 @@ export function createApplyDesignStyleHandler(deps: ApplyDesignStyleDeps) {
     const url = `${RAW_BASE}/${slug}/DESIGN.md`;
     let spec: string;
     try {
-      const res = await fetch(url, { headers: { Accept: "text/plain" } });
+      const res = await fetchWithTimeout(url, {
+        headers: { Accept: "text/plain" },
+      });
       if (!res.ok) {
         return JSON.stringify({ ok: false, error: `HTTP ${res.status} fetching ${url}` });
       }
@@ -89,7 +98,7 @@ export function createApplyDesignStyleHandler(deps: ApplyDesignStyleDeps) {
     } catch (err: any) {
       return JSON.stringify({
         ok: false,
-        error: `fetch failed for ${url}: ${err?.message ?? "unknown error"}`,
+        error: `fetch failed for ${url}: ${safeErrorMessage(err)}`,
       });
     }
 
@@ -98,12 +107,20 @@ export function createApplyDesignStyleHandler(deps: ApplyDesignStyleDeps) {
     }
 
     const content = `<!-- Design system sourced from VoltAgent/awesome-design-md: ${url} -->\n\n${spec}`;
+    const checkedContent = validateProjectFileContent(content);
+    if (!checkedContent.ok) {
+      return JSON.stringify({ ok: false, error: checkedContent.error });
+    }
 
     const files = deps.getFiles();
     const path = findRootDesignPath(files);
     const action: FileChange["action"] = path in files ? "modified" : "created";
-    const newFiles: ProjectFiles = { ...files, [path]: content };
+    const newFiles: ProjectFiles = { ...files, [path]: checkedContent.content };
     deps.onFilesChanged(newFiles, [{ path, action }]);
+    const returnedSpec = truncateText(
+      checkedContent.content,
+      DESIGN_STYLE_RETURN_MAX_CHARS,
+    );
 
     return JSON.stringify({
       ok: true,
@@ -114,7 +131,8 @@ export function createApplyDesignStyleHandler(deps: ApplyDesignStyleDeps) {
         `Wrote the "${slug}" design system to ${path} as a binding project guideline; ` +
         `it now governs all subsequent UI generation. Follow the colors, typography, spacing, ` +
         `border-radius and component rules in the spec below for every component you build this turn.`,
-      spec: content,
+      spec: returnedSpec.text,
+      specTruncated: returnedSpec.truncated,
     });
   };
 }

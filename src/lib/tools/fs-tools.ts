@@ -13,6 +13,17 @@ type SandboxTemplate = {
 type SandboxTemplates = Record<string, SandboxTemplate>;
 
 const ENV_MANAGED_PATHS = new Set([".env"]);
+export const FS_TOOL_LIMITS = {
+  maxFileBytes: 2 * 1024 * 1024,
+  maxReadFiles: 20,
+  maxReadOutputChars: 120_000,
+  maxSearchMatches: 200,
+  maxSearchPatternChars: 200,
+  maxSearchFiles: 1_000,
+  maxSearchScannedChars: 1_000_000,
+  maxSearchLineChars: 5_000,
+  maxPatchCount: 100,
+} as const;
 const SENSITIVE_HIDDEN_PATHS = [
   ".ssh/",
   ".aws/",
@@ -21,6 +32,47 @@ const SENSITIVE_HIDDEN_PATHS = [
   ".docker/",
   ".config/gh/",
 ];
+
+function textBytes(value: string): number {
+  if (typeof TextEncoder !== "undefined") {
+    return new TextEncoder().encode(value).length;
+  }
+  return value.length;
+}
+
+export function validateProjectFileContent(content: unknown): {
+  ok: true;
+  content: string;
+} | {
+  ok: false;
+  error: string;
+} {
+  if (typeof content !== "string") {
+    return { ok: false, error: "content must be a string" };
+  }
+  if (textBytes(content) > FS_TOOL_LIMITS.maxFileBytes) {
+    return {
+      ok: false,
+      error: `file content exceeds ${FS_TOOL_LIMITS.maxFileBytes} bytes`,
+    };
+  }
+  return { ok: true, content };
+}
+
+function truncateToolOutput(output: string): {
+  output: string;
+  truncated: boolean;
+} {
+  if (output.length <= FS_TOOL_LIMITS.maxReadOutputChars) {
+    return { output, truncated: false };
+  }
+  return {
+    output:
+      output.slice(0, FS_TOOL_LIMITS.maxReadOutputChars) +
+      `\n\n[truncated after ${FS_TOOL_LIMITS.maxReadOutputChars} chars]`,
+    truncated: true,
+  };
+}
 
 export function normalizeProjectPath(path: unknown): {
   ok: true;
@@ -85,6 +137,33 @@ function rejectEnvManagedPath(path: string): FsToolResult | null {
   return null;
 }
 
+function validateSearchPattern(pattern: unknown): {
+  ok: true;
+  pattern: string;
+} | {
+  ok: false;
+  error: string;
+} {
+  if (typeof pattern !== "string") {
+    return { ok: false, error: "pattern must be a string" };
+  }
+  if (!pattern) return { ok: false, error: "pattern must not be empty" };
+  if (pattern.length > FS_TOOL_LIMITS.maxSearchPatternChars) {
+    return {
+      ok: false,
+      error: `pattern is too long (max ${FS_TOOL_LIMITS.maxSearchPatternChars} characters)`,
+    };
+  }
+  // Avoid common catastrophic backtracking shapes such as (a+)+ or (.*){2,}.
+  if (/\((?:[^()\\]|\\.)*[+*](?:[^()\\]|\\.)*\)\s*(?:[+*]|\{\d)/.test(pattern)) {
+    return {
+      ok: false,
+      error: "pattern contains nested quantifiers that are unsafe for project-wide search",
+    };
+  }
+  return { ok: true, pattern };
+}
+
 let sandboxTemplatesPromise: Promise<SandboxTemplates> | null = null;
 
 async function loadSandboxTemplates(): Promise<SandboxTemplates> {
@@ -136,8 +215,12 @@ export function fsManageDependencies(
   packageJson: string,
   files: ProjectFiles,
 ): FsToolResult {
+  const checkedContent = validateProjectFileContent(packageJson);
+  if (!checkedContent.ok) {
+    return { result: `Error: package_json ${checkedContent.error}`, changes: [] };
+  }
   try {
-    JSON.parse(packageJson);
+    JSON.parse(checkedContent.content);
   } catch {
     return { result: "Error: invalid JSON in package_json", changes: [] };
   }
@@ -149,7 +232,7 @@ export function fsManageDependencies(
   return {
     result: `OK — ${action} ${pkgPath}, dependencies updated. Sandpack will restart.`,
     changes: [{ path: pkgPath, action }],
-    newFiles: { ...files, [pkgPath]: packageJson },
+    newFiles: { ...files, [pkgPath]: checkedContent.content },
     dependenciesChanged: true,
   };
 }
@@ -168,6 +251,12 @@ export function fsReadFiles(
 ): FsToolResult {
   const checked = normalizePathList(paths);
   if (!checked.ok) return { result: `Error: ${checked.error}`, changes: [] };
+  if (checked.paths.length > FS_TOOL_LIMITS.maxReadFiles) {
+    return {
+      result: `Error: read_files can read at most ${FS_TOOL_LIMITS.maxReadFiles} files at once`,
+      changes: [],
+    };
+  }
   const out = checked.paths
     .map((path) => {
       if (!(path in files)) {
@@ -176,7 +265,8 @@ export function fsReadFiles(
       return `=== ${path} ===\n${files[path]}`;
     })
     .join("\n\n");
-  return { result: out, changes: [] };
+  const truncated = truncateToolOutput(out);
+  return { result: truncated.output, changes: [] };
 }
 
 export function fsWriteFile(
@@ -186,14 +276,18 @@ export function fsWriteFile(
 ): FsToolResult {
   const checked = normalizeProjectPath(path);
   if (!checked.ok) return { result: `Error: ${checked.error}`, changes: [] };
+  const checkedContent = validateProjectFileContent(content);
+  if (!checkedContent.ok) {
+    return { result: `Error: ${checkedContent.error}`, changes: [] };
+  }
   const envRejected = rejectEnvManagedPath(checked.path);
   if (envRejected) return envRejected;
   const action: FileChange["action"] =
     checked.path in files ? "modified" : "created";
   return {
-    result: `OK — ${action}: ${checked.path} (${content.length} chars)`,
+    result: `OK — ${action}: ${checked.path} (${checkedContent.content.length} chars)`,
     changes: [{ path: checked.path, action }],
-    newFiles: { ...files, [checked.path]: content },
+    newFiles: { ...files, [checked.path]: checkedContent.content },
   };
 }
 
@@ -209,6 +303,15 @@ export function fsPatchFile(
   if (!(checked.path in files)) {
     return { result: `Error: file not found — "${checked.path}"`, changes: [] };
   }
+  if (!Array.isArray(patches) || patches.length === 0) {
+    return { result: "Error: no patches provided", changes: [] };
+  }
+  if (patches.length > FS_TOOL_LIMITS.maxPatchCount) {
+    return {
+      result: `Error: patch_file supports at most ${FS_TOOL_LIMITS.maxPatchCount} patches at once`,
+      changes: [],
+    };
+  }
 
   let content = files[checked.path];
   const log: string[] = [];
@@ -216,7 +319,26 @@ export function fsPatchFile(
   let failed = 0;
 
   for (let i = 0; i < patches.length; i++) {
-    const { search, replace } = patches[i];
+    const patch = patches[i];
+    if (!patch || typeof patch !== "object") {
+      return {
+        result: `Error: patch #${i + 1} requires search and replace`,
+        changes: [],
+      };
+    }
+    const { search, replace } = patch;
+    if (typeof search !== "string" || typeof replace !== "string") {
+      return {
+        result: `Error: patch #${i + 1} requires string search and replace`,
+        changes: [],
+      };
+    }
+    if (search.length === 0) {
+      return {
+        result: `Error: patch #${i + 1} search must not be empty`,
+        changes: [],
+      };
+    }
     const idx = content.indexOf(search);
 
     if (idx >= 0) {
@@ -239,6 +361,13 @@ export function fsPatchFile(
       changes: [],
     };
   }
+  const checkedContent = validateProjectFileContent(content);
+  if (!checkedContent.ok) {
+    return {
+      result: `Error: patched file ${checkedContent.error}`,
+      changes: [],
+    };
+  }
 
   const header =
     failed > 0
@@ -248,7 +377,7 @@ export function fsPatchFile(
 	  return {
 	    result: header + log.join("\n"),
 	    changes: [{ path: checked.path, action: "modified" }],
-	    newFiles: { ...files, [checked.path]: content },
+	    newFiles: { ...files, [checked.path]: checkedContent.content },
 	  };
 	}
 
@@ -256,27 +385,54 @@ export function fsSearchInFiles(
   pattern: string,
   files: ProjectFiles,
 ): FsToolResult {
+  const checkedPattern = validateSearchPattern(pattern);
+  if (!checkedPattern.ok) {
+    return { result: `Error: ${checkedPattern.error}`, changes: [] };
+  }
   let regex: RegExp;
   try {
-    regex = new RegExp(pattern, "g");
+    regex = new RegExp(checkedPattern.pattern, "g");
   } catch {
     return {
-      result: `Error: invalid regex pattern — "${pattern}"`,
+      result: `Error: invalid regex pattern — "${checkedPattern.pattern}"`,
       changes: [],
     };
   }
   const results: string[] = [];
-  for (const [path, content] of Object.entries(files)) {
+  let truncated = false;
+  let scannedChars = 0;
+  const entries = Object.entries(files).slice(0, FS_TOOL_LIMITS.maxSearchFiles);
+  if (Object.keys(files).length > entries.length) truncated = true;
+  for (const [path, content] of entries) {
     const lines = content.split("\n");
     for (let i = 0; i < lines.length; i++) {
-      if (regex.test(lines[i])) {
-        results.push(`${path}:${i + 1}: ${lines[i].trim()}`);
+      const line = lines[i].slice(0, FS_TOOL_LIMITS.maxSearchLineChars);
+      scannedChars += line.length;
+      if (scannedChars > FS_TOOL_LIMITS.maxSearchScannedChars) {
+        truncated = true;
+        break;
+      }
+      if (regex.test(line)) {
+        results.push(`${path}:${i + 1}: ${line.trim()}`);
+        if (results.length >= FS_TOOL_LIMITS.maxSearchMatches) {
+          truncated = true;
+          break;
+        }
       }
       regex.lastIndex = 0;
     }
+    if (truncated) break;
   }
   return {
-    result: results.length > 0 ? results.join("\n") : "(no matches found)",
+    result:
+      results.length > 0
+        ? results.join("\n") +
+          (truncated
+            ? `\n[truncated after ${FS_TOOL_LIMITS.maxSearchMatches} matches or search budget]`
+            : "")
+        : truncated
+          ? `(no matches found before search budget was exhausted)\n[truncated after ${FS_TOOL_LIMITS.maxSearchScannedChars} scanned chars or ${FS_TOOL_LIMITS.maxSearchFiles} files]`
+          : "(no matches found)",
     changes: [],
   };
 }
@@ -322,7 +478,11 @@ export function fsRenameFile(
   if (!exists) {
     return { result: `Error: path not found — "${checkedOld.path}"`, changes: [] };
   }
-  if (checkedNew.path in files) {
+  const newPrefix = checkedNew.path + "/";
+  if (
+    checkedNew.path in files ||
+    Object.keys(files).some((k) => k.startsWith(newPrefix))
+  ) {
     return {
       result: `Error: destination already exists — "${checkedNew.path}"`,
       changes: [],

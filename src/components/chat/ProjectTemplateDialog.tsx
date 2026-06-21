@@ -33,7 +33,7 @@ interface ProjectTemplateDialogProps {
   sourceTitle: string;
   templates: ProjectTemplate[];
   onClose: () => void;
-  onSaveCurrent: (input: ProjectTemplateSaveInput) => void;
+  onSaveCurrent: (input: ProjectTemplateSaveInput) => { ok: true } | { ok: false; error: string };
   onCreateFromTemplate: (templateId: string) => void;
   onDeleteTemplate: (templateId: string) => void;
 }
@@ -71,12 +71,12 @@ export function ProjectTemplateDialog({
 
   const handleSave = () => {
     if (!canSaveCurrent || !name.trim()) return;
-    onSaveCurrent({
+    const result = onSaveCurrent({
       name,
       description,
       tags: tagInput.split(/[,，]/),
     });
-    setNotice(t.sessions.templates.saved);
+    setNotice(result.ok ? t.sessions.templates.saved : result.error);
   };
 
   const handleDelete = (templateId: string) => {

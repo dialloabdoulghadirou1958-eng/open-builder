@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  TOOL_ERROR_MAX_CHARS,
+  TOOL_QUERY_MAX_CHARS,
+  TOOL_URL_MAX_CHARS,
   clampInt,
+  formatHttpError,
   limitArray,
   limitRecord,
   mapWithConcurrency,
+  normalizeHttpUrl,
+  normalizeHttpUrlList,
+  normalizeToolQuery,
+  safeErrorMessage,
   truncateText,
 } from "./network-guard";
 
@@ -37,6 +45,58 @@ describe("network guard helpers", () => {
     expect(result.text).toBe("abc");
     expect(result.truncated).toBe(true);
     expect(result.originalLength).toBe(6);
+  });
+
+  it("normalizes bounded search queries", () => {
+    expect(normalizeToolQuery("  react table  ")).toEqual({
+      ok: true,
+      query: "react table",
+    });
+    expect(normalizeToolQuery("")).toEqual({
+      ok: false,
+      error: "query must not be empty",
+    });
+    expect(normalizeToolQuery("x".repeat(TOOL_QUERY_MAX_CHARS + 1))).toEqual({
+      ok: false,
+      error: `query is too long (max ${TOOL_QUERY_MAX_CHARS} characters)`,
+    });
+  });
+
+  it("normalizes only http(s) URLs and caps URL batches", () => {
+    expect(normalizeHttpUrl("https://example.com/a#fragment")).toEqual({
+      ok: true,
+      url: "https://example.com/a",
+    });
+    expect(normalizeHttpUrl("file:///etc/passwd")).toEqual({
+      ok: false,
+      error: "url must use http(s)",
+    });
+    expect(normalizeHttpUrl(`https://example.com/${"x".repeat(TOOL_URL_MAX_CHARS)}`)).toEqual({
+      ok: false,
+      error: `url is too long (max ${TOOL_URL_MAX_CHARS} characters)`,
+    });
+
+    const list = normalizeHttpUrlList(
+      ["https://a.test", "https://b.test"],
+      1,
+    );
+    expect(list).toEqual({
+      ok: true,
+      urls: ["https://a.test/"],
+      truncated: true,
+    });
+  });
+
+  it("truncates tool error messages and HTTP error bodies", () => {
+    const message = safeErrorMessage(
+      new Error("x".repeat(TOOL_ERROR_MAX_CHARS + 20)),
+    );
+    expect(message).toHaveLength(TOOL_ERROR_MAX_CHARS + " [truncated]".length);
+    expect(message.endsWith("[truncated]")).toBe(true);
+
+    expect(
+      formatHttpError("Search failed", 500, "x".repeat(TOOL_ERROR_MAX_CHARS + 1)),
+    ).toContain("[truncated]");
   });
 
   it("maps with bounded concurrency while preserving order", async () => {

@@ -4,6 +4,8 @@ import localforage from "localforage";
 import { useSnapshotStore } from "./snapshot";
 import { runMigrations, type MigrationStep } from "./utils/migrate";
 import type { Conversation, CompressedContext, Message, ProjectFiles } from "../types";
+import { validateProjectFiles } from "../lib/utils/project-files";
+import { normalizeCompressedSummary } from "../lib/utils/compress-context";
 
 const CONVERSATION_STORE_VERSION = 1;
 const conversationMigrations: MigrationStep[] = [];
@@ -53,6 +55,10 @@ interface ConversationState {
   setTemplate: (updater: Updater<string>) => void;
   setIsProjectInitialized: (updater: Updater<boolean>) => void;
   setCompressedContext: (ctx: CompressedContext) => void;
+  setCompressedContextForConversation: (
+    id: string,
+    ctx: CompressedContext,
+  ) => void;
   renameConversation: (id: string, title: string) => void;
   pinConversation: (id: string) => void;
   unpinConversation: (id: string) => void;
@@ -89,6 +95,10 @@ export const useConversationStore = create<ConversationState>()(
       },
 
       importConversation: (conversation) => {
+        const validation = validateProjectFiles(conversation.files);
+        if (!validation.ok) {
+          throw new Error(validation.error);
+        }
         const id = conversation.id || crypto.randomUUID();
         const now = Date.now();
         const conv: Conversation = {
@@ -167,12 +177,18 @@ export const useConversationStore = create<ConversationState>()(
         set((s) => {
           if (!s.activeId || !s.conversations[s.activeId]) return s;
           const conv = s.conversations[s.activeId];
+          const files = applyUpdater(updater, conv.files);
+          const validation = validateProjectFiles(files);
+          if (!validation.ok) {
+            console.warn("[conversation] Rejected project files:", validation.error);
+            return s;
+          }
           return {
             conversations: {
               ...s.conversations,
               [s.activeId]: {
                 ...conv,
-                files: applyUpdater(updater, conv.files),
+                files,
                 updatedAt: Date.now(),
               },
             },
@@ -218,13 +234,27 @@ export const useConversationStore = create<ConversationState>()(
       },
 
       setCompressedContext: (ctx) => {
+        const activeId = get().activeId;
+        if (activeId) get().setCompressedContextForConversation(activeId, ctx);
+      },
+
+      setCompressedContextForConversation: (id, ctx) => {
         set((s) => {
-          if (!s.activeId || !s.conversations[s.activeId]) return s;
-          const conv = s.conversations[s.activeId];
+          if (!s.conversations[id]) return s;
+          const conv = s.conversations[id];
+          const normalizedContext = {
+            ...ctx,
+            fromIndex: Math.max(0, Math.floor(ctx.fromIndex)),
+            summary: normalizeCompressedSummary(ctx.summary),
+          };
           return {
             conversations: {
               ...s.conversations,
-              [s.activeId]: { ...conv, compressedContext: ctx, updatedAt: Date.now() },
+              [id]: {
+                ...conv,
+                compressedContext: normalizedContext,
+                updatedAt: Date.now(),
+              },
             },
           };
         });

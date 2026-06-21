@@ -4,6 +4,12 @@ import type { FsToolResult } from "./fs-tools";
 const ENV_PATH = ".env";
 const ENV_EXAMPLE_PATH = ".env.example";
 const ENV_TS_PATH = "src/env.ts";
+const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+export const ENV_TOOL_LIMITS = {
+  maxOperations: 100,
+  maxValueBytes: 64 * 1024,
+} as const;
 
 interface EnvEntry {
   key: string;
@@ -29,6 +35,40 @@ function parseEnv(content: string | undefined): EnvEntry[] {
     if (key) entries.push({ key, value });
   }
   return entries;
+}
+
+function textBytes(value: string): number {
+  if (typeof TextEncoder !== "undefined") {
+    return new TextEncoder().encode(value).length;
+  }
+  return value.length;
+}
+
+function validateEnvKey(key: string): string | null {
+  if (!key) return "key must not be empty";
+  if (!ENV_KEY_RE.test(key)) {
+    return `invalid env key "${key}". Use letters, numbers, and underscores; do not start with a number.`;
+  }
+  return null;
+}
+
+function validateEnvValue(value: unknown): {
+  ok: true;
+  value: string;
+} | {
+  ok: false;
+  error: string;
+} {
+  if (typeof value !== "string") {
+    return { ok: false, error: "set operations require a string value" };
+  }
+  if (textBytes(value) > ENV_TOOL_LIMITS.maxValueBytes) {
+    return {
+      ok: false,
+      error: `env values must be <= ${ENV_TOOL_LIMITS.maxValueBytes} bytes`,
+    };
+  }
+  return { ok: true, value };
 }
 
 function serializeEnv(entries: EnvEntry[]): string {
@@ -77,7 +117,7 @@ function generateEnvTs(exampleEntries: EnvEntry[]): string {
     } else {
       line = "z.string().min(1)";
     }
-    lines.push(`  ${key}: ${line},`);
+    lines.push(`  ${JSON.stringify(key)}: ${line},`);
   }
   lines.push("});");
   lines.push("");
@@ -133,6 +173,12 @@ export function fsManageEnv(
   if (!Array.isArray(operations) || operations.length === 0) {
     return { result: "Error: no operations provided", changes: [] };
   }
+  if (operations.length > ENV_TOOL_LIMITS.maxOperations) {
+    return {
+      result: `Error: manage_env supports at most ${ENV_TOOL_LIMITS.maxOperations} operations at once`,
+      changes: [],
+    };
+  }
 
   let envEntries = parseEnv(files[ENV_PATH]);
   let exampleEntries = parseEnv(files[ENV_EXAMPLE_PATH]);
@@ -144,6 +190,10 @@ export function fsManageEnv(
   for (const op of operations) {
     if (!op || typeof op.key !== "string" || !op.key) {
       return { result: "Error: each operation requires a non-empty 'key'", changes: [] };
+    }
+    const keyError = validateEnvKey(op.key);
+    if (keyError) {
+      return { result: `Error: ${keyError}`, changes: [] };
     }
     if (op.target !== "env" && op.target !== "example") {
       return {
@@ -157,7 +207,14 @@ export function fsManageEnv(
         changes: [],
       };
     }
-    const value = op.value ?? "";
+    let value = "";
+    if (op.action === "set") {
+      const checkedValue = validateEnvValue(op.value);
+      if (!checkedValue.ok) {
+        return { result: `Error: ${checkedValue.error}`, changes: [] };
+      }
+      value = checkedValue.value;
+    }
     if (op.target === "env") {
       envTouched = true;
       if (op.action === "set") {

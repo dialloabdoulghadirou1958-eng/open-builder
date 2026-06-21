@@ -14,7 +14,9 @@ export async function runCompress(
     conv.files,
   );
   if (result) {
-    useConversationStore.getState().setCompressedContext(result);
+    useConversationStore
+      .getState()
+      .setCompressedContextForConversation(conv.id, result);
   }
   return result;
 }

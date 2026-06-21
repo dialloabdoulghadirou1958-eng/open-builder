@@ -106,6 +106,9 @@ export function mergeMessages(messages: Message[]): MergedMessage[] {
       const thinkingParts: string[] = [];
       const otherBlocks: Block[] = [];
       let isError = false;
+      let errorKind: MergedMessage["errorKind"] | undefined;
+      let errorRetryable: boolean | undefined;
+      let errorStatus: number | undefined;
       let j = i;
       let bi = 0;
 
@@ -115,7 +118,12 @@ export function mergeMessages(messages: Message[]): MergedMessage[] {
       ) {
         const cur = messages[j];
         if (cur.role === "assistant") {
-          if (cur.isError) isError = true;
+          if (cur.isError) {
+            isError = true;
+            errorKind = errorKind ?? cur.errorKind;
+            errorRetryable = errorRetryable ?? cur.errorRetryable;
+            errorStatus = errorStatus ?? cur.errorStatus;
+          }
           // Collect thinking from all assistant messages to merge later
           if (cur.thinking) {
             thinkingParts.push(cur.thinking);
@@ -217,6 +225,9 @@ export function mergeMessages(messages: Message[]): MergedMessage[] {
           blocks,
           id: `assistant-${i}`,
           ...(isError ? { isError: true } : {}),
+          ...(errorKind ? { errorKind } : {}),
+          ...(errorRetryable !== undefined ? { errorRetryable } : {}),
+          ...(errorStatus !== undefined ? { errorStatus } : {}),
         });
       }
       i = j - 1;

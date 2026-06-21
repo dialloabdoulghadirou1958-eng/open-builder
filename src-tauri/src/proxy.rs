@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
+use futures_util::StreamExt;
+use serde::Serialize;
 use tauri::http::{Request as TauriRequest, Response as TauriResponse};
 
 /// Shared reqwest client with 5-minute timeout (for long LLM responses).
@@ -11,8 +13,8 @@ static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .build()
         .expect("failed to create HTTP client")
 });
-static PROXY_ALLOWED_HOSTS: LazyLock<Mutex<Vec<String>>> =
-    LazyLock::new(|| Mutex::new(Vec::new()));
+static PROXY_ALLOWED_HOSTS: LazyLock<Mutex<Vec<String>>> = LazyLock::new(|| Mutex::new(Vec::new()));
+const MAX_PROXY_RESPONSE_BYTES: usize = 25 * 1024 * 1024;
 
 #[derive(serde::Deserialize)]
 pub struct ProxyPolicy {
@@ -70,31 +72,33 @@ pub fn is_url_allowed(target_url: &str) -> Result<(), String> {
     if is_host_allowed(host, &allowed_hosts) {
         Ok(())
     } else {
-        Err(format!("host \"{host}\" is not allowed by the proxy policy"))
+        Err(format!(
+            "host \"{host}\" is not allowed by the proxy policy"
+        ))
     }
 }
 
-/// Determine the target scheme based on the host.
-/// - `localhost`, `127.0.0.1`, `[::1]`, or any pure IP address → HTTP
-/// - Domain names → HTTPS
-fn infer_scheme(host: &str) -> &'static str {
-    // Strip port if present: "localhost:11434" → "localhost"
-    let hostname = host.split(':').next().unwrap_or(host);
-
+fn infer_scheme_from_host(host: &str) -> &'static str {
+    let hostname = host.trim_matches(&['[', ']'][..]).to_lowercase();
     if hostname == "localhost" {
         return "http";
     }
-
-    // Check if hostname is an IP address (v4 or v6)
     if hostname.parse::<std::net::IpAddr>().is_ok() {
         return "http";
     }
-    // Also handle bracket-wrapped IPv6 like [::1]
-    if hostname.starts_with('[') && hostname.ends_with(']') {
-        return "http";
-    }
-
     "https"
+}
+
+fn format_authority(host: &str, port: Option<u16>) -> String {
+    let host_part = if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]")
+    } else {
+        host.to_string()
+    };
+    match port {
+        Some(port) => format!("{host_part}:{port}"),
+        None => host_part,
+    }
 }
 
 /// Parse the proxy URL to extract the real target URL.
@@ -105,25 +109,21 @@ fn infer_scheme(host: &str) -> &'static str {
 /// Input:  `proxy://localhost:11434/v1/chat/completions`
 /// Output: `http://localhost:11434/v1/chat/completions`
 fn parse_proxy_url(uri: &str) -> Result<String, String> {
-    let after_scheme = uri
-        .strip_prefix("proxy://")
-        .ok_or_else(|| format!("Invalid proxy URI: {uri}"))?;
-
-    if after_scheme.is_empty() {
-        return Err("Empty proxy target".to_string());
+    let parsed = reqwest::Url::parse(uri).map_err(|err| format!("invalid proxy URI: {err}"))?;
+    if parsed.scheme() != "proxy" {
+        return Err("proxy URI must use proxy://".to_string());
     }
-
-    // Split into host (with optional port) and path+query
-    // "api.openai.com/v1/chat/completions?stream=true"
-    //  → host_with_port = "api.openai.com"
-    //  → path_and_query = "/v1/chat/completions?stream=true"
-    let (host_with_port, path_and_query) = match after_scheme.find('/') {
-        Some(idx) => (&after_scheme[..idx], &after_scheme[idx..]),
-        None => (after_scheme, ""),
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "proxy target URL has no host".to_string())?;
+    let scheme = infer_scheme_from_host(host);
+    let authority = format_authority(host, parsed.port());
+    let path = parsed.path();
+    let query = match parsed.query() {
+        Some(query) => format!("?{query}"),
+        None => String::new(),
     };
-
-    let scheme = infer_scheme(host_with_port);
-    Ok(format!("{scheme}://{host_with_port}{path_and_query}"))
+    Ok(format!("{scheme}://{authority}{path}{query}"))
 }
 
 /// Build an HTTP response with CORS headers injected.
@@ -152,10 +152,43 @@ fn build_cors_response(
 
 /// Build a JSON error response with CORS headers.
 fn error_response(status: u16, error: &str, detail: &str) -> TauriResponse<Vec<u8>> {
-    let body = format!(r#"{{"error":"{error}","detail":"{detail}"}}"#).into_bytes();
+    #[derive(Serialize)]
+    struct ProxyError<'a> {
+        error: &'a str,
+        detail: &'a str,
+    }
+
+    let body = serde_json::to_vec(&ProxyError { error, detail }).unwrap_or_else(|_| {
+        br#"{"error":"Proxy error","detail":"failed to serialize error"}"#.to_vec()
+    });
     let mut headers = HashMap::new();
     headers.insert("content-type".to_string(), "application/json".to_string());
     build_cors_response(status, body, headers)
+}
+
+async fn collect_limited_response_body(resp: reqwest::Response) -> Result<Vec<u8>, String> {
+    if let Some(length) = resp.content_length() {
+        if length > MAX_PROXY_RESPONSE_BYTES as u64 {
+            return Err(format!(
+                "response body exceeds {} bytes",
+                MAX_PROXY_RESPONSE_BYTES
+            ));
+        }
+    }
+
+    let mut body = Vec::new();
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|err| format!("failed to read proxy response: {err}"))?;
+        if body.len().saturating_add(chunk.len()) > MAX_PROXY_RESPONSE_BYTES {
+            return Err(format!(
+                "response body exceeds {} bytes",
+                MAX_PROXY_RESPONSE_BYTES
+            ));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
 }
 
 /// Handle a single proxy request.
@@ -217,8 +250,10 @@ async fn handle_proxy(request: TauriRequest<Vec<u8>>) -> TauriResponse<Vec<u8>> 
                 }
             }
 
-            let body_bytes = resp.bytes().await.unwrap_or_default().to_vec();
-            build_cors_response(status, body_bytes, headers)
+            match collect_limited_response_body(resp).await {
+                Ok(body_bytes) => build_cors_response(status, body_bytes, headers),
+                Err(e) => error_response(502, "Proxy response too large", &e),
+            }
         }
         Err(e) => {
             if e.is_timeout() {
@@ -231,13 +266,42 @@ async fn handle_proxy(request: TauriRequest<Vec<u8>>) -> TauriResponse<Vec<u8>> 
 }
 
 /// Register the `proxy://` custom protocol on the Tauri builder.
-pub fn register_proxy_protocol(
-    builder: tauri::Builder<tauri::Wry>,
-) -> tauri::Builder<tauri::Wry> {
+pub fn register_proxy_protocol(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     builder.register_asynchronous_uri_scheme_protocol("proxy", |_app, request, responder| {
         tauri::async_runtime::spawn(async move {
             let response = handle_proxy(request).await;
             responder.respond(response);
         });
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_proxy_url_preserves_host_port_path_and_query() {
+        assert_eq!(
+            parse_proxy_url("proxy://api.openai.com/v1/chat?stream=true").unwrap(),
+            "https://api.openai.com/v1/chat?stream=true"
+        );
+        assert_eq!(
+            parse_proxy_url("proxy://localhost:11434/v1/chat").unwrap(),
+            "http://localhost:11434/v1/chat"
+        );
+        assert_eq!(
+            parse_proxy_url("proxy://[::1]:11434/v1/chat").unwrap(),
+            "http://[::1]:11434/v1/chat"
+        );
+    }
+
+    #[test]
+    fn error_response_escapes_json_detail() {
+        let response = error_response(400, "Invalid proxy URL", "bad \"url\"\nnext");
+        let value: serde_json::Value =
+            serde_json::from_slice(response.body()).expect("valid JSON error body");
+
+        assert_eq!(value["error"], "Invalid proxy URL");
+        assert_eq!(value["detail"], "bad \"url\"\nnext");
+    }
 }

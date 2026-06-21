@@ -20,6 +20,60 @@ export interface AuthResult {
 }
 
 const TOKEN_FALLBACK_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const TOKEN_MIN_TTL_SECONDS = 60;
+const TOKEN_MAX_TTL_SECONDS = 30 * 24 * 60 * 60;
+const SSO_ERROR_MAX_CHARS = 500;
+
+export function truncateSsoErrorText(text: string): string {
+  return text.length > SSO_ERROR_MAX_CHARS
+    ? `${text.slice(0, SSO_ERROR_MAX_CHARS)} [truncated]`
+    : text;
+}
+
+async function readBoundedError(res: Response): Promise<string> {
+  try {
+    return truncateSsoErrorText(await res.text());
+  } catch {
+    return res.statusText || "unknown error";
+  }
+}
+
+function normalizeExpiresIn(value: unknown): number | null {
+  const seconds =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value)
+        : NaN;
+  if (!Number.isFinite(seconds)) return null;
+  return Math.min(
+    Math.max(Math.floor(seconds), TOKEN_MIN_TTL_SECONDS),
+    TOKEN_MAX_TTL_SECONDS,
+  );
+}
+
+export function parseTokenResponse(data: unknown): {
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt: number;
+} {
+  if (!data || typeof data !== "object") {
+    throw new Error("Token response must be a JSON object");
+  }
+  const raw = data as Record<string, unknown>;
+  if (typeof raw.access_token !== "string" || !raw.access_token) {
+    throw new Error("Token response is missing access_token");
+  }
+  const expiresIn = normalizeExpiresIn(raw.expires_in);
+  return {
+    accessToken: raw.access_token,
+    refreshToken:
+      typeof raw.refresh_token === "string" && raw.refresh_token
+        ? raw.refresh_token
+        : undefined,
+    expiresAt: Date.now() + (expiresIn ?? TOKEN_FALLBACK_TTL_MS / 1000) * 1000,
+  };
+}
 
 async function exchangeToken(
   config: SSOConfig,
@@ -31,16 +85,9 @@ async function exchangeToken(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    throw new Error(`Failed to exchange token: ${await res.text()}`);
+    throw new Error(`Failed to exchange token: ${await readBoundedError(res)}`);
   }
-  const { access_token, refresh_token, expires_in } = await res.json();
-  return {
-    accessToken: access_token,
-    refreshToken: refresh_token,
-    expiresAt: expires_in
-      ? Date.now() + Number(expires_in) * 1000
-      : Date.now() + TOKEN_FALLBACK_TTL_MS,
-  };
+  return parseTokenResponse(await res.json());
 }
 
 async function fetchUserWithToken(config: SSOConfig, accessToken: string): Promise<SSOUser> {
@@ -48,7 +95,7 @@ async function fetchUserWithToken(config: SSOConfig, accessToken: string): Promi
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!res.ok) {
-    throw new Error(`Failed to fetch user info: ${await res.text()}`);
+    throw new Error(`Failed to fetch user info: ${await readBoundedError(res)}`);
   }
   return res.json();
 }

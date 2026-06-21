@@ -18,7 +18,15 @@ import {
   PLAN_REJECTED_PREFIX,
 } from "./plan-mode";
 import { dispatchFsTool } from "../tools/fs-tools";
-import { formatAskUserAnswers } from "../utils/tool-result";
+import {
+  formatAskUserAnswers,
+  normalizeToolResultForModel,
+} from "../utils/tool-result";
+import {
+  buildProjectFilesPromptListing,
+  validateProjectFiles,
+} from "../utils/project-files";
+import { normalizeSubagentTask } from "./subagents/limits";
 import {
   ALWAYS_ALLOWED_TOOL_NAMES,
   skillActiveContext,
@@ -375,11 +383,7 @@ export class WebAppGenerator {
   }
 
   private buildSystemContent(): string {
-    const paths = Object.keys(this.files).sort();
-    const listing =
-      paths.length > 0
-        ? "\n\nCurrent project files:\n" + paths.map((p) => `- ${p}`).join("\n")
-        : "\n\nThe project is empty — no files yet.";
+    const listing = buildProjectFilesPromptListing(this.files);
     const guidelines = buildProjectGuidelinesSection(this.files);
     return this.systemPrompt + listing + guidelines + this.systemPromptSuffix;
   }
@@ -549,6 +553,12 @@ export class WebAppGenerator {
     const fsOutcome = await dispatchFsTool(name, args, this.files);
     if (fsOutcome) {
       if (fsOutcome.newFiles) {
+        const validation = validateProjectFiles(fsOutcome.newFiles);
+        if (!validation.ok) {
+          const errMsg = `Error: ${validation.error}`;
+          this.events.onToolResult?.(name, args, errMsg, toolCall.id);
+          return { result: errMsg, changes: [] };
+        }
         this.files = fsOutcome.newFiles;
       }
       if (fsOutcome.templateChange) {
@@ -560,8 +570,9 @@ export class WebAppGenerator {
       if (fsOutcome.dependenciesChanged) {
         this.events.onDependenciesChange?.(this.getFiles());
       }
-      this.events.onToolResult?.(name, args, fsOutcome.result, toolCall.id);
-      return { result: fsOutcome.result, changes: fsOutcome.changes };
+      const normalized = normalizeToolResultForModel(fsOutcome.result);
+      this.events.onToolResult?.(name, args, normalized.result, toolCall.id);
+      return { result: normalized.result, changes: fsOutcome.changes };
     }
 
     let result: string;
@@ -596,15 +607,20 @@ export class WebAppGenerator {
           typeof args?.subagent === "string" ? args.subagent : "";
         const subagentTask =
           typeof args?.task === "string" ? args.task : "";
-        if (!subagentName || !subagentTask) {
+        const checkedTask = normalizeSubagentTask(subagentTask);
+        if (!subagentName) {
           result =
             'Error: dispatch_subagent requires both "subagent" (name) and "task" (string) arguments.';
+          break;
+        }
+        if (!checkedTask.ok) {
+          result = `Error: ${checkedTask.error}`;
           break;
         }
         try {
           const dispatched = await this.dispatchSubagent(
             subagentName,
-            subagentTask,
+            checkedTask.task,
             this.files,
             this.ctrl!.signal,
             toolCall.id,
@@ -616,6 +632,11 @@ export class WebAppGenerator {
           if (dispatched.files) {
             const beforeFiles = this.files;
             const afterFiles = dispatched.files;
+            const validation = validateProjectFiles(afterFiles);
+            if (!validation.ok) {
+              result = `Error: subagent returned an invalid project: ${validation.error}`;
+              break;
+            }
             const changes: FileChange[] = [];
             for (const path of Object.keys(afterFiles)) {
               if (!(path in beforeFiles)) {
@@ -684,7 +705,8 @@ export class WebAppGenerator {
         }
     }
 
-    this.events.onToolResult?.(name, args, result, toolCall.id);
-    return { result, changes: [] };
+    const normalized = normalizeToolResultForModel(result);
+    this.events.onToolResult?.(name, args, normalized.result, toolCall.id);
+    return { result: normalized.result, changes: [] };
   }
 }

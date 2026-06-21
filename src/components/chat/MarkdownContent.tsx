@@ -17,6 +17,10 @@ import { useTheme } from "../../hooks/useTheme";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 
 const HLJS_STYLE_ID = "hljs-theme";
+const MAX_MARKDOWN_DATA_IMAGE_BYTES = 1024 * 1024;
+const SAFE_DATA_IMAGE_RE =
+  /^data:image\/(?:png|jpe?g|gif|webp);base64,([a-zA-Z0-9+/=\s]+)$/i;
+
 const markdownSanitizeSchema = {
   ...defaultSchema,
   attributes: {
@@ -31,12 +35,57 @@ const markdownSanitizeSchema = {
     ],
     img: [
       ...(defaultSchema.attributes?.img ?? []),
-      ["src", /^https?:\/\//, /^data:image\//],
+      ["src", /^https?:\/\//, /^data:image\/(?:png|jpe?g|gif|webp);base64,/i],
       "alt",
       "title",
     ],
   },
 };
+
+function estimateBase64Bytes(base64: string): number {
+  const compact = base64.replace(/\s/g, "");
+  const padding = compact.endsWith("==") ? 2 : compact.endsWith("=") ? 1 : 0;
+  return Math.floor((compact.length * 3) / 4) - padding;
+}
+
+export function normalizeMarkdownHref(href: unknown): string | undefined {
+  if (typeof href !== "string") return undefined;
+  const trimmed = href.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.startsWith("#")) return trimmed;
+  try {
+    const parsed = new URL(trimmed);
+    if (
+      parsed.protocol === "http:" ||
+      parsed.protocol === "https:" ||
+      parsed.protocol === "mailto:"
+    ) {
+      return parsed.toString();
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+export function normalizeMarkdownImageSrc(src: unknown): string | undefined {
+  if (typeof src !== "string") return undefined;
+  const trimmed = src.trim();
+  if (!trimmed) return undefined;
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      return new URL(trimmed).toString();
+    } catch {
+      return undefined;
+    }
+  }
+  const match = SAFE_DATA_IMAGE_RE.exec(trimmed);
+  if (!match) return undefined;
+  if (estimateBase64Bytes(match[1]) > MAX_MARKDOWN_DATA_IMAGE_BYTES) {
+    return undefined;
+  }
+  return trimmed;
+}
 
 function HljsTheme() {
   const isDark = useTheme();
@@ -179,29 +228,44 @@ const assistantComponents = {
       {children}
     </blockquote>
   ),
-  a: ({ children, href }: any) => (
-    <a
-      href={href}
-      className="underline hover:opacity-80"
-      target="_blank"
-      rel="noopener noreferrer"
-    >
-      {children}
-    </a>
-  ),
+  a: ({ children, href }: any) => {
+    const safeHref = normalizeMarkdownHref(href);
+    if (!safeHref) return <span>{children}</span>;
+    return (
+      <a
+        href={safeHref}
+        className="underline hover:opacity-80"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {children}
+      </a>
+    );
+  },
   strong: ({ children }: any) => (
     <strong className="font-semibold">{children}</strong>
   ),
-  img: ({ src, alt }: any) => (
-    <figure className="my-3">
-      <img src={src} alt={alt} className="rounded-md max-w-full h-auto" />
-      {alt && (
-        <figcaption className="text-xs text-muted-foreground text-center mt-2">
-          {alt}
-        </figcaption>
-      )}
-    </figure>
-  ),
+  img: ({ src, alt }: any) => {
+    const safeSrc = normalizeMarkdownImageSrc(src);
+    if (!safeSrc) return null;
+    return (
+      <figure className="my-3">
+        <img
+          src={safeSrc}
+          alt={alt}
+          loading="lazy"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          className="rounded-md max-w-full h-auto"
+        />
+        {alt && (
+          <figcaption className="text-xs text-muted-foreground text-center mt-2">
+            {alt}
+          </figcaption>
+        )}
+      </figure>
+    );
+  },
 };
 
 const userComponents = {
@@ -242,14 +306,14 @@ export const MarkdownContent = memo(
   ({ content, variant }: MarkdownContentProps) => (
     <div className="markdown-content">
       <HljsTheme />
-	      <ReactMarkdown
-	        remarkPlugins={[remarkGfm]}
-	        rehypePlugins={[
-	          rehypeHighlight,
-	          [rehypeSanitize, markdownSanitizeSchema],
-	        ]}
-	        components={variant === "user" ? userComponents : assistantComponents}
-	      >
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[
+          rehypeHighlight,
+          [rehypeSanitize, markdownSanitizeSchema],
+        ]}
+        components={variant === "user" ? userComponents : assistantComponents}
+      >
         {content}
       </ReactMarkdown>
     </div>

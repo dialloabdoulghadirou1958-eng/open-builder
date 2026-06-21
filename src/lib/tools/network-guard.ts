@@ -9,6 +9,9 @@ export const ASSET_DESCRIPTION_MAX_CHARS = 400;
 export const NPM_SEARCH_MAX_RESULTS = 10;
 export const NPM_README_MAX_CHARS = 2_000;
 export const NPM_DEPENDENCY_MAX_KEYS = 50;
+export const TOOL_ERROR_MAX_CHARS = 500;
+export const TOOL_QUERY_MAX_CHARS = 300;
+export const TOOL_URL_MAX_CHARS = 2_048;
 
 export class ToolTimeoutError extends Error {
   constructor(timeoutMs: number) {
@@ -70,11 +73,90 @@ export function truncateText(
 
 export function safeErrorMessage(error: unknown): string {
   if (error instanceof ToolTimeoutError) return error.message;
+  let message: string;
   if (error instanceof DOMException && error.name === "AbortError") {
-    return "Request was aborted";
+    message = "Request was aborted";
+  } else if (error instanceof Error) {
+    message = error.message;
+  } else {
+    message = String(error);
   }
-  if (error instanceof Error) return error.message;
-  return String(error);
+  const truncated = truncateText(message, TOOL_ERROR_MAX_CHARS);
+  return truncated.truncated ? `${truncated.text} [truncated]` : truncated.text;
+}
+
+export function formatHttpError(
+  label: string,
+  status: number,
+  body: unknown,
+): string {
+  const text = truncateText(body, TOOL_ERROR_MAX_CHARS);
+  const suffix = text.text
+    ? `: ${text.text}${text.truncated ? " [truncated]" : ""}`
+    : "";
+  return `${label} (${status})${suffix}`;
+}
+
+export function normalizeToolQuery(
+  value: unknown,
+  label = "query",
+): { ok: true; query: string } | { ok: false; error: string } {
+  if (typeof value !== "string") {
+    return { ok: false, error: `${label} must be a string` };
+  }
+  const query = value.trim();
+  if (!query) return { ok: false, error: `${label} must not be empty` };
+  if (query.length > TOOL_QUERY_MAX_CHARS) {
+    return {
+      ok: false,
+      error: `${label} is too long (max ${TOOL_QUERY_MAX_CHARS} characters)`,
+    };
+  }
+  return { ok: true, query };
+}
+
+export function normalizeHttpUrl(
+  value: unknown,
+  label = "url",
+): { ok: true; url: string } | { ok: false; error: string } {
+  if (typeof value !== "string") {
+    return { ok: false, error: `${label} must be a string` };
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return { ok: false, error: `${label} must not be empty` };
+  if (trimmed.length > TOOL_URL_MAX_CHARS) {
+    return {
+      ok: false,
+      error: `${label} is too long (max ${TOOL_URL_MAX_CHARS} characters)`,
+    };
+  }
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return { ok: false, error: `${label} must use http(s)` };
+    }
+    url.hash = "";
+    return { ok: true, url: url.toString() };
+  } catch {
+    return { ok: false, error: `${label} must be a valid URL` };
+  }
+}
+
+export function normalizeHttpUrlList(
+  value: unknown,
+  maxUrls: number,
+): { ok: true; urls: string[]; truncated: boolean } | { ok: false; error: string } {
+  if (!Array.isArray(value) || value.length === 0) {
+    return { ok: false, error: "urls must be a non-empty array" };
+  }
+  const limited = limitArray(value, maxUrls);
+  const urls: string[] = [];
+  for (let i = 0; i < limited.items.length; i++) {
+    const checked = normalizeHttpUrl(limited.items[i], `urls[${i}]`);
+    if (!checked.ok) return checked;
+    urls.push(checked.url);
+  }
+  return { ok: true, urls, truncated: limited.truncated };
 }
 
 export async function fetchWithTimeout(

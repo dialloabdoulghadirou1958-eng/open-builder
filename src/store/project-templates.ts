@@ -7,6 +7,7 @@ import { runMigrations, type MigrationStep } from "./utils/migrate";
 import {
   normalizeTemplateTags,
   sanitizeTemplateName,
+  validateProjectTemplateFiles,
 } from "../lib/utils/project-templates";
 
 const PROJECT_TEMPLATE_STORE_VERSION = 1;
@@ -38,6 +39,10 @@ export const useProjectTemplateStore = create<ProjectTemplateState>()(
       _hasHydrated: false,
 
       addTemplate: (template) => {
+        const validation = validateProjectTemplateFiles(template.files);
+        if (!validation.ok) {
+          throw new Error(validation.error);
+        }
         set((s) => ({
           templates: { ...s.templates, [template.id]: template },
         }));

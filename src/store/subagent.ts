@@ -7,6 +7,10 @@ import type {
   SubagentProgress,
   SubagentStatus,
 } from "../lib/ai/subagents/types";
+import {
+  SUBAGENT_LIMITS,
+  truncateSubagentText,
+} from "../lib/ai/subagents/limits";
 
 interface SubagentStoreState {
   progress: Record<string, SubagentProgress>;
@@ -23,8 +27,6 @@ interface SubagentStoreState {
   clear: (toolCallId: string) => void;
 }
 
-const PREVIEW_LIMIT = 1000;
-
 export const useSubagentStore = create<SubagentStoreState>((set) => ({
   progress: {},
 
@@ -34,7 +36,7 @@ export const useSubagentStore = create<SubagentStoreState>((set) => ({
         ...s.progress,
         [toolCallId]: {
           subagent,
-          task,
+          task: truncateSubagentText(task, SUBAGENT_LIMITS.maxTaskChars),
           status: "running",
           text: "",
           events: [],
@@ -50,7 +52,13 @@ export const useSubagentStore = create<SubagentStoreState>((set) => ({
       return {
         progress: {
           ...s.progress,
-          [toolCallId]: { ...cur, text: cur.text + delta },
+          [toolCallId]: {
+            ...cur,
+            text: truncateSubagentText(
+              cur.text + delta,
+              SUBAGENT_LIMITS.maxLiveTextChars,
+            ),
+          },
         },
       };
     }),
@@ -60,6 +68,7 @@ export const useSubagentStore = create<SubagentStoreState>((set) => ({
       const cur = s.progress[toolCallId];
       if (!cur) return s;
       if (cur.events.some((e) => e.toolCallId === innerId)) return s;
+      if (cur.events.length >= SUBAGENT_LIMITS.maxEvents) return s;
       const event: SubagentEvent = {
         name,
         toolCallId: innerId,
@@ -82,7 +91,10 @@ export const useSubagentStore = create<SubagentStoreState>((set) => ({
       const events = cur.events.slice();
       events[idx] = {
         ...events[idx],
-        resultPreview: preview.slice(0, PREVIEW_LIMIT),
+        resultPreview: truncateSubagentText(
+          preview,
+          SUBAGENT_LIMITS.maxToolPreviewChars,
+        ),
       };
       return {
         progress: { ...s.progress, [toolCallId]: { ...cur, events } },
@@ -99,7 +111,10 @@ export const useSubagentStore = create<SubagentStoreState>((set) => ({
           [toolCallId]: {
             ...cur,
             status,
-            error,
+            error:
+              error == null
+                ? undefined
+                : truncateSubagentText(error, SUBAGENT_LIMITS.maxErrorChars),
             finishedAt: Date.now(),
           },
         },

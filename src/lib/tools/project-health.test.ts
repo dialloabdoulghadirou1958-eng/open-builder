@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createProjectHealthCheckHandler,
+  PROJECT_HEALTH_LIMITS,
   runProjectHealthCheck,
 } from "./project-health";
 
@@ -101,6 +102,46 @@ describe("runProjectHealthCheck", () => {
         expect.objectContaining({
           category: "responsive",
           path: "src/styles.css",
+        }),
+      ]),
+    );
+  });
+
+  it("truncates large health reports while keeping full issue counts", () => {
+    const report = runProjectHealthCheck(
+      {
+        "index.html":
+          '<html><head><title>App</title><meta name="viewport" content="width=device-width"></head></html>',
+      },
+      Array.from({ length: PROJECT_HEALTH_LIMITS.maxIssues + 10 }, (_, i) => ({
+        method: "error",
+        data: [`boom ${i}`],
+      })),
+    );
+
+    expect(report.truncated).toBe(true);
+    expect(report.issues).toHaveLength(PROJECT_HEALTH_LIMITS.maxIssues);
+    expect(report.summary.totalIssues).toBeGreaterThan(report.issues.length);
+  });
+
+  it("safely serializes unusual console values", () => {
+    const circular: Record<string, unknown> = { label: "bad" };
+    circular.self = circular;
+
+    const report = runProjectHealthCheck(
+      {
+        "index.html":
+          '<html><head><title>App</title><meta name="viewport" content="width=device-width"></head></html>',
+      },
+      [{ method: "error", data: [circular] }],
+    );
+
+    expect(report.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: "error",
+          category: "runtime",
+          message: expect.stringContaining("[error]"),
         }),
       ]),
     );

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus,
   PanelLeftClose,
@@ -24,8 +24,14 @@ import {
   cloneImportedSnapshots,
   createConversationExport,
   exportFileName,
+  formatConversationImportBytes,
+  MAX_CONVERSATION_IMPORT_BYTES,
   parseConversationExport,
 } from "../../lib/utils/conversation-export";
+import {
+  getNextVisibleCount,
+  getVisibleListWindow,
+} from "../../lib/utils/list-window";
 import {
   createConversationFromProjectTemplate,
   createProjectTemplateFromConversation,
@@ -44,6 +50,7 @@ interface SessionListProps {
 }
 
 type SessionFilter = "all" | "pinned" | "archived" | "project" | "error";
+const SESSION_LIST_BATCH = 80;
 
 export function SessionList({ onClose }: SessionListProps) {
   const t = useT();
@@ -99,6 +106,21 @@ export function SessionList({ onClose }: SessionListProps) {
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [templateSourceId, setTemplateSourceId] = useState<string | null>(null);
+  const [visibleSessionCount, setVisibleSessionCount] =
+    useState(SESSION_LIST_BATCH);
+  const [visiblePinnedCount, setVisiblePinnedCount] =
+    useState(SESSION_LIST_BATCH);
+  const [visibleNormalCount, setVisibleNormalCount] =
+    useState(SESSION_LIST_BATCH);
+  const [visibleArchivedCount, setVisibleArchivedCount] =
+    useState(SESSION_LIST_BATCH);
+
+  useEffect(() => {
+    setVisibleSessionCount(SESSION_LIST_BATCH);
+    setVisiblePinnedCount(SESSION_LIST_BATCH);
+    setVisibleNormalCount(SESSION_LIST_BATCH);
+    setVisibleArchivedCount(SESSION_LIST_BATCH);
+  }, [filter, query]);
 
   const matchesQuery = useCallback(
     (conv: Conversation) => {
@@ -174,6 +196,22 @@ export function SessionList({ onClose }: SessionListProps) {
 
   const hasGroups = filter === "all" && (pinned.length > 0 || archived.length > 0);
   const deleteDisabled = Object.keys(conversations).length <= 1;
+  const sessionWindow = useMemo(
+    () => getVisibleListWindow(sorted, visibleSessionCount),
+    [sorted, visibleSessionCount],
+  );
+  const pinnedWindow = useMemo(
+    () => getVisibleListWindow(pinned, visiblePinnedCount),
+    [pinned, visiblePinnedCount],
+  );
+  const normalWindow = useMemo(
+    () => getVisibleListWindow(normal, visibleNormalCount),
+    [normal, visibleNormalCount],
+  );
+  const archivedWindow = useMemo(
+    () => getVisibleListWindow(archived, visibleArchivedCount),
+    [archived, visibleArchivedCount],
+  );
 
   const handleNew = () => {
     createConversation();
@@ -217,17 +255,27 @@ export function SessionList({ onClose }: SessionListProps) {
       const conversation = sourceId
         ? useConversationStore.getState().conversations[sourceId]
         : null;
-      if (!conversation) return;
+      if (!conversation) {
+        return { ok: false as const, error: "Source conversation not found." };
+      }
 
-      addTemplate(
-        createProjectTemplateFromConversation(conversation, {
-          id: crypto.randomUUID(),
-          name: input.name,
-          description: input.description,
-          tags: input.tags,
-          now: Date.now(),
-        }),
-      );
+      try {
+        addTemplate(
+          createProjectTemplateFromConversation(conversation, {
+            id: crypto.randomUUID(),
+            name: input.name,
+            description: input.description,
+            tags: input.tags,
+            now: Date.now(),
+          }),
+        );
+        return { ok: true as const };
+      } catch (err) {
+        return {
+          ok: false as const,
+          error: err instanceof Error ? err.message : "Failed to save template.",
+        };
+      }
     },
     [activeId, addTemplate, templateSourceId],
   );
@@ -267,6 +315,17 @@ export function SessionList({ onClose }: SessionListProps) {
   const handleImportFile = useCallback(
     async (file: File) => {
       setImportMessage(null);
+      if (file.size > MAX_CONVERSATION_IMPORT_BYTES) {
+        setImportMessage({
+          type: "error",
+          text: t.sessions.importTooLarge.replace(
+            "{size}",
+            formatConversationImportBytes(MAX_CONVERSATION_IMPORT_BYTES),
+          ),
+        });
+        if (importInputRef.current) importInputRef.current.value = "";
+        return;
+      }
       try {
         const parsed = parseConversationExport(await file.text());
         const now = Date.now();
@@ -302,6 +361,7 @@ export function SessionList({ onClose }: SessionListProps) {
       switchConversation,
       t.sessions.importFailed,
       t.sessions.importSuccess,
+      t.sessions.importTooLarge,
     ],
   );
 
@@ -365,6 +425,24 @@ export function SessionList({ onClose }: SessionListProps) {
     />
   );
 
+  const renderLoadMore = (
+    hiddenCount: number,
+    onClick: () => void,
+  ) =>
+    hiddenCount > 0 ? (
+      <div className="px-3 py-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 w-full text-xs text-muted-foreground"
+          onClick={onClick}
+        >
+          {t.sessions.loadMore.replace("{count}", String(hiddenCount))}
+        </Button>
+      </div>
+    ) : null;
+
   return (
     <div className="flex flex-col h-full overflow-hidden bg-background">
       <div className="px-3 py-2.5 border-b flex items-center justify-between">
@@ -373,6 +451,7 @@ export function SessionList({ onClose }: SessionListProps) {
           size="icon"
           onClick={onClose}
           title={t.header.sessions}
+          aria-label={t.sessions.close}
           className="h-8 w-8"
         >
           <PanelLeftClose size={18} />
@@ -385,6 +464,7 @@ export function SessionList({ onClose }: SessionListProps) {
             className="h-8 w-8"
             onClick={() => openTemplates()}
             title={t.sessions.templates.title}
+            aria-label={t.sessions.templates.title}
           >
             <Library size={17} />
           </Button>
@@ -394,6 +474,7 @@ export function SessionList({ onClose }: SessionListProps) {
             className="h-8 w-8"
             onClick={() => importInputRef.current?.click()}
             title={t.sessions.import}
+            aria-label={t.sessions.import}
           >
             <Upload size={17} />
           </Button>
@@ -402,6 +483,7 @@ export function SessionList({ onClose }: SessionListProps) {
             size="icon"
             className="h-8 w-8"
             onClick={handleNew}
+            aria-label={t.commandPalette.actions.newConversation}
           >
             <Plus size={18} />
           </Button>
@@ -427,6 +509,9 @@ export function SessionList({ onClose }: SessionListProps) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t.sessions.searchPlaceholder}
+            aria-label={t.sessions.searchPlaceholder}
+            name="session-search"
+            autoComplete="off"
             className="h-8 pl-8 text-sm"
           />
         </div>
@@ -454,6 +539,7 @@ export function SessionList({ onClose }: SessionListProps) {
               ? "text-destructive"
               : "text-muted-foreground"
           }`}
+          role={importMessage.type === "error" ? "alert" : "status"}
         >
           {importMessage.text}
         </p>
@@ -471,7 +557,16 @@ export function SessionList({ onClose }: SessionListProps) {
               open={pinnedOpen}
               onOpenChange={setPinnedOpen}
             >
-              {pinned.map(renderItem)}
+              {pinnedWindow.visible.map(renderItem)}
+              {renderLoadMore(pinnedWindow.hiddenCount, () =>
+                setVisiblePinnedCount((count) =>
+                  getNextVisibleCount(
+                    count,
+                    pinned.length,
+                    SESSION_LIST_BATCH,
+                  ),
+                ),
+              )}
             </SessionGroup>
             <SessionGroup
               label={t.sessions.normal}
@@ -479,7 +574,16 @@ export function SessionList({ onClose }: SessionListProps) {
               open={normalOpen}
               onOpenChange={setNormalOpen}
             >
-              {normal.map(renderItem)}
+              {normalWindow.visible.map(renderItem)}
+              {renderLoadMore(normalWindow.hiddenCount, () =>
+                setVisibleNormalCount((count) =>
+                  getNextVisibleCount(
+                    count,
+                    normal.length,
+                    SESSION_LIST_BATCH,
+                  ),
+                ),
+              )}
             </SessionGroup>
             <SessionGroup
               label={t.sessions.archived}
@@ -487,11 +591,31 @@ export function SessionList({ onClose }: SessionListProps) {
               open={archivedOpen}
               onOpenChange={setArchivedOpen}
             >
-              {archived.map(renderItem)}
+              {archivedWindow.visible.map(renderItem)}
+              {renderLoadMore(archivedWindow.hiddenCount, () =>
+                setVisibleArchivedCount((count) =>
+                  getNextVisibleCount(
+                    count,
+                    archived.length,
+                    SESSION_LIST_BATCH,
+                  ),
+                ),
+              )}
             </SessionGroup>
           </>
         ) : (
-          sorted.map(renderItem)
+          <>
+            {sessionWindow.visible.map(renderItem)}
+            {renderLoadMore(sessionWindow.hiddenCount, () =>
+              setVisibleSessionCount((count) =>
+                getNextVisibleCount(
+                  count,
+                  sorted.length,
+                  SESSION_LIST_BATCH,
+                ),
+              ),
+            )}
+          </>
         )}
       </div>
 
@@ -504,6 +628,8 @@ export function SessionList({ onClose }: SessionListProps) {
                 alt="Avatar"
                 className="w-8 h-8 rounded-full object-cover"
                 referrerPolicy="no-referrer"
+                width={32}
+                height={32}
               />
             ) : (
               <UserCircle className="w-8 h-8 text-muted-foreground" />
@@ -520,6 +646,7 @@ export function SessionList({ onClose }: SessionListProps) {
               onClick={handleLogout}
               className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
               title={t.auth.logout}
+              aria-label={t.auth.logout}
             >
               <LogOut size={16} />
             </Button>

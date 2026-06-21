@@ -12,6 +12,8 @@ import {
   takePendingMigration,
   unlockWithPassphrase as vaultUnlockWithPassphrase,
   upgradeToPassphrase,
+  mergePendingSecretMigration,
+  type PendingSecretMigration,
 } from "../lib/secrets/vault";
 import { useSettingsStore } from "./settings";
 import { useAuthStore } from "./auth";
@@ -67,6 +69,8 @@ export const VAULT_KEY_ACCESS_TOKEN = "auth.accessToken";
 export const VAULT_KEY_REFRESH_TOKEN = "auth.refreshToken";
 export const VAULT_KEY_TOKEN_EXPIRES_AT = "auth.tokenExpiresAt";
 
+let runtimePendingSecrets: PendingSecretMigration | null = null;
+
 interface SecretsState {
   mode: "device" | "passphrase";
   unlocked: boolean;
@@ -89,15 +93,55 @@ interface SecretsState {
 }
 
 async function flushTokensToVault(t: {
-  accessToken?: string;
-  refreshToken?: string;
-  tokenExpiresAt?: number;
+  accessToken?: string | null;
+  refreshToken?: string | null;
+  tokenExpiresAt?: number | null;
 }): Promise<void> {
-  if (t.accessToken) await vaultSetSecret(VAULT_KEY_ACCESS_TOKEN, t.accessToken);
-  if (t.refreshToken)
-    await vaultSetSecret(VAULT_KEY_REFRESH_TOKEN, t.refreshToken);
-  if (t.tokenExpiresAt)
-    await vaultSetSecret(VAULT_KEY_TOKEN_EXPIRES_AT, String(t.tokenExpiresAt));
+  if ("accessToken" in t) {
+    if (t.accessToken) {
+      await vaultSetSecret(VAULT_KEY_ACCESS_TOKEN, t.accessToken);
+    } else {
+      await deleteSecret(VAULT_KEY_ACCESS_TOKEN);
+    }
+  }
+  if ("refreshToken" in t) {
+    if (t.refreshToken) {
+      await vaultSetSecret(VAULT_KEY_REFRESH_TOKEN, t.refreshToken);
+    } else {
+      await deleteSecret(VAULT_KEY_REFRESH_TOKEN);
+    }
+  }
+  if ("tokenExpiresAt" in t) {
+    if (t.tokenExpiresAt) {
+      await vaultSetSecret(VAULT_KEY_TOKEN_EXPIRES_AT, String(t.tokenExpiresAt));
+    } else {
+      await deleteSecret(VAULT_KEY_TOKEN_EXPIRES_AT);
+    }
+  }
+}
+
+async function flushPendingSecretsToVault(
+  pending: PendingSecretMigration,
+): Promise<void> {
+  if ("apiKey" in pending) {
+    if (pending.apiKey) {
+      await vaultSetSecret(VAULT_KEY_API_KEY, pending.apiKey);
+    } else {
+      await deleteSecret(VAULT_KEY_API_KEY);
+    }
+  }
+  await flushTokensToVault(pending);
+}
+
+function stageRuntimePendingSecrets(data: PendingSecretMigration): void {
+  runtimePendingSecrets = mergePendingSecretMigration(runtimePendingSecrets, data);
+}
+
+async function flushRuntimePendingSecrets(): Promise<void> {
+  if (!runtimePendingSecrets) return;
+  const pending = runtimePendingSecrets;
+  runtimePendingSecrets = null;
+  await flushPendingSecretsToVault(pending);
 }
 
 export const useSecretsStore = create<SecretsState>((set) => ({
@@ -128,9 +172,9 @@ export const useSecretsStore = create<SecretsState>((set) => ({
       // Drain any pending migration record left by an aborted previous run.
       const pending = await takePendingMigration();
       if (pending) {
-        if (pending.apiKey) await vaultSetSecret(VAULT_KEY_API_KEY, pending.apiKey);
-        await flushTokensToVault(pending);
+        await flushPendingSecretsToVault(pending);
       }
+      await flushRuntimePendingSecrets();
 
       await Promise.all([hydrateSettingsFromVault(), hydrateAuthFromVault()]);
     }
@@ -140,6 +184,7 @@ export const useSecretsStore = create<SecretsState>((set) => ({
     const ok = await vaultUnlockWithPassphrase(passphrase);
     if (ok) {
       set({ unlocked: true, needsUnlock: false });
+      await flushRuntimePendingSecrets();
       await Promise.all([hydrateSettingsFromVault(), hydrateAuthFromVault()]);
     }
     return ok;
@@ -147,11 +192,15 @@ export const useSecretsStore = create<SecretsState>((set) => ({
 
   lock: () => {
     vaultLock();
-    set({ unlocked: isUnlocked() });
+    set({ unlocked: isUnlocked(), needsUnlock: !isUnlocked() });
   },
 
   setApiKey: async (value) => {
-    if (!isUnlocked()) return;
+    if (!isUnlocked()) {
+      stageRuntimePendingSecrets({ apiKey: value || null });
+      set({ needsUnlock: true, unlocked: false });
+      return;
+    }
     if (value) {
       await vaultSetSecret(VAULT_KEY_API_KEY, value);
     } else {
@@ -160,7 +209,15 @@ export const useSecretsStore = create<SecretsState>((set) => ({
   },
 
   setAuthTokens: async ({ accessToken, refreshToken, tokenExpiresAt }) => {
-    if (!isUnlocked()) return;
+    if (!isUnlocked()) {
+      stageRuntimePendingSecrets({
+        accessToken,
+        refreshToken,
+        tokenExpiresAt,
+      });
+      set({ needsUnlock: true, unlocked: false });
+      return;
+    }
     const writeOrDelete = (key: string, value: string | null) =>
       value ? vaultSetSecret(key, value) : deleteSecret(key);
     await Promise.all([
@@ -185,6 +242,7 @@ export const useSecretsStore = create<SecretsState>((set) => ({
 
   reset: async () => {
     await resetVault();
+    runtimePendingSecrets = null;
     set({
       mode: "device",
       unlocked: false,
@@ -205,7 +263,10 @@ async function hydrateAuthFromVault(): Promise<void> {
     getSecret(VAULT_KEY_REFRESH_TOKEN),
     getSecret(VAULT_KEY_TOKEN_EXPIRES_AT),
   ]);
-  const tokenExpiresAt = expiresRaw ? Number(expiresRaw) : null;
+  const parsedExpiresAt = expiresRaw ? Number(expiresRaw) : NaN;
+  const tokenExpiresAt = Number.isFinite(parsedExpiresAt)
+    ? parsedExpiresAt
+    : null;
   const authState = useAuthStore.getState();
   if (
     authState.accessToken !== accessToken ||

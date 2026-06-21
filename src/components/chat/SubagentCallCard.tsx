@@ -8,6 +8,11 @@ import { useT } from "../../i18n";
 import { truncate } from "../../lib/utils/truncate";
 import { useSubagentStore } from "../../store/subagent";
 import { getSubagentByName } from "../../lib/ai/subagents/registry";
+import {
+  SUBAGENT_LIMITS,
+  limitSubagentEvents,
+  truncateSubagentText,
+} from "../../lib/ai/subagents/limits";
 import type {
   SubagentEvent,
   SubagentStatus,
@@ -34,12 +39,18 @@ function parsePersisted(result: string): SubagentCardData | null {
     }
     return {
       subagent: data.subagent,
-      task: data.task ?? "",
+      task: truncateSubagentText(data.task ?? "", SUBAGENT_LIMITS.maxTaskChars),
       status: data.status ?? (data.ok ? "done" : "failed"),
-      text: data.text ?? "",
-      events: Array.isArray(data.events) ? data.events : [],
+      text: truncateSubagentText(
+        data.text ?? "",
+        SUBAGENT_LIMITS.maxLiveTextChars,
+      ),
+      events: Array.isArray(data.events) ? limitSubagentEvents(data.events) : [],
       durationMs: data.durationMs,
-      error: data.error,
+      error:
+        data.error == null
+          ? undefined
+          : truncateSubagentText(data.error, SUBAGENT_LIMITS.maxErrorChars),
     };
   } catch {
     return null;

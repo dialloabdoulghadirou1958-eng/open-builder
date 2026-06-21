@@ -15,13 +15,16 @@ const MAX_TAGS = 8;
 const MAX_COLORS = 12;
 const MAX_PROMPT_ASSETS = 5;
 const MAX_INSTRUCTION_CHARS = 1800;
+export const STYLE_ASSET_LIMITS = {
+  maxStoredInstructionChars: 5000,
+} as const;
 
 export function createStyleAsset(input: StyleAssetInput): StyleAsset {
   return {
     id: input.id,
     name: sanitizeStyleAssetName(input.name),
     description: normalizeOptionalText(input.description),
-    instructions: normalizeInstructions(input.instructions),
+    instructions: normalizeStyleAssetInstructions(input.instructions),
     tokens: normalizeStyleAssetTokens(input.tokens ?? {}),
     tags: normalizeStyleAssetTags(input.tags ?? []),
     enabled: input.enabled ?? true,
@@ -106,9 +109,13 @@ function normalizeOptionalText(value?: string) {
   return trimmed ? trimmed : undefined;
 }
 
-function normalizeInstructions(value: string) {
+export function normalizeStyleAssetInstructions(value: string) {
   const trimmed = value.trim();
-  return trimmed || "Use this style asset as the primary visual direction.";
+  const normalized =
+    trimmed || "Use this style asset as the primary visual direction.";
+  return normalized.length > STYLE_ASSET_LIMITS.maxStoredInstructionChars
+    ? normalized.slice(0, STYLE_ASSET_LIMITS.maxStoredInstructionChars)
+    : normalized;
 }
 
 function truncate(value: string, maxChars: number) {

@@ -25,6 +25,10 @@ import {
   buildProjectPatch,
   projectPatchFileName,
 } from "../../lib/utils/project-patch-export";
+import {
+  getNextVisibleCount,
+  getVisibleListWindow,
+} from "../../lib/utils/list-window";
 import { useT } from "../../i18n";
 import type { Message, ProjectSnapshot } from "../../types";
 
@@ -35,6 +39,8 @@ interface SnapshotHistoryDialogProps {
   onShowDiff: (messageId: string) => void;
   onRollback: (messageId: string) => void;
 }
+
+const SNAPSHOT_HISTORY_BATCH = 80;
 
 function snapshotStats(snapshot: ProjectSnapshot) {
   return {
@@ -58,8 +64,13 @@ export function SnapshotHistoryDialog({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(SNAPSHOT_HISTORY_BATCH);
 
   const items = useMemo(() => [...snapshots].reverse(), [snapshots]);
+  const itemWindow = useMemo(
+    () => getVisibleListWindow(items, visibleCount),
+    [items, visibleCount],
+  );
 
   const startEdit = (snapshot: ProjectSnapshot) => {
     setEditingId(snapshot.id);
@@ -138,7 +149,7 @@ export function SnapshotHistoryDialog({
             </p>
           ) : (
             <div className="divide-y">
-              {items.map((snapshot) => {
+              {itemWindow.visible.map((snapshot) => {
                 const stats = snapshotStats(snapshot);
                 const label =
                   snapshot.label ||
@@ -277,6 +288,30 @@ export function SnapshotHistoryDialog({
                   </div>
                 );
               })}
+              {itemWindow.hasMore && (
+                <div className="px-4 py-3">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-full text-xs text-muted-foreground"
+                    onClick={() =>
+                      setVisibleCount((count) =>
+                        getNextVisibleCount(
+                          count,
+                          items.length,
+                          SNAPSHOT_HISTORY_BATCH,
+                        ),
+                      )
+                    }
+                  >
+                    {t.snapshots.loadMore.replace(
+                      "{count}",
+                      String(itemWindow.hiddenCount),
+                    )}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>

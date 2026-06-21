@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "../ai/generator";
-import { compressContext } from "./compress-context";
+import {
+  compressContext,
+  COMPRESSED_CONTEXT_LIMITS,
+  normalizeCompressedSummary,
+} from "./compress-context";
 
 const mocks = vi.hoisted(() => ({
   generateText: vi.fn(),
@@ -69,7 +73,7 @@ describe("compressContext", () => {
 
     expect(result).toEqual({
       summary:
-        "Short summary.\n\n[Current project files (2)]\n- package.json\n- src/App.tsx",
+        "Short summary.\n\nCurrent project files:\n- package.json\n- src/App.tsx",
       fromIndex: 3,
     });
     expect(mocks.getProviderModel).toHaveBeenCalledWith(cfg);
@@ -82,5 +86,16 @@ describe("compressContext", () => {
     );
     expect(summaryInput).toContain("tool_result: OK — created: src/App.tsx");
     expect(summaryInput).not.toContain("Make it prettier");
+  });
+
+  it("bounds compressed summaries", () => {
+    const summary = normalizeCompressedSummary(
+      "x".repeat(COMPRESSED_CONTEXT_LIMITS.maxSummaryChars + 5),
+    );
+
+    expect(summary).toContain("[compressed context truncated after");
+    expect(summary.length).toBeLessThan(
+      COMPRESSED_CONTEXT_LIMITS.maxSummaryChars + 100,
+    );
   });
 });

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import localforage from "localforage";
 import type { MemoryItem, MemoryOperation } from "../types";
+import { sanitizeMemoryOperations } from "../lib/utils/memory-limits";
 import { createLocalforageStorage } from "./utils/localforage-storage";
 import { runMigrations, type MigrationStep } from "./utils/migrate";
 
@@ -75,13 +76,18 @@ export const useMemoryStore = create<MemoryState>()(
 
       processBatch: (operations) => {
         const state = get();
+        const checked = sanitizeMemoryOperations(
+          operations,
+          state.memories.length,
+        );
+        if (!checked.ok) return `Error: ${checked.error}`;
         let memories = [...state.memories];
         let added = 0;
         let updated = 0;
         let deleted = 0;
         const errors: string[] = [];
 
-        for (const op of operations) {
+        for (const op of checked.operations) {
           switch (op.action) {
             case "add": {
               if (!op.content || !op.category) {

@@ -2,7 +2,7 @@ import type { SkillFs } from "./fs";
 import { parseSkillMd } from "./parser";
 import type { SkillEntry } from "./types";
 import { BUILTIN_SKILLS, type BuiltinSkill } from "./builtin";
-import { assertSafePath } from "./paths";
+import { SKILL_IMPORT_LIMITS, assertSafePath } from "./paths";
 
 export interface SkillsStoreApi {
   getSkill(id: string): SkillEntry | undefined;
@@ -98,6 +98,7 @@ export class SkillRegistry {
     source: "builtin" | "imported",
     extras?: { builtinVersion?: string },
   ): Promise<SkillEntry> {
+    this.assertSafeId(id);
     const raw = await this.fs.readFile(`${id}/SKILL.md`);
     const parsed = parseSkillMd(raw);
     const existing = this.store.getSkill(id);
@@ -118,8 +119,10 @@ export class SkillRegistry {
   }
 
   private requireSkill(id: string): SkillEntry {
+    this.assertSafeId(id);
     const skill = this.store.getSkill(id);
     if (!skill) throw new Error(`Skill "${id}" is not registered`);
+    this.assertSafeId(skill.id);
     return skill;
   }
 
@@ -152,9 +155,13 @@ export class SkillRegistry {
   }
 
   private assertSafeId(id: string): void {
-    if (!/^[a-zA-Z0-9._-]+$/.test(id)) {
+    if (
+      !id ||
+      id.length > SKILL_IMPORT_LIMITS.maxIdChars ||
+      !/^[a-zA-Z0-9._-]+$/.test(id)
+    ) {
       throw new Error(
-        `Unsafe skill id "${id}". Must match [a-zA-Z0-9._-]+`,
+        `Unsafe skill id "${id}". Must match [a-zA-Z0-9._-]+ and be <= ${SKILL_IMPORT_LIMITS.maxIdChars} characters.`,
       );
     }
   }

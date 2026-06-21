@@ -15,6 +15,13 @@ const DEFAULT_VERSION_PATHS: Record<ApiType, string> = {
   google: "/v1beta",
 };
 
+export const MODEL_LIST_LIMITS = {
+  timeoutMs: 10_000,
+  maxResponseBytes: 2 * 1024 * 1024,
+  maxModels: 200,
+  maxModelIdChars: 160,
+} as const;
+
 export interface ProviderConfig {
   apiType: ApiType;
   apiBaseUrl: string;
@@ -25,6 +32,88 @@ export interface ProviderConfig {
 
 function hasVersionPath(url: string): boolean {
   return /\/v\d+(\w*)$/.test(url);
+}
+
+function normalizeModelId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const model = value.trim();
+  if (!model || model.length > MODEL_LIST_LIMITS.maxModelIdChars) return null;
+  if (/[\u0000-\u001f\u007f]/.test(model)) return null;
+  return model;
+}
+
+function finalizeModelIds(values: unknown[]): string[] {
+  const out = new Set<string>();
+  for (const value of values) {
+    const model = normalizeModelId(value);
+    if (!model) continue;
+    out.add(model);
+    if (out.size >= MODEL_LIST_LIMITS.maxModels) break;
+  }
+  return Array.from(out).sort();
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = globalThis.setTimeout(
+    () => controller.abort(),
+    MODEL_LIST_LIMITS.timeoutMs,
+  );
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    globalThis.clearTimeout(timer);
+  }
+}
+
+async function readJsonWithLimit(response: Response): Promise<unknown> {
+  const contentLength = response.headers.get("content-length");
+  if (contentLength) {
+    const declared = Number(contentLength);
+    if (
+      Number.isFinite(declared) &&
+      declared > MODEL_LIST_LIMITS.maxResponseBytes
+    ) {
+      throw new Error("Model list response is too large.");
+    }
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const text = await response.text();
+    if (
+      new TextEncoder().encode(text).byteLength >
+      MODEL_LIST_LIMITS.maxResponseBytes
+    ) {
+      throw new Error("Model list response is too large.");
+    }
+    return JSON.parse(text);
+  }
+
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > MODEL_LIST_LIMITS.maxResponseBytes) {
+      await reader.cancel();
+      throw new Error("Model list response is too large.");
+    }
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
 }
 
 export function resolveBaseURL(url: string, apiType: ApiType): string {
@@ -44,42 +133,37 @@ export async function fetchModelList(
     case "openai-compatible":
     case "openai": {
       const url = `${baseURL}/models`;
-      const res = await fetch(url, {
+      const res = await fetchWithTimeout(url, {
         headers: { Authorization: `Bearer ${apiKey}` },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      return (json.data || [])
-        .map((m: { id?: string }) => m.id)
-        .filter(Boolean)
-        .sort() as string[];
+      const json = (await readJsonWithLimit(res)) as { data?: unknown[] };
+      return finalizeModelIds((json.data ?? []).map((m: any) => m?.id));
     }
 
     case "anthropic": {
       const url = `${baseURL}/models`;
-      const res = await fetch(url, {
+      const res = await fetchWithTimeout(url, {
         headers: {
           "x-api-key": apiKey,
           "anthropic-dangerous-direct-browser-access": "true",
         },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      return (json.data || [])
-        .map((m: { id?: string }) => m.id)
-        .filter(Boolean)
-        .sort() as string[];
+      const json = (await readJsonWithLimit(res)) as { data?: unknown[] };
+      return finalizeModelIds((json.data ?? []).map((m: any) => m?.id));
     }
 
     case "google": {
       const url = `${baseURL}/models?key=${encodeURIComponent(apiKey)}`;
-      const res = await fetch(url);
+      const res = await fetchWithTimeout(url, {});
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      return (json.models || [])
-        .map((m: { name?: string }) => m.name?.replace(/^models\//, ""))
-        .filter(Boolean)
-        .sort() as string[];
+      const json = (await readJsonWithLimit(res)) as { models?: unknown[] };
+      return finalizeModelIds(
+        (json.models ?? []).map((m: any) =>
+          typeof m?.name === "string" ? m.name.replace(/^models\//, "") : null,
+        ),
+      );
     }
 
     default:

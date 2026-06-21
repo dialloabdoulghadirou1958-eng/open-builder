@@ -2,12 +2,22 @@ import type { Message } from "../../types";
 import { mergeMessages } from "./merge-messages";
 import { truncate } from "./truncate";
 
+const MERGED_ID_RE = /^(?:assistant|user)-(\d+)$/;
+
+export function getMergedMessageStartIndex(mergedId: string): number | null {
+  const match = MERGED_ID_RE.exec(mergedId);
+  if (!match) return null;
+  const idx = Number.parseInt(match[1], 10);
+  return Number.isSafeInteger(idx) ? idx : null;
+}
+
 export function findAssistantGroupEnd(
   messages: Message[],
   mergedId: string,
 ): number {
-  const startIdx = parseInt(mergedId.replace("assistant-", ""), 10);
-  if (isNaN(startIdx) || startIdx >= messages.length) return messages.length;
+  if (!mergedId.startsWith("assistant-")) return messages.length;
+  const startIdx = getMergedMessageStartIndex(mergedId);
+  if (startIdx === null || startIdx >= messages.length) return messages.length;
   let j = startIdx;
   while (
     j < messages.length &&

@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  FS_TOOL_LIMITS,
   fsInitProject,
   fsPatchFile,
+  fsReadFiles,
   fsRenameFile,
+  fsSearchInFiles,
   fsWriteFile,
   normalizeProjectPath,
 } from "./fs-tools";
-import { fsManageEnv } from "./env-tools";
+import { ENV_TOOL_LIMITS, fsManageEnv } from "./env-tools";
 import type { ProjectFiles } from "../ai/generator-types";
 
 describe("fsInitProject", () => {
@@ -91,9 +94,140 @@ describe("fsPatchFile", () => {
     expect(result.changes).toEqual([]);
     expect(result.newFiles).toBeUndefined();
   });
+
+  it("rejects empty patch search strings", () => {
+    const files: ProjectFiles = {
+      "src/App.tsx": "export const title = 'stable';\n",
+    };
+
+    const result = fsPatchFile(
+      "src/App.tsx",
+      [{ search: "", replace: "oops" }],
+      files,
+    );
+
+    expect(result.result).toContain("search must not be empty");
+    expect(result.changes).toEqual([]);
+    expect(result.newFiles).toBeUndefined();
+  });
+
+  it("rejects patched files that exceed the file size budget", () => {
+    const files: ProjectFiles = {
+      "src/App.tsx": "small",
+    };
+
+    const result = fsPatchFile(
+      "src/App.tsx",
+      [{ search: "small", replace: "x".repeat(FS_TOOL_LIMITS.maxFileBytes + 1) }],
+      files,
+    );
+
+    expect(result.result).toContain("patched file file content exceeds");
+    expect(result.changes).toEqual([]);
+    expect(result.newFiles).toBeUndefined();
+  });
+});
+
+describe("fsReadFiles", () => {
+  it("limits read batch size and truncates large output", () => {
+    const manyPaths = Array.from(
+      { length: FS_TOOL_LIMITS.maxReadFiles + 1 },
+      (_, i) => `src/${i}.ts`,
+    );
+
+    expect(fsReadFiles(manyPaths, {}).result).toContain(
+      `at most ${FS_TOOL_LIMITS.maxReadFiles} files`,
+    );
+
+    const result = fsReadFiles(
+      ["src/large.ts"],
+      { "src/large.ts": "x".repeat(FS_TOOL_LIMITS.maxReadOutputChars + 100) },
+    );
+
+    expect(result.result).toContain("[truncated after");
+    expect(result.changes).toEqual([]);
+  });
+});
+
+describe("fsWriteFile", () => {
+  it("rejects files that exceed the file size budget", () => {
+    const result = fsWriteFile(
+      "src/large.ts",
+      "x".repeat(FS_TOOL_LIMITS.maxFileBytes + 1),
+      {},
+    );
+
+    expect(result.result).toContain("file content exceeds");
+    expect(result.changes).toEqual([]);
+    expect(result.newFiles).toBeUndefined();
+  });
+});
+
+describe("fsSearchInFiles", () => {
+  it("limits search results", () => {
+    const files: ProjectFiles = {
+      "src/large.ts": Array.from(
+        { length: FS_TOOL_LIMITS.maxSearchMatches + 10 },
+        (_, i) => `const match${i} = true;`,
+      ).join("\n"),
+    };
+
+    const result = fsSearchInFiles("match", files);
+
+    expect(result.result).toContain("[truncated after");
+    expect(result.result.split("\n").length).toBeLessThanOrEqual(
+      FS_TOOL_LIMITS.maxSearchMatches + 1,
+    );
+  });
+
+  it("rejects unsafe or oversized regex patterns", () => {
+    expect(
+      fsSearchInFiles("x".repeat(FS_TOOL_LIMITS.maxSearchPatternChars + 1), {})
+        .result,
+    ).toContain("pattern is too long");
+
+    expect(fsSearchInFiles("(a+)+$", { "src/a.ts": "aaaa" }).result).toContain(
+      "nested quantifiers",
+    );
+  });
+
+  it("bounds scanned content for project-wide search", () => {
+    const files: ProjectFiles = {
+      "src/huge.ts": `${"x".repeat(FS_TOOL_LIMITS.maxSearchLineChars + 200)}needle`,
+      "src/late.ts": "needle",
+    };
+
+    const result = fsSearchInFiles("needle", files);
+
+    expect(result.result).toContain("src/late.ts");
+    expect(result.result).not.toContain("src/huge.ts");
+
+    const manyFiles = Object.fromEntries(
+      Array.from({ length: FS_TOOL_LIMITS.maxSearchFiles + 5 }, (_, i) => [
+        `src/${i}.ts`,
+        "needle",
+      ]),
+    );
+    expect(fsSearchInFiles("missing", manyFiles).result).toContain(
+      "[truncated after",
+    );
+  });
 });
 
 describe("fsRenameFile", () => {
+  it("rejects destinations that would merge into existing folders", () => {
+    const files: ProjectFiles = {
+      "src/components/Button.tsx": "button",
+      "src/ui/Card.tsx": "card",
+    };
+
+    const result = fsRenameFile("src/components", "src/ui", files);
+
+    expect(result.result).toContain("destination already exists");
+    expect(result.changes).toEqual([]);
+    expect(result.newFiles).toBeUndefined();
+  });
+
   it("renames a directory and rewrites relative imports to moved files", () => {
     const files: ProjectFiles = {
       "src/App.tsx": [
@@ -153,7 +287,63 @@ describe("fsManageEnv", () => {
     );
     expect(result.newFiles?.[".env"]).toBe("SECRET_TOKEN=super-secret\n");
     expect(result.newFiles?.["src/env.ts"]).toContain(
-      "VITE_API_URL: z.string().url().optional()",
+      '"VITE_API_URL": z.string().url().optional()',
     );
+  });
+
+  it("rejects invalid env keys, missing values, and oversized values", () => {
+    expect(
+      fsManageEnv(
+        [{ target: "example", action: "set", key: "BAD-KEY", value: "x" }],
+        true,
+        {},
+      ).result,
+    ).toContain("invalid env key");
+
+    expect(
+      fsManageEnv(
+        [{ target: "env", action: "set", key: "MISSING_VALUE" }],
+        true,
+        {},
+      ).result,
+    ).toContain("require a string value");
+
+    expect(
+      fsManageEnv(
+        [
+          {
+            target: "env",
+            action: "set",
+            key: "HUGE_VALUE",
+            value: "x".repeat(ENV_TOOL_LIMITS.maxValueBytes + 1),
+          },
+        ],
+        true,
+        {},
+      ).result,
+    ).toContain("env values must be <=");
+  });
+
+  it("limits operation count and safely quotes generated schema keys", () => {
+    const tooMany = Array.from(
+      { length: ENV_TOOL_LIMITS.maxOperations + 1 },
+      (_, i) => ({
+        target: "example" as const,
+        action: "set" as const,
+        key: `VITE_KEY_${i}`,
+        value: "x",
+      }),
+    );
+
+    expect(fsManageEnv(tooMany, true, {}).result).toContain("at most");
+
+    const result = fsManageEnv(
+      [{ target: "example", action: "set", key: "VITE_SAFE", value: "x" }],
+      true,
+      { ".env.example": "LEGACY-KEY=x\n" },
+    );
+
+    expect(result.newFiles?.["src/env.ts"]).toContain('"LEGACY-KEY"');
+    expect(result.newFiles?.["src/env.ts"]).toContain('"VITE_SAFE"');
   });
 });

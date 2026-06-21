@@ -3,17 +3,32 @@ import type { Message } from "../ai/generator";
 import type { CompressedContext, ProjectFiles } from "../../types";
 import type { ProviderConfig } from "../ai/provider";
 import { getProviderModel } from "../ai/provider";
+import { buildProjectFilesPromptListing } from "./project-files";
 
 export interface CompressResult {
   summary: string;
   fromIndex: number;
 }
 
+export const COMPRESSED_CONTEXT_LIMITS = {
+  maxSummaryChars: 80_000,
+} as const;
+
 const TOOL_RESULT_MAX_CHARS = 600;
 
 function truncateForSummary(text: string, max: number): string {
   if (text.length <= max) return text;
   return text.slice(0, max) + `... [truncated ${text.length - max} chars]`;
+}
+
+export function normalizeCompressedSummary(summary: string): string {
+  if (summary.length <= COMPRESSED_CONTEXT_LIMITS.maxSummaryChars) {
+    return summary;
+  }
+  return (
+    summary.slice(0, COMPRESSED_CONTEXT_LIMITS.maxSummaryChars) +
+    `\n\n[compressed context truncated after ${COMPRESSED_CONTEXT_LIMITS.maxSummaryChars} chars]`
+  );
 }
 
 function formatMessageForSummary(m: Message): string | null {
@@ -51,12 +66,8 @@ function formatMessageForSummary(m: Message): string | null {
 
 function buildFileInventory(files: ProjectFiles | undefined): string {
   if (!files) return "";
-  const paths = Object.keys(files).sort();
-  if (paths.length === 0) return "";
-  return (
-    `\n\n[Current project files (${paths.length})]\n` +
-    paths.map((p) => `- ${p}`).join("\n")
-  );
+  const listing = buildProjectFilesPromptListing(files);
+  return listing.includes("The project is empty") ? "" : listing;
 }
 
 export async function compressContext(
@@ -104,7 +115,9 @@ export async function compressContext(
     ],
   });
 
-  const summary = (result.text || "") + buildFileInventory(files);
+  const summary = normalizeCompressedSummary(
+    (result.text || "") + buildFileInventory(files),
+  );
 
   return { summary, fromIndex };
 }

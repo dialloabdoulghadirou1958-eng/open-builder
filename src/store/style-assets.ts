@@ -6,6 +6,7 @@ import { createLocalforageStorage } from "./utils/localforage-storage";
 import { runMigrations, type MigrationStep } from "./utils/migrate";
 import {
   normalizeStyleAssetTags,
+  normalizeStyleAssetInstructions,
   normalizeStyleAssetTokens,
   sanitizeStyleAssetName,
 } from "../lib/utils/style-assets";
@@ -65,8 +66,7 @@ export const useStyleAssetStore = create<StyleAssetState>()(
           instructions:
             patch.instructions === undefined
               ? existing.instructions
-              : patch.instructions.trim() ||
-                "Use this style asset as the primary visual direction.",
+              : normalizeStyleAssetInstructions(patch.instructions),
           tokens:
             patch.tokens === undefined
               ? existing.tokens

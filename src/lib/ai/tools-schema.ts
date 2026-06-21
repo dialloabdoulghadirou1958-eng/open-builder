@@ -163,14 +163,19 @@ export const BUILTIN_TOOLS = {
               .enum(["env", "example"])
               .describe('"env" writes to .env; "example" writes to .env.example'),
             action: z.enum(["set", "unset"]),
-            key: z.string().describe("Variable name, e.g. DATABASE_URL"),
+            key: z
+              .string()
+              .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
+              .describe("Variable name, e.g. DATABASE_URL"),
             value: z
               .string()
+              .max(64 * 1024)
               .optional()
               .describe('Value for "set" actions; ignored for "unset"'),
           }),
         )
         .min(1)
+        .max(100)
         .describe("Ordered list of env operations to apply"),
       generate_typed_env: z
         .boolean()

@@ -7,6 +7,7 @@ import {
   clampInt,
   fetchWithTimeout,
   limitRecord,
+  normalizeToolQuery,
   safeErrorMessage,
   truncateText,
 } from "./network-guard";
@@ -14,6 +15,9 @@ import {
 const NPMS_API = "https://api.npms.io/v2";
 const NPM_REGISTRY = "https://registry.npmjs.org";
 const CACHE_TTL = 10 * 60 * 1000;
+const NPM_PACKAGE_NAME_MAX_CHARS = 214;
+const NPM_PACKAGE_NAME_RE =
+  /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/i;
 
 const cache = new Map<string, { data: unknown; expiry: number }>();
 
@@ -60,9 +64,13 @@ async function fetchWithCache<T>(url: string): Promise<T> {
 
 async function searchPackages(args: any): Promise<string> {
   const { query, maxResults = 5 } = args;
+  const checkedQuery = normalizeToolQuery(query);
+  if (!checkedQuery.ok) {
+    return JSON.stringify({ success: false, error: checkedQuery.error });
+  }
   const size = clampInt(maxResults, 5, 1, NPM_SEARCH_MAX_RESULTS);
   const params = new URLSearchParams({
-    q: query,
+    q: checkedQuery.query,
     size: String(size),
   });
   try {
@@ -99,7 +107,11 @@ async function searchPackages(args: any): Promise<string> {
 
 async function getPackageDetail(args: any): Promise<string> {
   const { packageName } = args;
-  const encoded = encodeURIComponent(packageName).replace("%40", "@");
+  const checkedName = normalizeNpmPackageName(packageName);
+  if (!checkedName.ok) {
+    return JSON.stringify({ success: false, error: checkedName.error });
+  }
+  const encoded = encodeURIComponent(checkedName.name).replace("%40", "@");
   try {
     const registry = await fetchWithCache<any>(`${NPM_REGISTRY}/${encoded}`);
     const latest =
@@ -110,7 +122,7 @@ async function getPackageDetail(args: any): Promise<string> {
     const hasTypes = !!(
       pkg.types ||
       pkg.typings ||
-      pkg.dependencies?.["@types/" + packageName.replace(/[@/]/g, "__")]
+      pkg.dependencies?.["@types/" + checkedName.name.replace(/[@/]/g, "__")]
     );
     const dependencies = limitRecord(
       pkg.dependencies,
@@ -122,7 +134,7 @@ async function getPackageDetail(args: any): Promise<string> {
     );
     const readme = truncateText(registry.readme || "", NPM_README_MAX_CHARS);
     const detail = {
-      name: packageName,
+      name: checkedName.name,
       version: latest,
       description: pkg.description || "",
       license:
@@ -150,6 +162,29 @@ async function getPackageDetail(args: any): Promise<string> {
   } catch (err: any) {
     return JSON.stringify({ success: false, error: safeErrorMessage(err) });
   }
+}
+
+function normalizeNpmPackageName(
+  value: unknown,
+): { ok: true; name: string } | { ok: false; error: string } {
+  if (typeof value !== "string") {
+    return { ok: false, error: "packageName must be a string" };
+  }
+  const name = value.trim();
+  if (!name) return { ok: false, error: "packageName must not be empty" };
+  if (name.length > NPM_PACKAGE_NAME_MAX_CHARS) {
+    return {
+      ok: false,
+      error: `packageName is too long (max ${NPM_PACKAGE_NAME_MAX_CHARS} characters)`,
+    };
+  }
+  if (!NPM_PACKAGE_NAME_RE.test(name) || name.includes("..")) {
+    return {
+      ok: false,
+      error: "packageName must be a valid npm package name",
+    };
+  }
+  return { ok: true, name };
 }
 
 function round(n: number): number {

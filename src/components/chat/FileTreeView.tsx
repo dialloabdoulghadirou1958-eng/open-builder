@@ -2,7 +2,48 @@ import { Folder, File } from "lucide-react";
 
 type TreeNode = { [key: string]: TreeNode | null };
 
-function buildTree(paths: string[]): TreeNode {
+export const FILE_TREE_VIEW_LIMITS = {
+  maxPaths: 400,
+  maxDepth: 24,
+  maxPathChars: 240,
+  maxNameChars: 120,
+} as const;
+
+export function normalizeFileTreePaths(content: string): {
+  paths: string[];
+  omitted: number;
+} {
+  const paths: string[] = [];
+  let omitted = 0;
+
+  for (const rawLine of content.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line === "(empty)") continue;
+    if (paths.length >= FILE_TREE_VIEW_LIMITS.maxPaths) {
+      omitted++;
+      continue;
+    }
+
+    const parts = line
+      .slice(0, FILE_TREE_VIEW_LIMITS.maxPathChars)
+      .split("/")
+      .filter(Boolean)
+      .slice(0, FILE_TREE_VIEW_LIMITS.maxDepth)
+      .map((part) =>
+        part.length > FILE_TREE_VIEW_LIMITS.maxNameChars
+          ? `${part.slice(0, FILE_TREE_VIEW_LIMITS.maxNameChars)}…`
+          : part,
+      );
+
+    if (parts.length > 0) {
+      paths.push(parts.join("/"));
+    }
+  }
+
+  return { paths, omitted };
+}
+
+export function buildTree(paths: string[]): TreeNode {
   const root: TreeNode = {};
   for (const p of paths) {
     const parts = p.trim().split("/").filter(Boolean);
@@ -51,10 +92,7 @@ interface FileTreeViewProps {
 }
 
 export function FileTreeView({ content }: FileTreeViewProps) {
-  const paths = content
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l && l !== "(empty)");
+  const { paths, omitted } = normalizeFileTreePaths(content);
 
   if (paths.length === 0) {
     return <span className="text-xs text-muted-foreground">（空）</span>;
@@ -67,6 +105,11 @@ export function FileTreeView({ content }: FileTreeViewProps) {
       {sortEntries(Object.entries(tree)).map(([name, node]) => (
         <TreeNodeRow key={name} name={name} node={node} depth={0} />
       ))}
+      {omitted > 0 && (
+        <div className="px-1 py-0.5 text-xs text-muted-foreground">
+          … {omitted} more paths omitted
+        </div>
+      )}
     </div>
   );
 }

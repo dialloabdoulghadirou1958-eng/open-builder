@@ -32,6 +32,10 @@ export interface Message {
    *  (e.g. network failure). Consumers use this flag to render retry affordances
    *  and filter the message out of subsequent requests. */
   isError?: boolean;
+  /** Structured error metadata for locally synthesized assistant errors. */
+  errorKind?: StructuredGenerationErrorKind;
+  errorRetryable?: boolean;
+  errorStatus?: number;
 }
 
 /** Tool call (OpenAI function calling format) */

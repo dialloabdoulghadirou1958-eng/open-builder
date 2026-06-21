@@ -1,6 +1,10 @@
 import type { SkillRegistry } from "./registry";
 import type { SkillEntry } from "./types";
 import type { ScriptExecutor, ScriptResult } from "./script-executor";
+import {
+  normalizeScriptResult,
+  validateScriptExecuteParams,
+} from "./script-execution-guard";
 import { SKILL_TOOL_NAMES } from "./tools";
 
 export interface SkillToolDeps {
@@ -26,6 +30,17 @@ function findByName(
   return (
     enabled.find((s) => s.name === name) ?? enabled.find((s) => s.id === name)
   );
+}
+
+function parseScriptArgs(value: unknown): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new Error("'args' must be an array of strings.");
+  }
+  if (!value.every((arg) => typeof arg === "string")) {
+    throw new Error("'args' must be an array of strings.");
+  }
+  return value;
 }
 
 export function createSkillToolHandler(
@@ -86,10 +101,17 @@ export function createSkillToolHandler(
       const {
         skill_name: skillName,
         script_path: scriptPath,
-        args: scriptArgs,
-      } = args as { skill_name: string; script_path: string; args?: string[] };
+        args: rawScriptArgs,
+      } = args as { skill_name: string; script_path: string; args?: unknown };
       if (!skillName || !scriptPath) {
         return "Error: 'skill_name' and 'script_path' are required.";
+      }
+      let scriptArgs: string[];
+      try {
+        scriptArgs = parseScriptArgs(rawScriptArgs);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return `Error: ${msg}`;
       }
       const registry = await deps.getRegistry();
       const skill = findByName(registry, skillName);
@@ -109,16 +131,18 @@ export function createSkillToolHandler(
       }
       const startedAt = Date.now();
       try {
-        const result = await executor.execute({
+        const executionParams = {
           skillId: skill.id,
           scriptPath,
           scriptContent,
-          args: scriptArgs ?? [],
-        });
+          args: scriptArgs,
+        };
+        validateScriptExecuteParams(executionParams);
+        const result = normalizeScriptResult(await executor.execute(executionParams));
         deps.onScriptExecuted?.({
           skill,
           scriptPath,
-          args: scriptArgs ?? [],
+          args: scriptArgs,
           startedAt,
           finishedAt: Date.now(),
           result,
@@ -126,13 +150,19 @@ export function createSkillToolHandler(
         const parts: string[] = [];
         parts.push(`Exit code: ${result.exitCode}`);
         if (result.stdout) parts.push(`stdout:\n${result.stdout}`);
+        if (result.stdoutTruncated) {
+          parts.push("[stdout truncated]");
+        }
         if (result.stderr) parts.push(`stderr:\n${result.stderr}`);
+        if (result.stderrTruncated) {
+          parts.push("[stderr truncated]");
+        }
         return parts.join("\n\n");
       } catch (err: unknown) {
         deps.onScriptExecuted?.({
           skill,
           scriptPath,
-          args: scriptArgs ?? [],
+          args: scriptArgs,
           startedAt,
           finishedAt: Date.now(),
           result: null,

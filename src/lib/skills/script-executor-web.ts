@@ -3,6 +3,10 @@ import type {
   ScriptExecutor,
   ScriptResult,
 } from "./script-executor";
+import {
+  normalizeScriptResult,
+  validateScriptExecuteParams,
+} from "./script-execution-guard";
 import { extension } from "./paths";
 
 const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.mjs";
@@ -99,7 +103,7 @@ async function runPython(params: ScriptExecuteParams): Promise<ScriptResult> {
   pyodide.globals.set("__skill_args__", params.args);
   try {
     await pyodide.runPythonAsync(
-      `import sys\nsys.argv = ["${params.scriptPath.replace(/"/g, '\\"')}"] + list(__skill_args__)\n${params.scriptContent}`,
+      `import sys\nsys.argv = [${JSON.stringify(params.scriptPath)}] + list(__skill_args__)\n${params.scriptContent}`,
     );
     return {
       stdout: stdoutChunks.join(""),
@@ -122,8 +126,9 @@ export const WebScriptExecutor: ScriptExecutor = {
     return ext === "js" || ext === "mjs" || ext === "py";
   },
   async execute(params: ScriptExecuteParams): Promise<ScriptResult> {
+    validateScriptExecuteParams(params);
     const ext = extension(params.scriptPath);
-    if (ext === "py") return runPython(params);
-    return runJs(params);
+    const result = ext === "py" ? await runPython(params) : await runJs(params);
+    return normalizeScriptResult(result);
   },
 };

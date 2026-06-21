@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Conversation, ProjectTemplate } from "../../types";
 import {
+  PROJECT_TEMPLATE_LIMITS,
   createConversationFromProjectTemplate,
   createProjectTemplateFromConversation,
   getProjectTemplateStats,
   normalizeTemplateTags,
   sanitizeTemplateName,
+  validateProjectTemplateFiles,
 } from "./project-templates";
 
 const conversation: Conversation = {
@@ -53,6 +55,31 @@ describe("project template utilities", () => {
         { id: "template-1", name: "Empty", now: 10 },
       ),
     ).toThrow("Cannot create a template from an empty project.");
+  });
+
+  it("rejects project templates that exceed storage budgets", () => {
+    expect(
+      validateProjectTemplateFiles({
+        "src/large.ts": "x".repeat(PROJECT_TEMPLATE_LIMITS.maxFileBytes + 1),
+      }),
+    ).toEqual({
+      ok: false,
+      error: `Project template file "src/large.ts" is too large (max ${PROJECT_TEMPLATE_LIMITS.maxFileBytes} bytes).`,
+    });
+
+    expect(() =>
+      createProjectTemplateFromConversation(
+        {
+          ...conversation,
+          files: {
+            "src/large.ts": "x".repeat(
+              PROJECT_TEMPLATE_LIMITS.maxFileBytes + 1,
+            ),
+          },
+        },
+        { id: "template-1", name: "Large", now: 10 },
+      ),
+    ).toThrow("too large");
   });
 
   it("creates a new initialized conversation from a template", () => {

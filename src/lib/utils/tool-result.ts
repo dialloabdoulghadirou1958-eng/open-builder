@@ -1,5 +1,24 @@
 import type { AskUserAnswers } from "../../types/api";
 
+export const TOOL_RESULT_LIMITS = {
+  maxModelResultChars: 160_000,
+} as const;
+
+export function normalizeToolResultForModel(result: string): {
+  result: string;
+  truncated: boolean;
+} {
+  if (result.length <= TOOL_RESULT_LIMITS.maxModelResultChars) {
+    return { result, truncated: false };
+  }
+  return {
+    result:
+      result.slice(0, TOOL_RESULT_LIMITS.maxModelResultChars) +
+      `\n\n[tool result truncated after ${TOOL_RESULT_LIMITS.maxModelResultChars} chars]`,
+    truncated: true,
+  };
+}
+
 export async function toolResult<T>(
   promise: Promise<T>,
   shape: (value: T) => Record<string, unknown>,

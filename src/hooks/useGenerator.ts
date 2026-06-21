@@ -30,6 +30,12 @@ import { getMohuaApiUrl } from "../lib/services/mohua-api";
 import { useFileOperations } from "./useFileOperations";
 import { useTitleAndCompression } from "./useTitleAndCompression";
 import { buildStyleAssetPromptSection } from "../lib/utils/style-assets";
+import {
+  classifyGenerationError,
+  formatGenerationErrorMessage,
+} from "../lib/ai/generation-error";
+import { isGenerationRunCurrent } from "../lib/ai/run-guard";
+import { getT } from "../i18n";
 
 interface EffectiveAIConfig {
   isAuth: boolean;
@@ -129,30 +135,6 @@ const AUTO_QA_PROMPT =
   "Automatic QA round: call project_health_check with include_console=true. " +
   "If the report contains errors or warnings that clearly break build/runtime behavior, fix them with the available file tools. " +
 	  "Do not make broad redesigns or optional refactors. If only informational issues remain, summarize them and stop.";
-
-function classifyGenerationError(err: any): StructuredGenerationError {
-  const message = err?.message || "Unknown error";
-  const status = typeof err?.status === "number" ? err.status : undefined;
-  if (err?.name === "AbortError") {
-    return { kind: "aborted", message, retryable: false, status };
-  }
-  if (/context_length_exceeded|context length|maximum context/i.test(message)) {
-    return { kind: "context_length", message, retryable: true, status };
-  }
-  if (status === 401 || status === 403 || /api key|unauthorized|forbidden/i.test(message)) {
-    return { kind: "auth", message, retryable: false, status };
-  }
-  if (status === 429 || (status !== undefined && status >= 500)) {
-    return { kind: "model", message, retryable: true, status };
-  }
-  if (/network|fetch|timeout|timed out/i.test(message)) {
-    return { kind: "network", message, retryable: true, status };
-  }
-  if (/tool|invalid arguments|schema/i.test(message)) {
-    return { kind: "tool", message, retryable: true, status };
-  }
-  return { kind: "unknown", message, retryable: true, status };
-}
 
 interface GenerateRunOptions {
   skipAutoQa?: boolean;
@@ -266,19 +248,52 @@ export function useGenerator({
   const thinkingTimerRef = useRef<number | null>(null);
   const lastCharTimeRef = useRef(0);
   const lastThinkingTimeRef = useRef(0);
+  const runConversationIdRef = useRef<string | null>(null);
+
+  const clearOutputBuffers = useCallback(() => {
+    if (typewriterTimerRef.current) {
+      cancelAnimationFrame(typewriterTimerRef.current);
+      typewriterTimerRef.current = null;
+    }
+    if (thinkingTimerRef.current) {
+      cancelAnimationFrame(thinkingTimerRef.current);
+      thinkingTimerRef.current = null;
+    }
+    textBufferRef.current = "";
+    thinkingBufferRef.current = "";
+  }, []);
+
+  const isCurrentGeneratorRun = useCallback(
+    (runConversationId: string | null) =>
+      isGenerationRunCurrent(
+        runConversationId,
+        useConversationStore.getState().activeId,
+        runConversationIdRef.current,
+      ),
+    [],
+  );
 
   useEffect(
     () => () => {
-      if (typewriterTimerRef.current) {
-        cancelAnimationFrame(typewriterTimerRef.current);
-      }
-      if (thinkingTimerRef.current) {
-        cancelAnimationFrame(thinkingTimerRef.current);
-      }
+      clearOutputBuffers();
       generatorRef.current?.abort();
     },
-    [],
+    [clearOutputBuffers],
   );
+
+  useEffect(() => {
+    if (prevActiveIdRef.current === activeId) return;
+    generatorRef.current?.abort();
+    generatorRef.current = null;
+    generatorConfigRef.current = null;
+    runConversationIdRef.current = null;
+    clearOutputBuffers();
+    prevActiveIdRef.current = activeId;
+    useInteractiveStore.getState().rejectAllPending("conversation switched");
+    useSubagentStore.setState({ progress: {} });
+    setIsGenerating(false);
+    setRunState("idle");
+  }, [activeId, clearOutputBuffers, setIsGenerating]);
 
   const { updateFiles, deleteFile, renameFile, moveFile } = useFileOperations({
     setFiles,
@@ -324,6 +339,63 @@ export function useGenerator({
     }
   }, [setMessages]);
 
+  const flushTextBuffer = useCallback(() => {
+    if (typewriterTimerRef.current) {
+      cancelAnimationFrame(typewriterTimerRef.current);
+      typewriterTimerRef.current = null;
+    }
+    if (!textBufferRef.current) return;
+    const remainingText = textBufferRef.current;
+    textBufferRef.current = "";
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.role === "assistant") {
+        return [
+          ...prev.slice(0, -1),
+          {
+            ...last,
+            content:
+              ((typeof last.content === "string" ? last.content : "") || "") +
+              remainingText,
+          },
+        ];
+      }
+      return prev;
+    });
+  }, [setMessages]);
+
+  const flushOutputBuffers = useCallback(() => {
+    flushThinkingBuffer();
+    flushTextBuffer();
+  }, [flushThinkingBuffer, flushTextBuffer]);
+
+  const appendGenerationError = useCallback(
+    (
+      err: unknown,
+      options: { replaceExisting?: boolean } = {},
+    ): StructuredGenerationError => {
+      flushOutputBuffers();
+      const classified = classifyGenerationError(err);
+      setLastError(classified);
+      setRunState(classified.kind === "aborted" ? "aborted" : "error");
+      setMessages((prev) => [
+        ...(options.replaceExisting ? removeErrorMessages(prev) : prev),
+        {
+          role: "assistant",
+          content: formatGenerationErrorMessage(classified, getT()),
+          isError: true,
+          errorKind: classified.kind,
+          errorRetryable: classified.retryable,
+          ...(classified.status !== undefined
+            ? { errorStatus: classified.status }
+            : {}),
+        },
+      ]);
+      return classified;
+    },
+    [flushOutputBuffers, setMessages],
+  );
+
   const getGenerator = useCallback(async () => {
     const token = useAuthStore.getState().getValidToken();
     const cfg = getEffectiveAIConfig(token, settings, serverServiceSettings);
@@ -354,7 +426,11 @@ export function useGenerator({
 
     // Invalidate on conversation switch
     if (prevActiveIdRef.current !== activeId) {
+      generatorRef.current?.abort();
       generatorRef.current = null;
+      generatorConfigRef.current = null;
+      runConversationIdRef.current = null;
+      clearOutputBuffers();
       prevActiveIdRef.current = activeId;
       useInteractiveStore.getState().rejectAllPending("conversation switched");
       useSubagentStore.setState({ progress: {} });
@@ -375,11 +451,14 @@ export function useGenerator({
       generatorRef.current &&
       !sameGeneratorConfig(generatorConfigRef.current, nextConfig)
     ) {
+      generatorRef.current.abort();
       generatorRef.current = null;
+      generatorConfigRef.current = null;
     }
 
     if (!generatorRef.current) {
       const runtime = await loadGeneratorRuntime();
+      const generatorConversationId = activeId;
       const isBuiltinSearch = !isAuth && webSearchSettings.engine === "builtin";
       const webConfigured = isAuth
         ? serverServiceSettings.webSearchEnabled
@@ -427,8 +506,12 @@ export function useGenerator({
               useMemoryStore.getState().processBatch(ops),
           },
           filesBridge: {
-            getFiles: () => generatorRef.current?.getFiles() ?? {},
+            getFiles: () =>
+              isCurrentGeneratorRun(generatorConversationId)
+                ? (generatorRef.current?.getFiles() ?? {})
+                : {},
             onFilesChanged: (newFiles, changes) => {
+              if (!isCurrentGeneratorRun(generatorConversationId)) return;
               generatorRef.current?.setFiles(newFiles);
               setFiles(newFiles);
               const depsChanged = changes.some(
@@ -475,11 +558,17 @@ export function useGenerator({
         },
         {
 	          onText: (delta) => {
+	            if (!isCurrentGeneratorRun(generatorConversationId)) return;
 	            setRunState("streaming");
 	            flushThinkingBuffer();
             textBufferRef.current += delta;
             if (!typewriterTimerRef.current) {
               const typeChar = (timestamp: number) => {
+                if (!isCurrentGeneratorRun(generatorConversationId)) {
+                  textBufferRef.current = "";
+                  typewriterTimerRef.current = null;
+                  return;
+                }
                 if (timestamp - lastCharTimeRef.current >= 20) {
                   if (textBufferRef.current.length > 0) {
                     const char = textBufferRef.current[0];
@@ -516,10 +605,16 @@ export function useGenerator({
             }
           },
 	          onThinking: (delta) => {
+	            if (!isCurrentGeneratorRun(generatorConversationId)) return;
 	            setRunState("streaming");
 	            thinkingBufferRef.current += delta;
             if (!thinkingTimerRef.current) {
               const typeThinking = (timestamp: number) => {
+                if (!isCurrentGeneratorRun(generatorConversationId)) {
+                  thinkingBufferRef.current = "";
+                  thinkingTimerRef.current = null;
+                  return;
+                }
                 if (timestamp - lastThinkingTimeRef.current >= 20) {
                   if (thinkingBufferRef.current.length > 0) {
                     const char = thinkingBufferRef.current[0];
@@ -555,6 +650,7 @@ export function useGenerator({
             }
           },
 	          onToolCall: (name, id) => {
+	            if (!isCurrentGeneratorRun(generatorConversationId)) return;
 	            setRunState(
 	              name === "ask_user_question"
 	                ? "waitingUser"
@@ -619,6 +715,7 @@ export function useGenerator({
             });
           },
           onToolResult: (_name, _args, result) => {
+            if (!isCurrentGeneratorRun(generatorConversationId)) return;
             setMessages((prev) => {
               const msgs = [...prev];
               for (let i = msgs.length - 1; i >= 0; i--) {
@@ -664,19 +761,23 @@ export function useGenerator({
             });
           },
           onFileChange: (newFiles) => {
+            if (!isCurrentGeneratorRun(generatorConversationId)) return;
             setFiles(newFiles);
           },
           onTemplateChange: (tmpl, newFiles) => {
+            if (!isCurrentGeneratorRun(generatorConversationId)) return;
             setTemplate(tmpl);
             setFiles(newFiles);
             setIsProjectInitialized(true);
             restartSandpack();
           },
           onDependenciesChange: (newFiles) => {
+            if (!isCurrentGeneratorRun(generatorConversationId)) return;
             setFiles(newFiles);
             restartSandpack();
           },
 	          onComplete: () => {
+	            if (!isCurrentGeneratorRun(generatorConversationId)) return;
 	            setRunState("completed");
 	            if (typewriterTimerRef.current) {
               cancelAnimationFrame(typewriterTimerRef.current);
@@ -713,11 +814,13 @@ export function useGenerator({
             });
           },
 	          onError: (error) => {
+	            if (!isCurrentGeneratorRun(generatorConversationId)) return;
 	            setLastError(classifyGenerationError(error));
 	            setRunState("error");
 	            console.error("Generation error:", error);
           },
           onRetry: (attempt, maxAttempts, error) => {
+            if (!isCurrentGeneratorRun(generatorConversationId)) return;
             console.warn(
               `Retrying API request (${attempt}/${maxAttempts}):`,
               error.message,
@@ -731,9 +834,12 @@ export function useGenerator({
             });
           },
           onCompact: async () => {
+            if (!isCurrentGeneratorRun(generatorConversationId)) return null;
             const token = await useAuthStore.getState().getValidTokenAsync();
             const s = useConversationStore.getState();
-            const conv = s.activeId ? s.conversations[s.activeId] : null;
+            const conv = generatorConversationId
+              ? s.conversations[generatorConversationId]
+              : null;
             if (!conv) return null;
             const cfg = getEffectiveAIConfig(
               token,
@@ -750,6 +856,7 @@ export function useGenerator({
               },
               conv,
             );
+            if (!isCurrentGeneratorRun(generatorConversationId)) return null;
             if (!result) return null;
             return getMessagesForAPI({ ...conv, compressedContext: result });
           },
@@ -759,17 +866,30 @@ export function useGenerator({
         combinedToolHandler,
         {
           tools: initialTools,
-          askUserQuestion: (toolCallId, questions) =>
-            useInteractiveStore.getState().askQuestion({
+          askUserQuestion: (toolCallId, questions) => {
+            if (!isCurrentGeneratorRun(generatorConversationId)) {
+              return Promise.reject(
+                new DOMException("conversation switched", "AbortError"),
+              );
+            }
+            return useInteractiveStore.getState().askQuestion({
               toolCallId,
               questions,
-            }),
-          requestPlanApproval: (toolCallId, plan) =>
-            useInteractiveStore.getState().askPlanApproval({
+            });
+          },
+          requestPlanApproval: (toolCallId, plan) => {
+            if (!isCurrentGeneratorRun(generatorConversationId)) {
+              return Promise.reject(
+                new DOMException("conversation switched", "AbortError"),
+              );
+            }
+            return useInteractiveStore.getState().askPlanApproval({
               toolCallId,
               plan,
-            }),
+            });
+          },
 	          onPlanApproved: () => {
+	            if (!isCurrentGeneratorRun(generatorConversationId)) return;
 	            const { system, setSystem } = useSettingsStore.getState();
 	            if (system.planModeEnabled) {
 	              setSystem({ ...system, planModeEnabled: false });
@@ -780,7 +900,12 @@ export function useGenerator({
 	              planMode: false,
             });
           },
-          dispatchSubagent,
+          dispatchSubagent: async (...args) => {
+            if (!isCurrentGeneratorRun(generatorConversationId)) {
+              throw new DOMException("conversation switched", "AbortError");
+            }
+            return dispatchSubagent(...args);
+          },
         },
       );
 
@@ -835,12 +960,15 @@ export function useGenerator({
 
   const runAutomaticQa = useCallback(
     async (generator: WebAppGenerator, result: GenerateResult | null) => {
+      const runConversationId = runConversationIdRef.current;
+      if (!isCurrentGeneratorRun(runConversationId)) return;
 	      const system = useSettingsStore.getState().system;
       if (!system.autoQaEnabled || system.planModeEnabled) return;
       if (!result || result.aborted || result.maxIterationsReached) return;
       if (Object.keys(generator.getFiles()).length === 0) return;
 
 	      await applyDynamicGeneratorState(generator);
+	      if (!isCurrentGeneratorRun(runConversationId)) return;
 	      setRunState("autoQa");
       useInteractiveStore
         .getState()
@@ -853,32 +981,38 @@ export function useGenerator({
         await generator.generate(AUTO_QA_PROMPT);
       } catch (err: any) {
         if (err?.name === "AbortError") throw err;
+        if (!isCurrentGeneratorRun(runConversationId)) return;
         console.error("Automatic QA failed:", err);
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: `⚠️ Automatic QA failed: ${err?.message || "Unknown error"}`,
-            isError: true,
-          },
-        ]);
+        appendGenerationError(
+          new Error(`Automatic QA failed: ${err?.message || "Unknown error"}`),
+        );
       }
     },
-    [applyDynamicGeneratorState, setMessages],
+    [
+      applyDynamicGeneratorState,
+      appendGenerationError,
+      isCurrentGeneratorRun,
+      setMessages,
+    ],
   );
 
   const generate = useCallback(
-    async (
-      prompt: string,
-      attachments?: Attachment[],
-      options: GenerateRunOptions = {},
+	    async (
+	      prompt: string,
+	      attachments?: Attachment[],
+	      options: GenerateRunOptions = {},
 	    ) => {
+	      const runConversationId = useConversationStore.getState().activeId;
+	      if (!runConversationId) return;
+	      runConversationIdRef.current = runConversationId;
 	      setRunState("preparing");
 	      setLastError(null);
 	      setIsGenerating(true);
       const runtime = await loadGeneratorRuntime();
+      if (!isCurrentGeneratorRun(runConversationId)) return;
       runtime.skillActiveContext.clear();
       await useAuthStore.getState().getValidTokenAsync();
+      if (!isCurrentGeneratorRun(runConversationId)) return;
 
       let content: string | ContentPart[];
       if (attachments && attachments.length > 0) {
@@ -899,17 +1033,19 @@ export function useGenerator({
         content = prompt;
       }
 
-      const generator = await getGenerator();
+	      const generator = await getGenerator();
+	      if (!isCurrentGeneratorRun(runConversationId)) return;
       if (generator) {
         const storeState = useConversationStore.getState();
-        const activeConv = storeState.activeId
-          ? storeState.conversations[storeState.activeId]
+        const activeConv = runConversationId
+          ? storeState.conversations[runConversationId]
           : null;
         if (activeConv) {
           generator.syncMessages(getMessagesForAPI(activeConv));
         }
         await applyDynamicGeneratorState(generator);
       }
+      if (!isCurrentGeneratorRun(runConversationId)) return;
       useInteractiveStore
         .getState()
         .rejectAllPending("new generation started");
@@ -925,27 +1061,21 @@ export function useGenerator({
             await runAutomaticQa(generator, result);
           }
         }
-      } catch (err: any) {
+	      } catch (err: any) {
+	        if (!isCurrentGeneratorRun(runConversationId)) return;
         console.error("Error generating:", err);
         if (err?.name !== "AbortError") {
-	          const classified = classifyGenerationError(err);
-	          setLastError(classified);
-	          setRunState(classified.kind === "aborted" ? "aborted" : "error");
-	          setMessages((prev) => [
-	            ...removeErrorMessages(prev),
-	            {
-	              role: "assistant",
-	              content: `⚠️ ${classified.message}`,
-	              isError: true,
-	            },
-	          ]);
+	          appendGenerationError(err, { replaceExisting: true });
 	        }
 	      } finally {
-	        setMessages((prev) => filterMemoryMessages(prev));
-	        setIsGenerating(false);
-	        setRunState((state) =>
-	          state === "error" || state === "aborted" ? state : "idle",
-	        );
+	        if (isCurrentGeneratorRun(runConversationId)) {
+	          setMessages((prev) => filterMemoryMessages(prev));
+	          setIsGenerating(false);
+	          setRunState((state) =>
+	            state === "error" || state === "aborted" ? state : "idle",
+	          );
+	          runConversationIdRef.current = null;
+	        }
 	      }
     },
     [
@@ -954,8 +1084,10 @@ export function useGenerator({
       setMessages,
       applyDynamicGeneratorState,
       runAutomaticQa,
-    ],
-  );
+	      appendGenerationError,
+	      isCurrentGeneratorRun,
+	    ],
+	  );
 
   const stop = useCallback(() => {
     if (typewriterTimerRef.current) {
@@ -990,6 +1122,7 @@ export function useGenerator({
       thinkingBufferRef.current = "";
     }
 	    generatorRef.current?.abort();
+	    runConversationIdRef.current = null;
 	    useInteractiveStore.getState().rejectAllPending("user stopped");
 	    setRunState("aborted");
 	    setIsGenerating(false);
@@ -997,6 +1130,9 @@ export function useGenerator({
   }, [setIsGenerating, setMessages]);
 
 	  const retry = useCallback(async () => {
+	    const runConversationId = useConversationStore.getState().activeId;
+	    if (!runConversationId) return;
+	    runConversationIdRef.current = runConversationId;
 	    setRunState("preparing");
 	    setLastError(null);
 	    setIsGenerating(true);
@@ -1012,42 +1148,45 @@ export function useGenerator({
         return true;
       });
     });
-    try {
-      const generator = await getGenerator();
-      if (generator) {
-        const storeState = useConversationStore.getState();
-        const activeConv = storeState.activeId
-          ? storeState.conversations[storeState.activeId]
-          : null;
-        if (activeConv) {
-          generator.syncMessages(getMessagesForAPI(activeConv));
-        }
-        await applyDynamicGeneratorState(generator);
-        await generator.retry();
-      }
-    } catch (err: any) {
-      console.error("Error retrying:", err);
+	    try {
+	      const generator = await getGenerator();
+	      if (!isCurrentGeneratorRun(runConversationId)) return;
+	      if (generator) {
+	        const storeState = useConversationStore.getState();
+	        const activeConv = runConversationId
+	          ? storeState.conversations[runConversationId]
+	          : null;
+	        if (activeConv) {
+	          generator.syncMessages(getMessagesForAPI(activeConv));
+	        }
+	        await applyDynamicGeneratorState(generator);
+	        if (!isCurrentGeneratorRun(runConversationId)) return;
+	        await generator.retry();
+	      }
+	    } catch (err: any) {
+	      if (!isCurrentGeneratorRun(runConversationId)) return;
+	      console.error("Error retrying:", err);
       if (err?.name !== "AbortError") {
-	        const classified = classifyGenerationError(err);
-	        setLastError(classified);
-	        setRunState(classified.kind === "aborted" ? "aborted" : "error");
-	        setMessages((prev) => [
-	          ...prev,
-	          {
-	            role: "assistant",
-	            content: `⚠️ ${classified.message}`,
-	            isError: true,
-	          },
-	        ]);
+	        appendGenerationError(err);
       }
-	    } finally {
-	      setMessages((prev) => filterMemoryMessages(prev));
-	      setIsGenerating(false);
-	      setRunState((state) =>
-	        state === "error" || state === "aborted" ? state : "idle",
-	      );
-	    }
-  }, [getGenerator, setIsGenerating, setMessages, applyDynamicGeneratorState]);
+		    } finally {
+		      if (isCurrentGeneratorRun(runConversationId)) {
+		        setMessages((prev) => filterMemoryMessages(prev));
+		        setIsGenerating(false);
+		        setRunState((state) =>
+		          state === "error" || state === "aborted" ? state : "idle",
+		        );
+		        runConversationIdRef.current = null;
+		      }
+		    }
+  }, [
+    getGenerator,
+    setIsGenerating,
+    setMessages,
+	    applyDynamicGeneratorState,
+	    appendGenerationError,
+	    isCurrentGeneratorRun,
+	  ]);
 
   const review = useCallback(async () => {
     await generate(
@@ -1066,47 +1205,53 @@ export function useGenerator({
   }, [generate]);
 
 	  const continueTask = useCallback(async () => {
+	    const runConversationId = useConversationStore.getState().activeId;
+	    if (!runConversationId) return;
+	    runConversationIdRef.current = runConversationId;
 	    setRunState("preparing");
 	    setLastError(null);
 	    setIsGenerating(true);
     try {
       const generator = await getGenerator();
+      if (!isCurrentGeneratorRun(runConversationId)) return;
       if (generator) {
         const storeState = useConversationStore.getState();
-        const activeConv = storeState.activeId
-          ? storeState.conversations[storeState.activeId]
+        const activeConv = runConversationId
+          ? storeState.conversations[runConversationId]
           : null;
         if (activeConv) {
           generator.syncMessages(getMessagesForAPI(activeConv));
         }
         await applyDynamicGeneratorState(generator);
+        if (!isCurrentGeneratorRun(runConversationId)) return;
         await generator.generate(
           "Please continue where you left off and complete any unfinished tasks.",
         );
       }
     } catch (err: any) {
+      if (!isCurrentGeneratorRun(runConversationId)) return;
       console.error("Error continuing:", err);
       if (err?.name !== "AbortError") {
-	        const classified = classifyGenerationError(err);
-	        setLastError(classified);
-	        setRunState(classified.kind === "aborted" ? "aborted" : "error");
-	        setMessages((prev) => [
-	          ...prev,
-	          {
-	            role: "assistant",
-	            content: `⚠️ ${classified.message}`,
-	            isError: true,
-	          },
-	        ]);
+	        appendGenerationError(err);
       }
 	    } finally {
-	      setMessages((prev) => filterMemoryMessages(prev));
-	      setIsGenerating(false);
-	      setRunState((state) =>
-	        state === "error" || state === "aborted" ? state : "idle",
-	      );
+	      if (isCurrentGeneratorRun(runConversationId)) {
+	        setMessages((prev) => filterMemoryMessages(prev));
+	        setIsGenerating(false);
+	        setRunState((state) =>
+	          state === "error" || state === "aborted" ? state : "idle",
+	        );
+	        runConversationIdRef.current = null;
+	      }
 	    }
-  }, [getGenerator, setIsGenerating, setMessages, applyDynamicGeneratorState]);
+  }, [
+    getGenerator,
+    setIsGenerating,
+    setMessages,
+    applyDynamicGeneratorState,
+    appendGenerationError,
+    isCurrentGeneratorRun,
+  ]);
 
   return {
     generate,

@@ -2,11 +2,17 @@ import { tool } from "ai";
 import { z } from "zod";
 import type { ProjectFiles } from "../../types";
 import { truncateText } from "./network-guard";
+import {
+  CONSOLE_LOG_LIMITS,
+  stringifyConsoleItem,
+  type ConsoleLog,
+} from "./console-log-format";
 
-export interface ConsoleLog {
-  method: string;
-  data: unknown[];
-}
+export const PROJECT_HEALTH_LIMITS = {
+  maxIssues: 20,
+  maxConsoleLogs: CONSOLE_LOG_LIMITS.maxLogs,
+  maxConsoleMessageChars: CONSOLE_LOG_LIMITS.maxItemChars,
+} as const;
 
 export interface ProjectHealthIssue {
   severity: "error" | "warning" | "info";
@@ -30,8 +36,10 @@ export interface ProjectHealthReport {
     errors: number;
     warnings: number;
     info: number;
+    totalIssues: number;
   };
   issues: ProjectHealthIssue[];
+  truncated?: boolean;
 }
 
 export const PROJECT_HEALTH_CHECK_TOOL = {
@@ -152,16 +160,14 @@ export function runProjectHealthCheck(
   }
 
   if (includeConsole) {
-    for (const log of consoleLogs.slice(-20)) {
+    for (const log of consoleLogs.slice(-PROJECT_HEALTH_LIMITS.maxConsoleLogs)) {
       const method = log.method.toLowerCase();
       if (method !== "error" && method !== "warn") continue;
       const text = truncateText(
         log.data
-          .map((item) =>
-            typeof item === "string" ? item : JSON.stringify(item),
-          )
+          .map((item) => stringifyConsoleItem(item))
           .join(" "),
-        500,
+        PROJECT_HEALTH_LIMITS.maxConsoleMessageChars,
       ).text;
       issues.push({
         severity: method === "error" ? "error" : "warning",
@@ -172,6 +178,9 @@ export function runProjectHealthCheck(
   }
 
   const counts = countIssues(issues);
+  const sortedIssues = sortIssuesByImpact(issues);
+  const visibleIssues = sortedIssues.slice(0, PROJECT_HEALTH_LIMITS.maxIssues);
+  const truncated = sortedIssues.length > visibleIssues.length;
   return {
     ok: counts.errors === 0 && counts.warnings === 0,
     summary: {
@@ -180,8 +189,10 @@ export function runProjectHealthCheck(
       errors: counts.errors,
       warnings: counts.warnings,
       info: counts.info,
+      totalIssues: issues.length,
     },
-    issues,
+    issues: visibleIssues,
+    ...(truncated ? { truncated: true } : {}),
   };
 }
 
@@ -202,6 +213,21 @@ export function createProjectHealthCheckHandler(deps: {
       }),
     );
   };
+}
+
+function sortIssuesByImpact(
+  issues: ProjectHealthIssue[],
+): ProjectHealthIssue[] {
+  const severityRank: Record<ProjectHealthIssue["severity"], number> = {
+    error: 0,
+    warning: 1,
+    info: 2,
+  };
+  return [...issues].sort((a, b) => {
+    const severityDelta = severityRank[a.severity] - severityRank[b.severity];
+    if (severityDelta !== 0) return severityDelta;
+    return a.category.localeCompare(b.category) || a.message.localeCompare(b.message);
+  });
 }
 
 function findPackageJsonPath(files: ProjectFiles): string | undefined {

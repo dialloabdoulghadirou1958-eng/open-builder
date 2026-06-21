@@ -3,6 +3,14 @@ import { z } from "zod";
 import { getProviderModel } from "../ai/provider";
 import type { ApiType } from "../ai/provider";
 import type { ProjectFiles, FileChange } from "../ai/generator-types";
+import {
+  normalizeProjectPath,
+  validateProjectFileContent,
+} from "./fs-tools";
+import {
+  normalizeHttpUrl,
+  safeErrorMessage,
+} from "./network-guard";
 
 export const SCREENSHOT_TO_CODE_TOOL = {
   screenshot_to_code: tool({
@@ -61,6 +69,36 @@ const DEFAULT_OUTPUT: Record<NonNullable<ScreenshotArgs["framework"]>, string> =
   vue: "src/components/GeneratedComponent.vue",
   svelte: "src/components/GeneratedComponent.svelte",
 };
+const SCREENSHOT_TO_CODE_LIMITS = {
+  maxStyleHintChars: 2000,
+  maxDataUrlChars: 6_000_000,
+} as const;
+
+function normalizeScreenshotImageUrl(
+  value: unknown,
+): { ok: true; imageUrl: string } | { ok: false; error: string } {
+  if (typeof value !== "string") {
+    return { ok: false, error: "image_url must be a string" };
+  }
+  const imageUrl = value.trim();
+  if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageUrl)) {
+    if (imageUrl.length > SCREENSHOT_TO_CODE_LIMITS.maxDataUrlChars) {
+      return {
+        ok: false,
+        error: `image_url data URL is too large (max ${SCREENSHOT_TO_CODE_LIMITS.maxDataUrlChars} characters)`,
+      };
+    }
+    return { ok: true, imageUrl };
+  }
+  const checkedUrl = normalizeHttpUrl(imageUrl, "image_url");
+  if (!checkedUrl.ok) {
+    return {
+      ok: false,
+      error: "image_url must be a base64 data:image URL or an http(s) URL",
+    };
+  }
+  return { ok: true, imageUrl: checkedUrl.url };
+}
 
 function buildPrompt(framework: string, styleHints?: string): string {
   const style = styleHints?.trim() || "Tailwind CSS";
@@ -91,12 +129,31 @@ function extractCodeBlock(text: string): string | null {
 export function createScreenshotToCodeHandler(deps: ScreenshotToCodeDeps) {
   return async (_name: string, args: unknown): Promise<string> => {
     const parsed = args as ScreenshotArgs;
-    const imageUrl = parsed?.image_url;
-    if (!imageUrl || typeof imageUrl !== "string") {
-      return JSON.stringify({ ok: false, error: "missing 'image_url' argument" });
+    const checkedImageUrl = normalizeScreenshotImageUrl(parsed?.image_url);
+    if (!checkedImageUrl.ok) {
+      return JSON.stringify({ ok: false, error: checkedImageUrl.error });
+    }
+    if (
+      typeof parsed.style_hints === "string" &&
+      parsed.style_hints.length > SCREENSHOT_TO_CODE_LIMITS.maxStyleHintChars
+    ) {
+      return JSON.stringify({
+        ok: false,
+        error: `style_hints must be <= ${SCREENSHOT_TO_CODE_LIMITS.maxStyleHintChars} chars`,
+      });
     }
     const framework = parsed.framework ?? "react";
     const outputPath = parsed.output_path || DEFAULT_OUTPUT[framework];
+    const checkedPath = normalizeProjectPath(outputPath);
+    if (!checkedPath.ok) {
+      return JSON.stringify({ ok: false, error: checkedPath.error });
+    }
+    if (checkedPath.path === ".env") {
+      return JSON.stringify({
+        ok: false,
+        error: "screenshot_to_code cannot write .env; use manage_env",
+      });
+    }
 
     let model;
     try {
@@ -104,7 +161,7 @@ export function createScreenshotToCodeHandler(deps: ScreenshotToCodeDeps) {
     } catch (err: any) {
       return JSON.stringify({
         ok: false,
-        error: `failed to init model: ${err?.message ?? "unknown"}`,
+        error: `failed to init model: ${safeErrorMessage(err)}`,
       });
     }
 
@@ -117,7 +174,7 @@ export function createScreenshotToCodeHandler(deps: ScreenshotToCodeDeps) {
             role: "user",
             content: [
               { type: "text", text: buildPrompt(framework, parsed.style_hints) },
-              { type: "image", image: imageUrl },
+              { type: "image", image: checkedImageUrl.imageUrl },
             ],
           },
         ],
@@ -127,7 +184,7 @@ export function createScreenshotToCodeHandler(deps: ScreenshotToCodeDeps) {
     } catch (err: any) {
       return JSON.stringify({
         ok: false,
-        error: `vision request failed: ${err?.message ?? "unknown"}`,
+        error: `vision request failed: ${safeErrorMessage(err)}`,
       });
     }
 
@@ -138,17 +195,21 @@ export function createScreenshotToCodeHandler(deps: ScreenshotToCodeDeps) {
         error: "model did not return a code block",
       });
     }
+    const checkedContent = validateProjectFileContent(code);
+    if (!checkedContent.ok) {
+      return JSON.stringify({ ok: false, error: checkedContent.error });
+    }
 
     const files = deps.getFiles();
-    const action: FileChange["action"] = outputPath in files ? "modified" : "created";
-    const newFiles: ProjectFiles = { ...files, [outputPath]: code };
-    deps.onFilesChanged(newFiles, [{ path: outputPath, action }]);
+    const action: FileChange["action"] = checkedPath.path in files ? "modified" : "created";
+    const newFiles: ProjectFiles = { ...files, [checkedPath.path]: checkedContent.content };
+    deps.onFilesChanged(newFiles, [{ path: checkedPath.path, action }]);
 
     return JSON.stringify({
       ok: true,
-      path: outputPath,
-      chars: code.length,
-      preview: code.slice(0, 200),
+      path: checkedPath.path,
+      chars: checkedContent.content.length,
+      preview: checkedContent.content.slice(0, 200),
     });
   };
 }

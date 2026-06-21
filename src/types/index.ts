@@ -1,4 +1,8 @@
-import type { Message as _Message, ProjectFiles as _ProjectFiles } from "../lib/ai/generator-types";
+import type {
+  Message as _Message,
+  ProjectFiles as _ProjectFiles,
+  StructuredGenerationErrorKind as _StructuredGenerationErrorKind,
+} from "../lib/ai/generator-types";
 
 export type {
   ProjectFiles,
@@ -11,6 +15,7 @@ export type {
   GeneratorRunState,
   GeneratorEvent,
   StructuredGenerationError,
+  StructuredGenerationErrorKind,
   GeneratorOptions,
   GeneratorEvents,
 } from "../lib/ai/generator-types";
@@ -38,9 +43,22 @@ export interface AttachmentConstraints {
   maxTotalBytes: number;
 }
 
+export type AttachmentValidationCode =
+  | "max_count"
+  | "max_total_size"
+  | "max_image_size"
+  | "unsupported_type"
+  | "max_file_size";
+
 export type AttachmentValidationResult =
   | { ok: true }
-  | { ok: false; reason: string };
+  | {
+      ok: false;
+      code: AttachmentValidationCode;
+      reason: string;
+      limit?: number;
+      name?: string;
+    };
 
 export interface TextBlock {
   type: "text";
@@ -94,6 +112,9 @@ export interface MergedMessage {
    *  (network failure, aborted retry, etc.). Drives the retry affordance in the
    *  UI without relying on string-prefix sniffing. */
   isError?: boolean;
+  errorKind?: _StructuredGenerationErrorKind;
+  errorRetryable?: boolean;
+  errorStatus?: number;
 }
 
 // ─── Snapshot types ─────────────────────────────────────────────────────────

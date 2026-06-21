@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import type { ToolSet } from "ai";
 import { SUBAGENT_REGISTRY } from "../ai/subagents/registry";
+import { SUBAGENT_LIMITS } from "../ai/subagents/limits";
 
 const agentList = SUBAGENT_REGISTRY.map(
   (a) => `- "${a.name}": ${a.description}`,
@@ -33,6 +34,7 @@ export const DISPATCH_SUBAGENT_TOOL: ToolSet = {
         ),
       task: z
         .string()
+        .max(SUBAGENT_LIMITS.maxTaskChars)
         .describe(
           "Detailed task description for the subagent. Be specific about which files, questions, or goals it should address. The subagent only sees this task — it has no other knowledge of the conversation.",
         ),

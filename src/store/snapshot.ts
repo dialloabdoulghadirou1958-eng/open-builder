@@ -9,7 +9,10 @@ import {
   rebuildSnapshotChainWithoutSnapshot,
   replaySnapshots,
 } from "./snapshot-replay";
-import { pruneSnapshotRecord } from "../lib/utils/storage-governance";
+import {
+  isSnapshotWithinStorageBudget,
+  pruneSnapshotRecord,
+} from "../lib/utils/storage-governance";
 
 export { replaySnapshots } from "./snapshot-replay";
 
@@ -168,6 +171,10 @@ export const useSnapshotStore = create<SnapshotState>()(
           ? { ...base, fullFiles: { ...currentFiles } }
           : base;
 
+        if (!isSnapshotWithinStorageBudget(snapshot)) {
+          return;
+        }
+
         set((s) => ({
           snapshots: {
             ...s.snapshots,
@@ -233,6 +240,10 @@ export const useSnapshotStore = create<SnapshotState>()(
             : {}),
         };
 
+        if (!isSnapshotWithinStorageBudget(updatedSnapshot)) {
+          return;
+        }
+
         set((s) => ({
           snapshots: {
             ...s.snapshots,
@@ -281,10 +292,11 @@ export const useSnapshotStore = create<SnapshotState>()(
       },
 
       importSnapshotsForConversation: (conversationId, snapshots) => {
+        const safeSnapshots = snapshots.filter(isSnapshotWithinStorageBudget);
         set((s) => ({
           snapshots: {
             ...s.snapshots,
-            [conversationId]: snapshots.map((snapshot) => ({
+            [conversationId]: safeSnapshots.map((snapshot) => ({
               ...snapshot,
               conversationId,
             })),

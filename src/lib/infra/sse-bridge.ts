@@ -7,6 +7,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+const SSE_CONNECT_TIMEOUT_MS = 30_000;
+
 // ─── Types (mirrors Rust SsePayload with serde tag = "type") ────────────────
 
 interface SseConnected {
@@ -60,6 +62,14 @@ export function createSseResponse(
     let unlisten: UnlistenFn | null = null;
     let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
     let resolved = false;
+    let connectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearConnectTimer = () => {
+      if (connectTimer) {
+        clearTimeout(connectTimer);
+        connectTimer = null;
+      }
+    };
 
     // ── Abort handling ────────────────────────────────────────────────────
     const onAbort = () => {
@@ -89,6 +99,7 @@ export function createSseResponse(
     options.signal?.addEventListener("abort", onAbort, { once: true });
 
     const cleanup = () => {
+      clearConnectTimer();
       unlisten?.();
       unlisten = null;
       options.signal?.removeEventListener("abort", onAbort);
@@ -114,6 +125,7 @@ export function createSseResponse(
       switch (payload.type) {
         case "Connected": {
           resolved = true;
+          clearConnectTimer();
           const responseHeaders = new Headers(payload.headers);
           resolve(
             new Response(stream, {
@@ -161,6 +173,13 @@ export function createSseResponse(
       }
     }).then((fn) => {
       unlisten = fn;
+      connectTimer = setTimeout(() => {
+        invoke("sse_disconnect", { id }).catch(() => {});
+        if (!resolved) {
+          reject(new Error("SSE connection timed out before headers arrived"));
+        }
+        cleanup();
+      }, SSE_CONNECT_TIMEOUT_MS);
 
       // Start the Rust-side streaming only after the listener is registered
       invoke("sse_connect", {

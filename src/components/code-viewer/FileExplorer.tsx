@@ -311,6 +311,7 @@ export function FileExplorer({
             className="h-6 w-6"
             onClick={() => startCreate("file", getCurrentDirectory())}
             title={t.explorer.newFile}
+            aria-label={t.explorer.newFile}
           >
             <FilePlus size={14} />
           </Button>
@@ -320,6 +321,7 @@ export function FileExplorer({
             className="h-6 w-6"
             onClick={() => startCreate("folder", getCurrentDirectory())}
             title={t.explorer.newFolder}
+            aria-label={t.explorer.newFolder}
           >
             <FolderPlus size={14} />
           </Button>
@@ -336,6 +338,7 @@ export function FileExplorer({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t.explorer.searchPlaceholder}
+            aria-label={t.explorer.searchPlaceholder}
             className="h-7 pl-7 text-xs"
           />
         </div>

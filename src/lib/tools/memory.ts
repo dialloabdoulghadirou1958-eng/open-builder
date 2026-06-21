@@ -1,6 +1,10 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { MemoryItem, MemoryOperation } from "../../types";
+import {
+  limitMemoriesForPrompt,
+  sanitizeMemoryOperations,
+} from "../utils/memory-limits";
 
 export interface MemoryDeps {
   getAll: () => MemoryItem[];
@@ -71,14 +75,18 @@ export function createMemoryToolHandler(deps: MemoryDeps): (
     if (name !== MEMORY_TOOL_NAME) {
       return `Error: unknown tool "${name}"`;
     }
-    const { operations } = args as { operations: MemoryOperation[] };
-    if (!Array.isArray(operations) || operations.length === 0) {
-      return "Error: operations array is required and must not be empty";
+    const { operations } = (args ?? {}) as { operations?: unknown };
+    const checked = sanitizeMemoryOperations(
+      operations,
+      deps.getAll().length,
+    );
+    if (!checked.ok) {
+      return `Error: ${checked.error}`;
     }
     console.group(
-      `[Memory] manage_memories called with ${operations.length} operation(s)`,
+      `[Memory] manage_memories called with ${checked.operations.length} operation(s)`,
     );
-    for (const op of operations) {
+    for (const op of checked.operations) {
       console.log(
         `  [${op.action}]`,
         op.id ? `id=${op.id}` : "",
@@ -86,7 +94,7 @@ export function createMemoryToolHandler(deps: MemoryDeps): (
         op.category ? `(${op.category})` : "",
       );
     }
-    const result = deps.processBatch(operations);
+    const result = deps.processBatch(checked.operations);
     console.log(`  Result: ${result}`);
     console.log("  Current memories:", deps.getAll());
     console.groupEnd();
@@ -98,7 +106,8 @@ export function createMemoryToolHandler(deps: MemoryDeps): (
 
 /** Build the memory instruction + existing memories block for the system prompt */
 export function buildMemoryPromptSection(memories: MemoryItem[]): string {
-  const memoryCount = memories.length;
+  const promptMemories = limitMemoriesForPrompt(memories);
+  const memoryCount = promptMemories.length;
 
   let section = `\n\n<memory>
 ## Long-term Memory
@@ -140,7 +149,7 @@ You currently have NO stored memories about this user. Be proactive: on your FIR
 
   if (memoryCount > 0) {
     section += `\n\n## Known information about the user\n`;
-    for (const m of memories) {
+    for (const m of promptMemories) {
       section += `- [id: ${m.id}] [${m.category}] ${m.content}\n`;
     }
   }

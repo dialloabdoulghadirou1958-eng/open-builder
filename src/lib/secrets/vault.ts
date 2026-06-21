@@ -44,10 +44,10 @@ interface VaultMeta {
 }
 
 export interface PendingSecretMigration {
-  apiKey?: string;
-  accessToken?: string;
-  refreshToken?: string;
-  tokenExpiresAt?: number;
+  apiKey?: string | null;
+  accessToken?: string | null;
+  refreshToken?: string | null;
+  tokenExpiresAt?: number | null;
 }
 
 let currentKey: CryptoKey | null = null;
@@ -240,10 +240,11 @@ export async function takePendingMigration(): Promise<PendingSecretMigration | n
   return record;
 }
 
-export async function stagePendingMigration(
-  data: PendingSecretMigration,
-): Promise<void> {
-  await vaultStorage.setItem(PENDING_MIGRATION_KEY, data);
+export function mergePendingSecretMigration(
+  current: PendingSecretMigration | null | undefined,
+  next: PendingSecretMigration,
+): PendingSecretMigration {
+  return { ...(current ?? {}), ...next };
 }
 
 /** Reset vault: erase every stored secret and the device key. Intended for the

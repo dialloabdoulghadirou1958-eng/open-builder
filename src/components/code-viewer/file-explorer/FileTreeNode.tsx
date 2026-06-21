@@ -20,6 +20,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
+import { formatDeleteConfirmation } from "@/lib/utils/delete-confirmation";
 import { useT } from "../../../i18n";
 import type { FileNode } from "./types";
 import { BASE_PAD, INDENT } from "./types";
@@ -107,6 +108,15 @@ export const FileTreeNode = memo(function FileTreeNode(
   const t = useT();
   const isRenaming = renamingPath === node.path;
   const isCreatingIn = createState && createState.parent === node.path;
+  const confirmDelete = () => {
+    if (
+      window.confirm(
+        formatDeleteConfirmation(t.explorer.deleteConfirm, node.path),
+      )
+    ) {
+      onDeleteFile(node.path);
+    }
+  };
 
   if (node.type === "folder") {
     const isExpanded = expandedFolders.has(node.path);
@@ -130,9 +140,10 @@ export const FileTreeNode = memo(function FileTreeNode(
         ) : (
           <ContextMenu>
             <ContextMenuTrigger asChild>
-              <div
+              <button
+                type="button"
                 className={cn(
-                  "flex items-center gap-1 py-1 hover:bg-accent/50 cursor-pointer text-sm group",
+                  "flex w-full items-center gap-1 py-1 text-left hover:bg-accent/50 cursor-pointer text-sm group",
                   isCreatingIn && "bg-accent/30",
                   selectedFolder === node.path &&
                     "bg-accent text-accent-foreground",
@@ -169,7 +180,7 @@ export const FileTreeNode = memo(function FileTreeNode(
                 <span className="text-foreground/80 flex-1 truncate">
                   {node.name}
                 </span>
-              </div>
+              </button>
             </ContextMenuTrigger>
             <ContextMenuContent className="w-44">
               <ContextMenuItem onClick={() => startCreate("file", node.path)}>
@@ -195,7 +206,7 @@ export const FileTreeNode = memo(function FileTreeNode(
               </ContextMenuItem>
               <ContextMenuItem
                 variant="destructive"
-                onClick={() => onDeleteFile(node.path)}
+                onClick={confirmDelete}
               >
                 <Trash2 size={14} />
                 {t.explorer.delete}
@@ -262,9 +273,10 @@ export const FileTreeNode = memo(function FileTreeNode(
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <div
+        <button
+          type="button"
           className={cn(
-            "flex items-center gap-1 py-1 hover:bg-accent/50 cursor-pointer text-sm",
+            "flex w-full items-center gap-1 py-1 text-left hover:bg-accent/50 cursor-pointer text-sm",
             normalizedCurrentFile === node.path &&
               "bg-accent text-accent-foreground",
           )}
@@ -281,7 +293,7 @@ export const FileTreeNode = memo(function FileTreeNode(
         >
           <File size={14} className="text-muted-foreground shrink-0" />
           <span className="truncate">{node.name}</span>
-        </div>
+        </button>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-44">
         <ContextMenuItem onClick={() => startRename(node)}>
@@ -298,7 +310,7 @@ export const FileTreeNode = memo(function FileTreeNode(
         </ContextMenuItem>
         <ContextMenuItem
           variant="destructive"
-          onClick={() => onDeleteFile(node.path)}
+          onClick={confirmDelete}
         >
           <Trash2 size={14} />
           {t.explorer.delete}

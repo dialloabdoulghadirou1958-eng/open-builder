@@ -20,6 +20,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { formatDeleteConfirmation } from "@/lib/utils/delete-confirmation";
 import { useT } from "../../../i18n";
 import type { Conversation } from "../../../types";
 
@@ -91,34 +92,54 @@ export const SessionItem = memo(function SessionItem({
     if (e.key === "Escape") cancelEdit();
   };
 
+  const confirmDelete = () => {
+    if (
+      window.confirm(
+        formatDeleteConfirmation(
+          t.sessions.deleteConfirm,
+          displayTitle(conv),
+        ),
+      )
+    ) {
+      onDelete(conv.id);
+    }
+  };
+
   return (
     <div
       className={cn(
-        "flex items-center h-14 gap-2 px-3 cursor-pointer hover:bg-muted/50 group",
+        "flex items-center h-14 gap-2 px-3 hover:bg-muted/50 group",
         isActive && "bg-muted",
       )}
-      onClick={() => {
-        if (!isEditing) onSelect(conv.id);
-      }}
     >
       {isEditing ? (
         <input
           ref={inputRef}
-          className="text-sm flex-1 bg-transparent border-b border-primary outline-none min-w-0"
+          name={`session-title-${conv.id}`}
+          aria-label={t.sessions.rename}
+          autoComplete="off"
+          spellCheck={false}
+          className="text-sm flex-1 bg-transparent border-b border-primary min-w-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           value={editingTitle}
           onChange={(e) => setEditingTitle(e.target.value)}
           onKeyDown={handleKeyDown}
-          onClick={(e) => e.stopPropagation()}
         />
       ) : (
-        <span
-          className={cn(
-            "text-sm truncate flex-1",
-            isSmartRenaming && "animate-pulse",
-          )}
+        <button
+          type="button"
+          className="flex h-full min-w-0 flex-1 items-center text-left cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          onClick={() => onSelect(conv.id)}
+          aria-current={isActive ? "page" : undefined}
         >
-          {displayTitle(conv)}
-        </span>
+          <span
+            className={cn(
+              "block text-sm truncate",
+              isSmartRenaming && "animate-pulse",
+            )}
+          >
+            {displayTitle(conv)}
+          </span>
+        </button>
       )}
 
       {isEditing ? (
@@ -149,7 +170,7 @@ export const SessionItem = memo(function SessionItem({
           </Button>
         </div>
       ) : (
-        <div onClick={(e) => e.stopPropagation()}>
+        <div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -210,7 +231,7 @@ export const SessionItem = memo(function SessionItem({
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 variant="destructive"
-                onSelect={() => onDelete(conv.id)}
+                onSelect={confirmDelete}
                 disabled={deleteDisabled}
               >
                 <Trash2 size={14} />

@@ -40,6 +40,10 @@ export interface StorageReport {
   };
 }
 
+export const SNAPSHOT_STORAGE_LIMITS = {
+  maxSnapshotBytes: 2 * 1024 * 1024,
+} as const;
+
 export interface StorageReportInput {
   conversations: Record<string, Conversation>;
   activeConversationId: string | null;
@@ -58,6 +62,12 @@ export function estimateJsonBytes(value: unknown): number {
     return new TextEncoder().encode(json).length;
   }
   return json.length;
+}
+
+export function isSnapshotWithinStorageBudget(
+  snapshot: ProjectSnapshot,
+): boolean {
+  return estimateJsonBytes(snapshot) <= SNAPSHOT_STORAGE_LIMITS.maxSnapshotBytes;
 }
 
 export function formatBytes(bytes: number): string {

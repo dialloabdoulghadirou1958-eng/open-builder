@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
+const MAX_AUDIT_ARGS = 32;
+const MAX_AUDIT_ARG_CHARS = 1000;
+
 export interface SkillScriptAuditEntry {
   id: string;
   skillId: string;
@@ -21,6 +24,14 @@ interface SecurityAuditState {
   clearSkillScriptExecutions: () => void;
 }
 
+function normalizeAuditArgs(args: string[]): string[] {
+  return args.slice(0, MAX_AUDIT_ARGS).map((arg) =>
+    arg.length > MAX_AUDIT_ARG_CHARS
+      ? `${arg.slice(0, MAX_AUDIT_ARG_CHARS)}...`
+      : arg,
+  );
+}
+
 export const useSecurityAuditStore = create<SecurityAuditState>()(
   persist(
     (set) => ({
@@ -29,6 +40,7 @@ export const useSecurityAuditStore = create<SecurityAuditState>()(
         const auditEntry: SkillScriptAuditEntry = {
           id: crypto.randomUUID(),
           ...entry,
+          args: normalizeAuditArgs(entry.args),
         };
         set((state) => ({
           skillScriptExecutions: [

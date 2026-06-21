@@ -22,6 +22,12 @@ import type {
   SubagentDefinition,
   SubagentToolResult,
 } from "./types";
+import {
+  SUBAGENT_LIMITS,
+  limitSubagentEvents,
+  normalizeSubagentTask,
+  truncateSubagentText,
+} from "./limits";
 
 export interface ParentApiConfig {
   apiType: ApiType;
@@ -110,12 +116,15 @@ export async function runSubagent(
 ): Promise<DispatchSubagentResult> {
   const def = getSubagentByName(opts.name);
   const store = useSubagentStore.getState();
+  const checkedTask = normalizeSubagentTask(opts.task);
 
   if (!def) {
     const failure: SubagentToolResult = {
       ok: false,
       subagent: opts.name,
-      task: opts.task,
+      task: checkedTask.ok
+        ? checkedTask.task
+        : truncateSubagentText(opts.task, SUBAGENT_LIMITS.maxTaskChars),
       status: "failed",
       text: "",
       events: [],
@@ -125,7 +134,21 @@ export async function runSubagent(
     return { text: JSON.stringify(failure) };
   }
 
-  store.init(opts.toolCallId, def.name, opts.task);
+  if (!checkedTask.ok) {
+    const failure: SubagentToolResult = {
+      ok: false,
+      subagent: def.name,
+      task: "",
+      status: "failed",
+      text: "",
+      events: [],
+      durationMs: 0,
+      error: checkedTask.error,
+    };
+    return { text: JSON.stringify(failure) };
+  }
+
+  store.init(opts.toolCallId, def.name, checkedTask.task);
   const startedAt = Date.now();
 
   if (opts.signal.aborted) {
@@ -133,7 +156,7 @@ export async function runSubagent(
     const aborted: SubagentToolResult = {
       ok: false,
       subagent: def.name,
-      task: opts.task,
+      task: checkedTask.task,
       status: "aborted",
       text: "",
       events: [],
@@ -199,17 +222,19 @@ export async function runSubagent(
   const maxResultLength = def.maxResultLength ?? 4000;
 
   try {
-    const innerResult = await inner.generate(opts.task);
+    const innerResult = await inner.generate(checkedTask.task);
     const finalText = (innerResult.text || "").slice(0, maxResultLength);
     const eventsSnapshot =
-      useSubagentStore.getState().progress[opts.toolCallId]?.events ?? [];
+      limitSubagentEvents(
+        useSubagentStore.getState().progress[opts.toolCallId]?.events ?? [],
+      );
 
     if (innerResult.aborted || opts.signal.aborted) {
       useSubagentStore.getState().markStatus(opts.toolCallId, "aborted");
       const aborted: SubagentToolResult = {
         ok: false,
         subagent: def.name,
-        task: opts.task,
+        task: checkedTask.task,
         status: "aborted",
         text: finalText,
         events: eventsSnapshot,
@@ -223,7 +248,7 @@ export async function runSubagent(
     const result: SubagentToolResult = {
       ok: true,
       subagent: def.name,
-      task: opts.task,
+      task: checkedTask.task,
       status: "done",
       text: finalText,
       events: eventsSnapshot,
@@ -242,7 +267,9 @@ export async function runSubagent(
     const message =
       (err as { message?: string })?.message ?? "Unknown subagent error";
     const eventsSnapshot =
-      useSubagentStore.getState().progress[opts.toolCallId]?.events ?? [];
+      limitSubagentEvents(
+        useSubagentStore.getState().progress[opts.toolCallId]?.events ?? [],
+      );
     const textSnapshot =
       useSubagentStore.getState().progress[opts.toolCallId]?.text ?? "";
     useSubagentStore
@@ -251,12 +278,14 @@ export async function runSubagent(
     const failure: SubagentToolResult = {
       ok: false,
       subagent: def.name,
-      task: opts.task,
+      task: checkedTask.task,
       status,
       text: textSnapshot.slice(0, maxResultLength),
       events: eventsSnapshot,
       durationMs: Date.now() - startedAt,
-      error: isAbort ? "Aborted" : message,
+      error: isAbort
+        ? "Aborted"
+        : truncateSubagentText(message, SUBAGENT_LIMITS.maxErrorChars),
     };
     return { text: JSON.stringify(failure) };
   } finally {

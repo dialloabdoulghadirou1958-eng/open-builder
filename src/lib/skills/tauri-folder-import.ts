@@ -1,6 +1,7 @@
 import type { SkillRegistry } from "./registry";
 import { importFromStaged, type ImportResult } from "./importer";
-import { MAX_FILE_BYTES } from "./paths";
+import { createSkillImportBudget } from "./import-limits";
+import { assertSafePath } from "./paths";
 
 const DIALOG_MODULE_ID = "@tauri-apps/plugin-dialog";
 const FS_MODULE_ID = "@tauri-apps/plugin-fs";
@@ -56,6 +57,7 @@ export async function importFolderViaTauri(
   const pathMod = await loadPath();
 
   const files: Record<string, string> = {};
+  const budget = createSkillImportBudget();
 
   async function walk(absDir: string, relPrefix: string): Promise<void> {
     const entries = await fs.readDir(absDir);
@@ -65,12 +67,9 @@ export async function importFolderViaTauri(
       if (entry.isDirectory) {
         await walk(childAbs, childRel);
       } else if (entry.isFile) {
+        assertSafePath(childRel);
         const stat = await fs.stat(childAbs);
-        if (stat.size > MAX_FILE_BYTES) {
-          throw new Error(
-            `File "${childRel}" exceeds ${MAX_FILE_BYTES} byte limit.`,
-          );
-        }
+        budget.trackFile(childRel, stat.size);
         files[childRel] = await fs.readTextFile(childAbs);
       }
     }

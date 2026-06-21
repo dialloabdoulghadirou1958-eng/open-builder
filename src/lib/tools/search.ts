@@ -12,8 +12,11 @@ import {
   TOOL_MAX_CONCURRENCY,
   clampInt,
   fetchWithTimeout,
+  formatHttpError,
   limitArray,
   mapWithConcurrency,
+  normalizeHttpUrlList,
+  normalizeToolQuery,
   safeErrorMessage,
   truncateText,
 } from "./network-guard";
@@ -55,6 +58,10 @@ async function tavilySearch(
   query: string,
   maxResults: number = 5,
 ): Promise<string> {
+  const checkedQuery = normalizeToolQuery(query);
+  if (!checkedQuery.ok) {
+    return JSON.stringify({ ok: false, error: checkedQuery.error });
+  }
   const baseUrl = settings.tavilyApiUrl || "https://api.tavily.com";
   const size = clampInt(maxResults, 5, 1, WEB_SEARCH_MAX_RESULTS);
   try {
@@ -63,7 +70,7 @@ async function tavilySearch(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         api_key: settings.tavilyApiKey,
-        query,
+        query: checkedQuery.query,
         max_results: size,
         include_answer: true,
       }),
@@ -72,7 +79,7 @@ async function tavilySearch(
       const text = await res.text();
       return JSON.stringify({
         ok: false,
-        error: `Tavily search failed (${res.status}): ${text}`,
+        error: formatHttpError("Tavily search failed", res.status, text),
       });
     }
     const data = await res.json();
@@ -104,20 +111,27 @@ async function tavilyExtract(
   settings: WebSearchSettings,
   urls: string[],
 ): Promise<string> {
+  const checkedUrls = normalizeHttpUrlList(urls, WEB_READER_MAX_URLS);
+  if (!checkedUrls.ok) {
+    return JSON.stringify({ ok: false, error: checkedUrls.error });
+  }
   const baseUrl = settings.tavilyApiUrl || "https://api.tavily.com";
-  const limitedUrls = limitArray(urls, WEB_READER_MAX_URLS);
   try {
     const res = await fetchWithTimeout(`${baseUrl}/extract`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         api_key: settings.tavilyApiKey,
-        urls: limitedUrls.items,
+        urls: checkedUrls.urls,
       }),
     });
     if (!res.ok) {
       throw new Error(
-        `Tavily extract failed (${res.status}): ${await res.text()}`,
+        formatHttpError(
+          "Tavily extract failed",
+          res.status,
+          await res.text(),
+        ),
       );
     }
     const data = await res.json();
@@ -136,7 +150,7 @@ async function tavilyExtract(
       meta: {
         engine: "tavily",
         urlLimit: WEB_READER_MAX_URLS,
-        truncatedUrls: limitedUrls.truncated,
+        truncatedUrls: checkedUrls.truncated,
       },
     });
   } catch (err: any) {
@@ -173,9 +187,12 @@ async function fetchSinglePageViaJina(url: string): Promise<{
 }
 
 async function jinaFallback(urls: string[]): Promise<string> {
-  const limitedUrls = limitArray(urls, WEB_READER_MAX_URLS);
+  const checkedUrls = normalizeHttpUrlList(urls, WEB_READER_MAX_URLS);
+  if (!checkedUrls.ok) {
+    return JSON.stringify({ ok: false, error: checkedUrls.error, pages: [] });
+  }
   const pages = await mapWithConcurrency(
-    limitedUrls.items,
+    checkedUrls.urls,
     TOOL_MAX_CONCURRENCY,
     fetchSinglePageViaJina,
   );
@@ -187,7 +204,7 @@ async function jinaFallback(urls: string[]): Promise<string> {
       timeoutMs: TOOL_FETCH_TIMEOUT_MS,
       concurrency: TOOL_MAX_CONCURRENCY,
       urlLimit: WEB_READER_MAX_URLS,
-      truncatedUrls: limitedUrls.truncated,
+      truncatedUrls: checkedUrls.truncated,
     },
   });
 }
@@ -199,6 +216,10 @@ async function firecrawlSearch(
   query: string,
   maxResults: number = 5,
 ): Promise<string> {
+  const checkedQuery = normalizeToolQuery(query);
+  if (!checkedQuery.ok) {
+    return JSON.stringify({ ok: false, error: checkedQuery.error });
+  }
   const baseUrl = settings.firecrawlApiUrl || "https://api.firecrawl.dev";
   const size = clampInt(maxResults, 5, 1, WEB_SEARCH_MAX_RESULTS);
   try {
@@ -209,7 +230,7 @@ async function firecrawlSearch(
         Authorization: `Bearer ${settings.firecrawlApiKey}`,
       },
       body: JSON.stringify({
-        query,
+        query: checkedQuery.query,
         limit: size,
         scrapeOptions: { formats: ["markdown"] },
       }),
@@ -219,7 +240,7 @@ async function firecrawlSearch(
       const text = await res.text();
       return JSON.stringify({
         ok: false,
-        error: `Firecrawl search failed (${res.status}): ${text}`,
+        error: formatHttpError("Firecrawl search failed", res.status, text),
       });
     }
 
@@ -255,8 +276,11 @@ async function firecrawlScrape(
   settings: WebSearchSettings,
   urls: string[],
 ): Promise<string> {
+  const checkedUrls = normalizeHttpUrlList(urls, WEB_READER_MAX_URLS);
+  if (!checkedUrls.ok) {
+    return JSON.stringify({ ok: false, error: checkedUrls.error });
+  }
   const baseUrl = settings.firecrawlApiUrl || "https://api.firecrawl.dev";
-  const limitedUrls = limitArray(urls, WEB_READER_MAX_URLS);
   try {
     const res = await fetchWithTimeout(`${baseUrl}/v2/batch/scrape`, {
       method: "POST",
@@ -265,13 +289,15 @@ async function firecrawlScrape(
         Authorization: `Bearer ${settings.firecrawlApiKey}`,
       },
       body: JSON.stringify({
-        urls: limitedUrls.items,
+        urls: checkedUrls.urls,
         formats: ["markdown"],
       }),
     });
 
     if (!res.ok) {
-      throw new Error(`Firecrawl failed (${res.status}): ${await res.text()}`);
+      throw new Error(
+        formatHttpError("Firecrawl failed", res.status, await res.text()),
+      );
     }
 
     const data = await res.json();
@@ -285,7 +311,7 @@ async function firecrawlScrape(
       meta: {
         engine: "firecrawl",
         urlLimit: WEB_READER_MAX_URLS,
-        truncatedUrls: limitedUrls.truncated,
+        truncatedUrls: checkedUrls.truncated,
       },
     });
   } catch (err: any) {
@@ -302,20 +328,32 @@ export function createSearchToolHandler(
   return async (name: string, args: unknown): Promise<string> => {
     const a = args as Record<string, any>;
     const engine = settings.engine;
+    const query =
+      name === "web_search" ? normalizeToolQuery(a?.query) : undefined;
+    if (query && !query.ok) {
+      return JSON.stringify({ ok: false, error: query.error });
+    }
+    const readerUrls =
+      name === "web_reader"
+        ? normalizeHttpUrlList(a?.urls, WEB_READER_MAX_URLS)
+        : undefined;
+    if (readerUrls && !readerUrls.ok) {
+      return JSON.stringify({ ok: false, error: readerUrls.error });
+    }
 
     if (engine === "tavily") {
       switch (name) {
         case "web_search":
-          return tavilySearch(settings, a.query, a.max_results);
+          return tavilySearch(settings, query!.query, a.max_results);
         case "web_reader":
-          return tavilyExtract(settings, a.urls);
+          return tavilyExtract(settings, readerUrls!.urls);
       }
     } else if (engine === "firecrawl") {
       switch (name) {
         case "web_search":
-          return firecrawlSearch(settings, a.query, a.max_results);
+          return firecrawlSearch(settings, query!.query, a.max_results);
         case "web_reader":
-          return firecrawlScrape(settings, a.urls);
+          return firecrawlScrape(settings, readerUrls!.urls);
       }
     } else if (engine === SERVER_ENGINE) {
       switch (name) {
@@ -328,7 +366,7 @@ export function createSearchToolHandler(
           );
           return toolResult(
             serverWebSearch({
-              query: a.query,
+              query: query!.query,
               providerId: settings.backendProvider,
               maxResults,
             }),
@@ -352,7 +390,7 @@ export function createSearchToolHandler(
           );
         case "web_reader":
           // The server doesn't support batch web_reader yet, so fallback to Jina reader directly
-          return jinaFallback(a.urls);
+          return jinaFallback(readerUrls!.urls);
       }
     }
 
@@ -373,7 +411,11 @@ export function createJinaReaderHandler(): (
   return async (name: string, args: unknown): Promise<string> => {
     if (name === "web_reader") {
       const a = args as { urls: string[] };
-      return jinaFallback(a.urls);
+      const readerUrls = normalizeHttpUrlList(a?.urls, WEB_READER_MAX_URLS);
+      if (!readerUrls.ok) {
+        return JSON.stringify({ ok: false, error: readerUrls.error });
+      }
+      return jinaFallback(readerUrls.urls);
     }
     return `Error: unknown tool "${name}"`;
   };

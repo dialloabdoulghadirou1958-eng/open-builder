@@ -2,10 +2,12 @@ import { createPatch } from "diff";
 import { describe, expect, it } from "vitest";
 import type { Conversation, ProjectSnapshot } from "../../types";
 import {
+  SNAPSHOT_STORAGE_LIMITS,
   analyzeStorage,
   formatBytes,
   getArchivedConversationCleanupIds,
   getEmptyConversationCleanupIds,
+  isSnapshotWithinStorageBudget,
   pruneSnapshotRecord,
 } from "./storage-governance";
 import { replaySnapshots } from "../../store/snapshot-replay";
@@ -160,6 +162,19 @@ describe("storage governance", () => {
       "b.txt": "B file\n",
     });
     expect(result.snapshots.conv[0].kind).toBe("checkpoint");
+  });
+
+  it("detects snapshots that exceed the storage budget", () => {
+    expect(
+      isSnapshotWithinStorageBudget(
+        snapshot(
+          "large",
+          "conv",
+          "x".repeat(SNAPSHOT_STORAGE_LIMITS.maxSnapshotBytes + 1),
+          1,
+        ),
+      ),
+    ).toBe(false);
   });
 });
 

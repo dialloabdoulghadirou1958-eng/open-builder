@@ -23,7 +23,10 @@ import {
 import { useMergedMessages } from "../hooks/useMergedMessages";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useRollback } from "../hooks/useRollback";
-import { findAssistantGroupEnd } from "../lib/utils/message-navigation";
+import {
+  findAssistantGroupEnd,
+  getMergedMessageStartIndex,
+} from "../lib/utils/message-navigation";
 import { useConversationStore } from "../store/conversation";
 import { useSnapshotStore } from "../store/snapshot";
 import { useT } from "../i18n";
@@ -83,6 +86,8 @@ export function ChatInterface({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [showSessionList, setShowSessionList] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesViewportRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScrollRef = useRef(true);
   const mergedMessages = useMergedMessages(messages);
   const isMobile = useIsMobile();
 
@@ -181,18 +186,29 @@ export function ChatInterface({
     [setRollbackConfirmId],
   );
 
-	  useEffect(() => {
-	    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-	  }, [messages]);
+  const updateAutoScrollIntent = useCallback(() => {
+    const el = messagesViewportRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    shouldAutoScrollRef.current = distanceFromBottom < 96;
+  }, []);
 
-	  useEffect(() => {
-	    if (!showSessionList) return;
-	    const onKeyDown = (event: KeyboardEvent) => {
-	      if (event.key === "Escape") setShowSessionList(false);
-	    };
-	    document.addEventListener("keydown", onKeyDown);
-	    return () => document.removeEventListener("keydown", onKeyDown);
-	  }, [showSessionList]);
+  useEffect(() => {
+    if (!shouldAutoScrollRef.current) return;
+    messagesEndRef.current?.scrollIntoView({
+      behavior: isGenerating ? "auto" : "smooth",
+      block: "end",
+    });
+  }, [messages, isGenerating]);
+
+  useEffect(() => {
+    if (!showSessionList) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowSessionList(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [showSessionList]);
 
   const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -205,6 +221,7 @@ export function ChatInterface({
     const atts = [...attachments];
     setInput("");
     setAttachments([]);
+    shouldAutoScrollRef.current = true;
 
     flushSnapshotUpdate();
 
@@ -227,22 +244,24 @@ export function ChatInterface({
         snapshotCount={snapshots.length}
       />
 
-	      {showSessionList && (
-	        <div className="absolute inset-0 top-0 z-40">
-	          <button
-	            type="button"
-	            aria-label={t.sessions.close}
-	            className="absolute inset-0 cursor-default backdrop-blur-sm bg-black/20 animate-in fade-in duration-200"
-	            onClick={() => setShowSessionList(false)}
-	          />
-	          <aside className="relative h-full w-full max-w-80 bg-background border-r shadow-lg animate-in slide-in-from-left duration-200">
-	            <SessionList onClose={() => setShowSessionList(false)} />
-	          </aside>
-	        </div>
-	      )}
+      {showSessionList && (
+        <div className="absolute inset-0 top-0 z-40">
+          <button
+            type="button"
+            aria-label={t.sessions.close}
+            className="absolute inset-0 cursor-default backdrop-blur-sm bg-black/20 animate-in fade-in duration-200"
+            onClick={() => setShowSessionList(false)}
+          />
+          <aside className="relative h-full w-full max-w-80 bg-background border-r shadow-lg animate-in slide-in-from-left duration-200">
+            <SessionList onClose={() => setShowSessionList(false)} />
+          </aside>
+        </div>
+      )}
 
       <div
+        ref={messagesViewportRef}
         className="flex flex-col flex-1 p-4 pb-0 overflow-y-auto space-y-4"
+        onScroll={updateAutoScrollIntent}
         style={{ scrollbarGutter: "stable" }}
       >
         {!hasValidSettings && (
@@ -254,13 +273,16 @@ export function ChatInterface({
         )}
 
         {mergedMessages.map((msg, mi) => {
-          const idx = parseInt(msg.id.split("-").pop()!, 10);
+          const idx = getMergedMessageStartIndex(msg.id);
+          const prevIdx =
+            mi > 0
+              ? getMergedMessageStartIndex(mergedMessages[mi - 1].id)
+              : null;
           const showDivider =
             compressFromIndex >= 0 &&
+            idx !== null &&
             idx >= compressFromIndex &&
-            (mi < 2 ||
-              parseInt(mergedMessages[mi - 2].id.split("-").pop()!, 10) <
-                compressFromIndex);
+            (prevIdx === null || prevIdx < compressFromIndex);
           const isLast = msg.id === lastAssistantId;
           return (
             <div key={msg.id}>
@@ -272,6 +294,9 @@ export function ChatInterface({
                 onShowDiff={handleShowDiff}
                 onRollback={handleRollbackConfirm}
                 onRetry={onRetry}
+                onOpenSettings={onOpenSettings}
+                onCompressContext={onCompressContext}
+                onHealthCheck={onHealthCheck}
               />
               {showDivider && (
                 <div className="flex items-center gap-3 my-4 text-xs text-muted-foreground">
@@ -313,10 +338,13 @@ export function ChatInterface({
 
         {!isGenerating &&
           messages.length > 0 &&
-          typeof messages[messages.length - 1].content === "string" &&
-          (messages[messages.length - 1].content as string).includes(
-            "context_length_exceeded",
-          ) && (
+          messages[messages.length - 1].role === "assistant" &&
+          messages[messages.length - 1].isError &&
+          (messages[messages.length - 1].errorKind === "context_length" ||
+            (typeof messages[messages.length - 1].content === "string" &&
+              (messages[messages.length - 1].content as string).includes(
+                "context_length_exceeded",
+              ))) && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-500/10 border border-orange-500/20 text-xs text-orange-700 dark:text-orange-400">
               <span>{t.compress.hint}</span>
               <button

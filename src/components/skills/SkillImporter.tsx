@@ -12,6 +12,7 @@ import {
   type ImportResult,
 } from "../../lib/skills/importer";
 import { isTauri } from "../../lib/skills/fs";
+import { SKILL_IMPORT_LIMITS } from "../../lib/skills/paths";
 
 interface SkillImporterProps {
   onImported: (result: ImportResult) => void;
@@ -23,6 +24,10 @@ function hasDirectoryPicker(): boolean {
     typeof (window as unknown as { showDirectoryPicker?: () => void })
       .showDirectoryPicker === "function"
   );
+}
+
+function formatMb(bytes: number): string {
+  return `${Math.round(bytes / 1024 / 1024)} MB`;
 }
 
 export function SkillImporter({ onImported }: SkillImporterProps) {
@@ -51,6 +56,15 @@ export function SkillImporter({ onImported }: SkillImporterProps) {
   };
 
   const onPickZip = async (file: File) => {
+    if (file.size > SKILL_IMPORT_LIMITS.maxArchiveBytes) {
+      setError(
+        t.skills.importer.failed.replace(
+          "{message}",
+          `Skill archive exceeds ${formatMb(SKILL_IMPORT_LIMITS.maxArchiveBytes)} limit.`,
+        ),
+      );
+      return;
+    }
     await handleImport(async () => {
       const buf = await file.arrayBuffer();
       const registry = await getSkillRegistry();

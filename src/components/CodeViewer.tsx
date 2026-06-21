@@ -60,7 +60,7 @@ export function CodeViewer({
 
   const handleCreateFile = (path: string) => {
     const p = path.startsWith("/") ? path.slice(1) : path;
-    if (!files[p]) {
+    if (!(p in files)) {
       onFileChange(p, "// New file\n");
       onFileSelect(p);
     }
@@ -69,7 +69,7 @@ export function CodeViewer({
   const handleCreateFolder = (path: string) => {
     const p = path.startsWith("/") ? path.slice(1) : path;
     // Use trailing "/" to represent empty folder, no .gitkeep needed
-    if (!files[`${p}/`]) onFileChange(`${p}/`, "");
+    if (!(`${p}/` in files)) onFileChange(`${p}/`, "");
   };
 
   return (

@@ -7,6 +7,14 @@ import { useT } from "../../i18n";
 import type { ToolBlock } from "../../types";
 import { TOOL_METADATA } from "../../lib/ai/tool-metadata";
 
+export const TOOL_CARD_LIMITS = {
+  maxJsonParseChars: 200_000,
+  maxResultDisplayChars: 120_000,
+  maxConsoleLines: 1_000,
+  maxConsoleIssues: 50,
+  maxReaderUrls: 20,
+} as const;
+
 const TOOL_ICONS: Record<string, React.ReactNode> = Object.fromEntries(
   Object.entries(TOOL_METADATA).map(([name, meta]) => {
     const Icon = meta.iconComponent;
@@ -14,74 +22,88 @@ const TOOL_ICONS: Record<string, React.ReactNode> = Object.fromEntries(
   }),
 );
 
-function countSearchResults(result: string): {
+function truncateToolCardText(value: string): string {
+  if (value.length <= TOOL_CARD_LIMITS.maxResultDisplayChars) return value;
+  return (
+    value.slice(0, TOOL_CARD_LIMITS.maxResultDisplayChars) +
+    `\n\n[truncated in UI after ${TOOL_CARD_LIMITS.maxResultDisplayChars} chars]`
+  );
+}
+
+function parseToolJson(result: string): any | null {
+  if (result.length > TOOL_CARD_LIMITS.maxJsonParseChars) return null;
+  try {
+    return JSON.parse(result);
+  } catch {
+    return null;
+  }
+}
+
+export function countSearchResults(result: string): {
   ok: boolean;
   count: number;
   error?: string;
 } {
-  try {
-    const d = JSON.parse(result);
-    return { ok: d.ok, count: d.results?.length ?? 0, error: d.error };
-  } catch {
-    return { ok: false, count: 0, error: result };
+  const d = parseToolJson(result);
+  if (!d) {
+    return { ok: false, count: 0, error: truncateToolCardText(result) };
   }
+  return { ok: d.ok, count: d.results?.length ?? 0, error: d.error };
 }
 
-function countImageResults(result: string): {
+export function countImageResults(result: string): {
   ok: boolean;
   count: number;
   error?: string;
 } {
-  try {
-    const d = JSON.parse(result);
-    return { ok: d.ok, count: d.images?.length ?? 0, error: d.error };
-  } catch {
-    return { ok: false, count: 0, error: result };
+  const d = parseToolJson(result);
+  if (!d) {
+    return { ok: false, count: 0, error: truncateToolCardText(result) };
   }
+  return { ok: d.ok, count: d.images?.length ?? 0, error: d.error };
 }
 
-function parseNpmSearchResult(result: string): {
+export function parseNpmSearchResult(result: string): {
   success: boolean;
   count: number;
   error?: string;
 } {
-  try {
-    const d = JSON.parse(result);
-    return { success: d.success, count: d.data?.length ?? 0, error: d.error };
-  } catch {
-    return { success: false, count: 0, error: result };
+  const d = parseToolJson(result);
+  if (!d) {
+    return { success: false, count: 0, error: truncateToolCardText(result) };
   }
+  return { success: d.success, count: d.data?.length ?? 0, error: d.error };
 }
 
-function parseNpmDetailResult(result: string): {
+export function parseNpmDetailResult(result: string): {
   success: boolean;
   name?: string;
   error?: string;
 } {
-  try {
-    const d = JSON.parse(result);
-    return { success: d.success, name: d.data?.name, error: d.error };
-  } catch {
-    return { success: false, error: result };
+  const d = parseToolJson(result);
+  if (!d) {
+    return { success: false, error: truncateToolCardText(result) };
   }
+  return { success: d.success, name: d.data?.name, error: d.error };
 }
 
-function countWebReaderUrls(result: string): { url: string; ok: boolean }[] {
-  try {
-    const d = JSON.parse(result);
-    return (d.pages ?? []).map((p: any) => ({ url: p.url, ok: p.ok }));
-  } catch {
-    return [];
-  }
+export function countWebReaderUrls(result: string): { url: string; ok: boolean }[] {
+  const d = parseToolJson(result);
+  if (!d) return [];
+  return (d.pages ?? [])
+    .slice(0, TOOL_CARD_LIMITS.maxReaderUrls)
+    .map((p: any) => ({ url: p.url, ok: p.ok }));
 }
 
-function parseConsoleIssues(
+export function parseConsoleIssues(
   result: string,
 ): { level: "error" | "warn"; text: string }[] {
   if (!result || result === "No console output yet.") return [];
   return result
     .split("\n")
+    .slice(0, TOOL_CARD_LIMITS.maxConsoleLines)
     .filter((line) => line.startsWith("[ERROR]") || line.startsWith("[WARN]"))
+    .slice(0, TOOL_CARD_LIMITS.maxConsoleIssues)
     .map((line) => ({
       level: line.startsWith("[ERROR]") ? "error" : "warn",
       text: line.replace(/^\[(ERROR|WARN)\]\s*/, ""),
@@ -99,6 +121,7 @@ export const ToolCallCard = memo(function ToolCallCard({
 }: ToolCallCardProps) {
   const t = useT();
   const [expanded, setExpanded] = useState(false);
+  const displayResult = result ? truncateToolCardText(result) : result;
   const isSuccess = result?.startsWith("OK") ?? false;
   const isError = result?.startsWith("Error") ?? false;
 
@@ -214,7 +237,7 @@ export const ToolCallCard = memo(function ToolCallCard({
       {expanded && result && (
         <div className="px-3 py-2 border-t border-border/60 bg-muted/20">
           {toolName === "list_files" ? (
-            <FileTreeView content={result} />
+            <FileTreeView content={displayResult ?? ""} />
           ) : toolName === "read_files" ? (
             <FileTreeView content={(paths || []).join("\n")} />
           ) : toolName === "read_file" ? (
@@ -288,7 +311,7 @@ export const ToolCallCard = memo(function ToolCallCard({
             </div>
           ) : (
             <pre className="text-xs font-mono whitespace-pre-wrap text-muted-foreground leading-relaxed">
-              {result}
+              {displayResult}
             </pre>
           )}
         </div>

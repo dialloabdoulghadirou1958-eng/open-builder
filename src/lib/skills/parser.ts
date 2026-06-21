@@ -1,13 +1,48 @@
 import { z } from "zod";
 import { load as yamlLoad, YAMLException } from "js-yaml";
+import { assertSkillMdSize } from "./import-limits";
+import { SKILL_IMPORT_LIMITS, textBytes } from "./paths";
+
+const TOOL_NAME_RE = /^[a-zA-Z0-9_.:-]+$/;
+
+function unique(values: string[]): string[] {
+  return Array.from(new Set(values));
+}
+
+function boundedToken(maxChars: number) {
+  return z
+    .string()
+    .trim()
+    .min(1)
+    .max(maxChars)
+    .regex(TOOL_NAME_RE, "must contain only letters, digits, '.', '_', '-' or ':'");
+}
 
 export const SkillFrontmatterSchema = z.object({
   name: z.string().min(1).max(64),
   description: z.string().min(1).max(512),
-  version: z.string().optional().default("1.0.0"),
-  author: z.string().optional(),
-  "allowed-tools": z.array(z.string()).optional(),
-  tags: z.array(z.string()).optional(),
+  version: z
+    .string()
+    .trim()
+    .min(1)
+    .max(SKILL_IMPORT_LIMITS.maxVersionChars)
+    .optional()
+    .default("1.0.0"),
+  author: z
+    .string()
+    .trim()
+    .max(SKILL_IMPORT_LIMITS.maxAuthorChars)
+    .optional(),
+  "allowed-tools": z
+    .array(boundedToken(SKILL_IMPORT_LIMITS.maxAllowedToolChars))
+    .max(SKILL_IMPORT_LIMITS.maxAllowedTools)
+    .transform(unique)
+    .optional(),
+  tags: z
+    .array(z.string().trim().min(1).max(SKILL_IMPORT_LIMITS.maxTagChars))
+    .max(SKILL_IMPORT_LIMITS.maxTags)
+    .transform(unique)
+    .optional(),
 });
 
 export type SkillFrontmatter = z.infer<typeof SkillFrontmatterSchema>;
@@ -20,6 +55,7 @@ export interface ParsedSkill {
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
 export function parseSkillMd(raw: string): ParsedSkill {
+  assertSkillMdSize(raw);
   const m = FRONTMATTER_RE.exec(raw);
   if (!m) {
     throw new Error(
@@ -27,6 +63,11 @@ export function parseSkillMd(raw: string): ParsedSkill {
     );
   }
   const [, fmRaw, body] = m;
+  if (textBytes(fmRaw) > SKILL_IMPORT_LIMITS.maxFrontmatterBytes) {
+    throw new Error(
+      `SKILL.md frontmatter exceeds ${SKILL_IMPORT_LIMITS.maxFrontmatterBytes} byte limit.`,
+    );
+  }
   let fmObj: unknown;
   try {
     fmObj = yamlLoad(fmRaw);

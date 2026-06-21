@@ -43,6 +43,10 @@ import {
   PROJECT_HEALTH_CHECK_TOOL,
   createProjectHealthCheckHandler,
 } from "./project-health";
+import {
+  formatConsoleLogs,
+  type ConsoleLog,
+} from "./console-log-format";
 import { getBuiltinSearchConfig } from "../ai/provider";
 import type { ApiType } from "../ai/provider";
 import type {
@@ -51,11 +55,7 @@ import type {
   ProjectFiles,
 } from "../../types";
 import type { FileChange } from "../ai/generator-types";
-
-interface ConsoleLog {
-  method: string;
-  data: any[];
-}
+import { validateProjectFiles } from "../utils/project-files";
 
 export interface ToolFeatures {
   auth: boolean;
@@ -128,14 +128,26 @@ export function buildToolHandlers(
     : undefined;
   const memoryHandler = createMemoryToolHandler(memoryDeps);
   const npmSearchHandler = createNpmSearchToolHandler();
-  const installComponentHandler = filesBridge
-    ? createInstallComponentHandler(filesBridge)
+  const guardedFilesBridge = filesBridge
+    ? {
+        getFiles: filesBridge.getFiles,
+        onFilesChanged: (newFiles: ProjectFiles, changes: FileChange[]) => {
+          const validation = validateProjectFiles(newFiles);
+          if (!validation.ok) {
+            throw new Error(validation.error);
+          }
+          filesBridge.onFilesChanged(newFiles, changes);
+        },
+      }
+    : undefined;
+  const installComponentHandler = guardedFilesBridge
+    ? createInstallComponentHandler(guardedFilesBridge)
     : null;
-  const screenshotToCodeHandler = filesBridge
-    ? createScreenshotToCodeHandler({ apiConfig, ...filesBridge })
+  const screenshotToCodeHandler = guardedFilesBridge
+    ? createScreenshotToCodeHandler({ apiConfig, ...guardedFilesBridge })
     : null;
-  const applyDesignStyleHandler = filesBridge
-    ? createApplyDesignStyleHandler(filesBridge)
+  const applyDesignStyleHandler = guardedFilesBridge
+    ? createApplyDesignStyleHandler(guardedFilesBridge)
     : null;
   const projectHealthCheckHandler = filesBridge
     ? createProjectHealthCheckHandler({
@@ -183,16 +195,7 @@ export function buildToolHandlers(
     handlerArgs: unknown,
   ): Promise<string> => {
     if (name === "get_console_logs") {
-      const consoleLogs = getConsoleLogs();
-      if (consoleLogs.length === 0) return "No console output yet.";
-      return consoleLogs
-        .map((log) => {
-          const data = log.data
-            .map((d) => (typeof d === "string" ? d : JSON.stringify(d)))
-            .join(" ");
-          return `[${log.method.toUpperCase()}] ${data}`;
-        })
-        .join("\n");
+      return formatConsoleLogs(getConsoleLogs());
     }
     if (name === MEMORY_TOOL_NAME) {
       return memoryHandler(name, handlerArgs);

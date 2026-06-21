@@ -1,4 +1,5 @@
 import { useState, useEffect, memo } from "react";
+import type { ComponentType } from "react";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import {
   ChevronDown,
@@ -10,6 +11,9 @@ import {
   FileText,
   Check,
   Copy,
+  Settings,
+  Archive,
+  Activity,
 } from "lucide-react";
 import { MarkdownContent } from "./MarkdownContent";
 import { ToolCallCard } from "./ToolCallCard";
@@ -44,6 +48,9 @@ interface MessageBubbleProps {
   onShowDiff?: (messageId: string) => void;
   onRollback?: (messageId: string) => void;
   onRetry?: () => void;
+  onOpenSettings?: () => void;
+  onCompressContext?: () => void;
+  onHealthCheck?: () => void;
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -54,6 +61,9 @@ export const MessageBubble = memo(function MessageBubble({
   onShowDiff,
   onRollback,
   onRetry,
+  onOpenSettings,
+  onCompressContext,
+  onHealthCheck,
 }: MessageBubbleProps) {
   const t = useT();
   if (message.role === "user") {
@@ -216,21 +226,102 @@ export const MessageBubble = memo(function MessageBubble({
             {assistantText && !isError && (
               <CopyMessageButton text={assistantText} />
             )}
-            {isError && onRetry && (
-              <button
-                onClick={() => onRetry()}
-                aria-label={t.message.retry}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>{t.message.retry}</span>
-              </button>
+            {isError && (
+              <ErrorActions
+                message={message}
+                onRetry={onRetry}
+                onOpenSettings={onOpenSettings}
+                onCompressContext={onCompressContext}
+                onHealthCheck={onHealthCheck}
+              />
             )}
           </div>
         )}
     </div>
   );
 });
+
+function ErrorActions({
+  message,
+  onRetry,
+  onOpenSettings,
+  onCompressContext,
+  onHealthCheck,
+}: {
+  message: MergedMessage;
+  onRetry?: () => void;
+  onOpenSettings?: () => void;
+  onCompressContext?: () => void;
+  onHealthCheck?: () => void;
+}) {
+  const t = useT();
+  const kind = message.errorKind;
+  const retryable = message.errorRetryable !== false;
+
+  if (kind === "auth" && onOpenSettings) {
+    return (
+      <MessageActionButton
+        icon={Settings}
+        label={t.warning.openSettings}
+        onClick={onOpenSettings}
+      />
+    );
+  }
+
+  if (kind === "context_length" && onCompressContext) {
+    return (
+      <MessageActionButton
+        icon={Archive}
+        label={t.compress.button}
+        onClick={onCompressContext}
+      />
+    );
+  }
+
+  if (kind === "runtime_check" && onHealthCheck) {
+    return (
+      <MessageActionButton
+        icon={Activity}
+        label={t.message.runHealthCheck}
+        onClick={onHealthCheck}
+      />
+    );
+  }
+
+  if (retryable && onRetry) {
+    return (
+      <MessageActionButton
+        icon={RefreshCw}
+        label={t.message.retry}
+        onClick={onRetry}
+      />
+    );
+  }
+
+  return null;
+}
+
+function MessageActionButton({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+    >
+      <Icon className="w-3.5 h-3.5" />
+      <span>{label}</span>
+    </button>
+  );
+}
 
 function CopyMessageButton({ text }: { text: string }) {
   const t = useT();

@@ -13,6 +13,10 @@ import { invoke } from "@tauri-apps/api/core";
 
 const PROXY_SCHEME = "proxy";
 const SETTINGS_STORAGE_KEY = "open-builder-settings";
+const MAX_PROXY_ALLOWED_HOSTS = 64;
+const MAX_PROXY_HOST_CHARS = 253;
+const HOSTNAME_RE =
+  /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
@@ -40,23 +44,33 @@ export function setProxyEnabled(enabled: boolean) {
 }
 
 export function parseProxyAllowedHosts(value: string): string[] {
-  return value
-    .split(/[\n,]/)
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean);
+  const out = new Set<string>();
+  for (const item of value.split(/[\n,]/)) {
+    const normalized = normalizeProxyHostRule(item);
+    if (!normalized) continue;
+    out.add(normalized);
+    if (out.size >= MAX_PROXY_ALLOWED_HOSTS) break;
+  }
+  return Array.from(out);
 }
 
 export function setProxyAllowedHosts(hosts: string[] | string) {
   proxyAllowedHosts = Array.isArray(hosts)
-    ? hosts.map((host) => host.trim().toLowerCase()).filter(Boolean)
+    ? hosts
+        .map(normalizeProxyHostRule)
+        .filter((host): host is string => Boolean(host))
+        .slice(0, MAX_PROXY_ALLOWED_HOSTS)
     : parseProxyAllowedHosts(hosts);
   syncProxyPolicy();
 }
 
 export function isHostAllowed(hostname: string, allowedHosts: string[]): boolean {
-  if (allowedHosts.length === 0) return isLoopbackHost(hostname);
-  const host = hostname.toLowerCase();
-  return allowedHosts.some((allowed) => {
+  const host = normalizeHostName(hostname);
+  if (!host) return false;
+  if (allowedHosts.length === 0) return isLoopbackHost(host);
+  return allowedHosts.some((rawAllowed) => {
+    const allowed = normalizeProxyHostRule(rawAllowed);
+    if (!allowed) return false;
     if (allowed === host) return true;
     if (allowed.startsWith("*.")) {
       const suffix = allowed.slice(1);
@@ -67,18 +81,67 @@ export function isHostAllowed(hostname: string, allowedHosts: string[]): boolean
 }
 
 function isLoopbackHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+  const host = normalizeHostName(hostname);
+  if (!host) return false;
+  if (host === "localhost" || host === "::1") return true;
+  const octets = host.split(".");
+  if (octets.length !== 4 || octets[0] !== "127") return false;
+  return octets.every((part) => {
+    if (!/^\d{1,3}$/.test(part)) return false;
+    const value = Number(part);
+    return value >= 0 && value <= 255;
+  });
 }
 
 function addHostFromUrl(out: Set<string>, rawUrl: unknown): void {
   if (typeof rawUrl !== "string" || !rawUrl) return;
   try {
     const parsed = new URL(rawUrl);
-    if (parsed.hostname) out.add(parsed.hostname.toLowerCase());
+    const host = normalizeProxyHostRule(parsed.hostname);
+    if (host) out.add(host);
   } catch {
     // Ignore incomplete settings while the user is typing.
   }
+}
+
+function normalizeHostName(hostname: string): string | null {
+  const host = hostname.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  if (!host || host.length > MAX_PROXY_HOST_CHARS) return null;
+  return host;
+}
+
+export function normalizeProxyHostRule(input: string): string | null {
+  let raw = input.trim().toLowerCase();
+  if (!raw) return null;
+
+  try {
+    if (/^https?:\/\//i.test(raw)) {
+      raw = new URL(raw).hostname;
+    } else if (/^[a-z0-9.-]+:\d+$/i.test(raw)) {
+      raw = new URL(`http://${raw}`).hostname;
+    }
+  } catch {
+    return null;
+  }
+
+  raw = raw.replace(/^\[|\]$/g, "");
+  if (!raw || raw.length > MAX_PROXY_HOST_CHARS) return null;
+
+  if (raw.startsWith("*.")) {
+    const suffix = raw.slice(2);
+    return HOSTNAME_RE.test(suffix) ? `*.${suffix}` : null;
+  }
+
+  if (raw === "localhost" || HOSTNAME_RE.test(raw)) return raw;
+  if (raw.includes(":")) {
+    try {
+      const parsed = new URL(`http://[${raw}]`);
+      return parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 function readConfiguredApiHosts(): string[] {

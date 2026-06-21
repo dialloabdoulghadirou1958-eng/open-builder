@@ -14,12 +14,22 @@ export interface TemplateStats {
 }
 
 const MAX_TAGS = 8;
+export const PROJECT_TEMPLATE_LIMITS = {
+  maxFiles: 300,
+  maxTotalBytes: 5 * 1024 * 1024,
+  maxFileBytes: 2 * 1024 * 1024,
+} as const;
 
 export function createProjectTemplateFromConversation(
   conversation: Conversation,
   input: TemplateMetadataInput,
 ): ProjectTemplate {
   const files = cloneProjectFiles(conversation.files);
+  const validation = validateProjectTemplateFiles(files);
+  if (!validation.ok) {
+    throw new Error(validation.error);
+  }
+
   if (Object.keys(files).length === 0) {
     throw new Error("Cannot create a template from an empty project.");
   }
@@ -61,6 +71,37 @@ export function getProjectTemplateStats(
     fileCount: files.length,
     totalBytes: files.reduce((total, content) => total + byteLength(content), 0),
   };
+}
+
+export function validateProjectTemplateFiles(
+  files: ProjectFiles,
+): { ok: true } | { ok: false; error: string } {
+  const entries = Object.entries(files);
+  if (entries.length > PROJECT_TEMPLATE_LIMITS.maxFiles) {
+    return {
+      ok: false,
+      error: `Project template has too many files (max ${PROJECT_TEMPLATE_LIMITS.maxFiles}).`,
+    };
+  }
+
+  let totalBytes = 0;
+  for (const [path, content] of entries) {
+    const size = byteLength(content);
+    if (size > PROJECT_TEMPLATE_LIMITS.maxFileBytes) {
+      return {
+        ok: false,
+        error: `Project template file "${path}" is too large (max ${PROJECT_TEMPLATE_LIMITS.maxFileBytes} bytes).`,
+      };
+    }
+    totalBytes += size;
+    if (totalBytes > PROJECT_TEMPLATE_LIMITS.maxTotalBytes) {
+      return {
+        ok: false,
+        error: `Project template is too large (max ${PROJECT_TEMPLATE_LIMITS.maxTotalBytes} bytes).`,
+      };
+    }
+  }
+  return { ok: true };
 }
 
 export function normalizeTemplateTags(tags: string[]): string[] {

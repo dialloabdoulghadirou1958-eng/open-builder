@@ -48,6 +48,7 @@ const ACCEPTED_EXTENSIONS = new Set([
   "html",
   "pdf",
 ]);
+const EXTENSION_FALLBACK_MIME = new Set(["", "application/octet-stream"]);
 
 export function formatAttachmentBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -69,7 +70,10 @@ export function isAcceptedFileMime(mime: string, name = ""): boolean {
   if (ACCEPTED_FILE_MIME_PREFIXES.some((prefix) => mime.startsWith(prefix))) {
     return true;
   }
-  return !mime && ACCEPTED_EXTENSIONS.has(extensionOf(name));
+  return (
+    EXTENSION_FALLBACK_MIME.has(mime) &&
+    ACCEPTED_EXTENSIONS.has(extensionOf(name))
+  );
 }
 
 export function validateAttachmentFile(
@@ -81,7 +85,9 @@ export function validateAttachmentFile(
   if (nextCount > constraints.maxCount) {
     return {
       ok: false,
+      code: "max_count",
       reason: `You can attach up to ${constraints.maxCount} files.`,
+      limit: constraints.maxCount,
     };
   }
 
@@ -89,7 +95,9 @@ export function validateAttachmentFile(
   if (nextTotal > constraints.maxTotalBytes) {
     return {
       ok: false,
+      code: "max_total_size",
       reason: `Attachments can total up to ${formatAttachmentBytes(constraints.maxTotalBytes)}.`,
+      limit: constraints.maxTotalBytes,
     };
   }
 
@@ -97,7 +105,9 @@ export function validateAttachmentFile(
     if (file.size > constraints.maxImageBytes) {
       return {
         ok: false,
+        code: "max_image_size",
         reason: `Images can be up to ${formatAttachmentBytes(constraints.maxImageBytes)} each.`,
+        limit: constraints.maxImageBytes,
       };
     }
     return { ok: true };
@@ -106,14 +116,18 @@ export function validateAttachmentFile(
   if (!isAcceptedFileMime(file.type, file.name)) {
     return {
       ok: false,
+      code: "unsupported_type",
       reason: `Unsupported file type: ${file.name || file.type || "unknown"}.`,
+      name: file.name || file.type || "unknown",
     };
   }
 
   if (file.size > constraints.maxFileBytes) {
     return {
       ok: false,
+      code: "max_file_size",
       reason: `Files can be up to ${formatAttachmentBytes(constraints.maxFileBytes)} each.`,
+      limit: constraints.maxFileBytes,
     };
   }
 

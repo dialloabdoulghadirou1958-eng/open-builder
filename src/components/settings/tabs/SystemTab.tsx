@@ -37,6 +37,7 @@ import {
   clearProxyLog,
   getProxyLog,
   isTauri,
+  parseProxyAllowedHosts,
   setProxyAllowedHosts,
   setProxyEnabled,
   type ProxyLogEntry,
@@ -313,10 +314,7 @@ function SecurityCenterPanel({ form }: { form: SystemSettings }) {
   const enabledSkillCount = Object.values(skills).filter((skill) => skill.enabled)
     .length;
 
-  const allowedHosts = form.reverseProxyAllowedHosts
-    .split(/[\n,]/)
-    .map((host) => host.trim())
-    .filter(Boolean);
+  const allowedHosts = parseProxyAllowedHosts(form.reverseProxyAllowedHosts);
 
   const proxyStatus = !isTauri()
     ? t.settings.securityCenter.proxyBrowser
