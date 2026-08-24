@@ -44,9 +44,9 @@ describe("conversation store project file guard", () => {
     warn.mockRestore();
   });
 
-  it("rejects oversized project trees during import", () => {
+  it("rejects oversized project trees when adding a conversation", () => {
     expect(() =>
-      useConversationStore.getState().importConversation({
+      useConversationStore.getState().addConversation({
         id: "imported",
         title: "Imported",
         messages: [],

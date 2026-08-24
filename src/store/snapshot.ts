@@ -76,11 +76,6 @@ interface SnapshotState {
 
   deleteSnapshot: (conversationId: string, snapshotId: string) => void;
 
-  importSnapshotsForConversation: (
-    conversationId: string,
-    snapshots: ProjectSnapshot[],
-  ) => void;
-
   pruneSnapshots: (maxPerConversation: number) => number;
 
   /** Update the latest snapshot to include manual file edits */
@@ -289,19 +284,6 @@ export const useSnapshotStore = create<SnapshotState>()(
             },
           };
         });
-      },
-
-      importSnapshotsForConversation: (conversationId, snapshots) => {
-        const safeSnapshots = snapshots.filter(isSnapshotWithinStorageBudget);
-        set((s) => ({
-          snapshots: {
-            ...s.snapshots,
-            [conversationId]: safeSnapshots.map((snapshot) => ({
-              ...snapshot,
-              conversationId,
-            })),
-          },
-        }));
       },
 
       pruneSnapshots: (maxPerConversation) => {

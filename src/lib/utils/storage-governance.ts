@@ -3,10 +3,8 @@ import type {
   MemoryItem,
   ProjectSnapshot,
   ProjectTemplate,
-  StyleAsset,
 } from "../../types";
 import type { SkillEntry } from "../skills/types";
-import type { SkillScriptAuditEntry } from "../../store/security-audit";
 import { rebuildSnapshotChainWithoutSnapshot } from "../../store/snapshot-replay";
 
 export interface StorageReport {
@@ -31,8 +29,6 @@ export interface StorageReport {
   memories: { count: number; bytes: number };
   skills: { count: number; bytes: number };
   templates: { count: number; bytes: number };
-  styleAssets: { count: number; bytes: number };
-  securityAudit: { count: number; bytes: number };
   cleanup: {
     archivedConversationIds: string[];
     emptyConversationIds: string[];
@@ -51,8 +47,6 @@ export interface StorageReportInput {
   memories: MemoryItem[];
   skills: Record<string, SkillEntry>;
   templates?: Record<string, ProjectTemplate>;
-  styleAssets?: Record<string, StyleAsset>;
-  skillScriptExecutions: SkillScriptAuditEntry[];
   maxSnapshotsPerConversation?: number;
 }
 
@@ -171,9 +165,6 @@ export function analyzeStorage(input: StorageReportInput): StorageReport {
   const skillsBytes = estimateJsonBytes(input.skills);
   const templates = input.templates ?? {};
   const templatesBytes = estimateJsonBytes(templates);
-  const styleAssets = input.styleAssets ?? {};
-  const styleAssetsBytes = estimateJsonBytes(styleAssets);
-  const securityAuditBytes = estimateJsonBytes(input.skillScriptExecutions);
 
   const prunableSnapshotCount = snapshotChains.reduce(
     (sum, chain) => sum + Math.max(0, chain.length - maxSnapshots),
@@ -186,9 +177,7 @@ export function analyzeStorage(input: StorageReportInput): StorageReport {
       snapshotBytes +
       memoriesBytes +
       skillsBytes +
-      templatesBytes +
-      styleAssetsBytes +
-      securityAuditBytes,
+      templatesBytes,
     conversations: {
       count: conversations.length,
       archivedCount: conversations.filter((conversation) => conversation.archived)
@@ -221,14 +210,6 @@ export function analyzeStorage(input: StorageReportInput): StorageReport {
     templates: {
       count: Object.keys(templates).length,
       bytes: templatesBytes,
-    },
-    styleAssets: {
-      count: Object.keys(styleAssets).length,
-      bytes: styleAssetsBytes,
-    },
-    securityAudit: {
-      count: input.skillScriptExecutions.length,
-      bytes: securityAuditBytes,
     },
     cleanup: {
       archivedConversationIds: getArchivedConversationCleanupIds(

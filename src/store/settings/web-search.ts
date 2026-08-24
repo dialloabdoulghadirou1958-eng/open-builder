@@ -3,17 +3,13 @@ import type { StateCreator } from "zustand";
 export interface WebSearchSettings {
   engine: "tavily" | "firecrawl" | "builtin" | "disabled";
   tavilyApiKey: string;
-  tavilyApiUrl: string;
   firecrawlApiKey: string;
-  firecrawlApiUrl: string;
 }
 
 export const webSearchDefaults: WebSearchSettings = {
   engine: "disabled",
   tavilyApiKey: "",
-  tavilyApiUrl: "https://api.tavily.com",
   firecrawlApiKey: "",
-  firecrawlApiUrl: "https://api.firecrawl.dev",
 };
 
 export interface WebSearchSlice {

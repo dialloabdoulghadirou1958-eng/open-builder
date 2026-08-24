@@ -1,14 +1,4 @@
-export const SETTINGS_VERSION = 12;
-
-let stashedApiKey: string | null = null;
-
-/** Drain the apiKey that v8→v9 migration peeled off the persisted state.
- *  Consumed once by the secrets store boot — returns null on subsequent reads. */
-export function takeStashedApiKey(): string | null {
-  const v = stashedApiKey;
-  stashedApiKey = null;
-  return v;
-}
+export const SETTINGS_VERSION = 14;
 
 export function migrateSettings(persisted: unknown, version: number): unknown {
   const state = persisted as Record<string, any>;
@@ -24,16 +14,13 @@ export function migrateSettings(persisted: unknown, version: number): unknown {
       ? "tavily"
       : "disabled";
     state.webSearch.firecrawlApiKey = "";
-    state.webSearch.firecrawlApiUrl = "https://api.firecrawl.dev";
   }
   if (version < 3) {
     if (!state.assetSearch) {
       state.assetSearch = {
         engine: "disabled",
         pixabayApiKey: "",
-        pixabayApiUrl: "https://pixabay.com/api",
         unsplashApiKey: "",
-        unsplashApiUrl: "https://api.unsplash.com",
       };
     }
   }
@@ -56,15 +43,6 @@ export function migrateSettings(persisted: unknown, version: number): unknown {
     if (!state.system) state.system = {};
     if (state.system.planModeEnabled === undefined) {
       state.system.planModeEnabled = false;
-    }
-  }
-  if (version < 9) {
-    // Move plaintext apiKey out of localStorage into the encrypted vault.
-    // The actual write happens asynchronously from the secrets store boot;
-    // stash the value here so it survives the rehydrate cycle.
-    if (state.ai && typeof state.ai.apiKey === "string" && state.ai.apiKey) {
-      stashedApiKey = state.ai.apiKey;
-      state.ai.apiKey = "";
     }
   }
   if (version < 10) {
@@ -93,6 +71,16 @@ export function migrateSettings(persisted: unknown, version: number): unknown {
     delete state.serverService;
     delete state.serverServiceCache;
     delete state.modelCache;
+  }
+  if (version < 14) {
+    if (state.webSearch) {
+      delete state.webSearch.tavilyApiUrl;
+      delete state.webSearch.firecrawlApiUrl;
+    }
+    if (state.assetSearch) {
+      delete state.assetSearch.pixabayApiUrl;
+      delete state.assetSearch.unsplashApiUrl;
+    }
   }
   return state;
 }

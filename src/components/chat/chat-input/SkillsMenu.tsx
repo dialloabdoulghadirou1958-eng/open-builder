@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Blocks, Plus } from "lucide-react";
+import { Plus, ScrollText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -41,7 +41,7 @@ export function SkillsMenu({ onManage }: SkillsMenuProps) {
           className="w-7 h-7 text-muted-foreground hover:text-foreground"
           title={t.chat.skills}
         >
-          <Blocks size={16} />
+          <ScrollText size={16} />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent

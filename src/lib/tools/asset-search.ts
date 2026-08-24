@@ -13,6 +13,9 @@ import {
   truncateText,
 } from "./network-guard";
 
+const PIXABAY_API_URL = "https://pixabay.com/api";
+const UNSPLASH_API_URL = "https://api.unsplash.com";
+
 export const ASSET_SEARCH_TOOLS = {
   image_search: tool({
     description:
@@ -53,7 +56,6 @@ async function pixabaySearch(
   if (!checkedQuery.ok) {
     return JSON.stringify({ ok: false, error: checkedQuery.error });
   }
-  const baseUrl = settings.pixabayApiUrl || "https://pixabay.com/api";
   const size = clampInt(perPage, 10, 1, ASSET_SEARCH_MAX_RESULTS);
   const params = new URLSearchParams({
     key: settings.pixabayApiKey,
@@ -65,7 +67,7 @@ async function pixabaySearch(
   if (color) params.append("colors", color);
 
   try {
-    const res = await fetchWithTimeout(`${baseUrl}/?${params}`);
+    const res = await fetchWithTimeout(`${PIXABAY_API_URL}/?${params}`);
     if (!res.ok) {
       const text = await res.text();
       return JSON.stringify({
@@ -114,7 +116,6 @@ async function unsplashSearch(
   if (!checkedQuery.ok) {
     return JSON.stringify({ ok: false, error: checkedQuery.error });
   }
-  const baseUrl = settings.unsplashApiUrl || "https://api.unsplash.com";
   const size = clampInt(perPage, 10, 1, ASSET_SEARCH_MAX_RESULTS);
   const params = new URLSearchParams({
     query: checkedQuery.query,
@@ -127,7 +128,9 @@ async function unsplashSearch(
   if (color) params.append("color", color);
 
   try {
-    const res = await fetchWithTimeout(`${baseUrl}/search/photos?${params}`);
+    const res = await fetchWithTimeout(
+      `${UNSPLASH_API_URL}/search/photos?${params}`,
+    );
     if (!res.ok) {
       const text = await res.text();
       return JSON.stringify({

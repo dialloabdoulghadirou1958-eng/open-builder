@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { migrateSettings, takeStashedApiKey } from "./migrations";
+import { migrateSettings } from "./migrations";
 
 describe("migrateSettings", () => {
-  it("moves plaintext API keys out of persisted settings in v9 migration", () => {
+  it("preserves plaintext API keys from older persisted settings", () => {
     const migrated = migrateSettings(
       {
         ai: {
@@ -16,9 +16,7 @@ describe("migrateSettings", () => {
       8,
     ) as { ai: { apiKey: string } };
 
-    expect(migrated.ai.apiKey).toBe("");
-    expect(takeStashedApiKey()).toBe("sk-test");
-    expect(takeStashedApiKey()).toBeNull();
+    expect(migrated.ai.apiKey).toBe("sk-test");
   });
 
   it("adds missing system defaults for older persisted settings", () => {
@@ -70,5 +68,42 @@ describe("migrateSettings", () => {
     expect(migrated).not.toHaveProperty("serverService");
     expect(migrated).not.toHaveProperty("serverServiceCache");
     expect(migrated).not.toHaveProperty("modelCache");
+  });
+
+  it("removes custom search endpoints while preserving provider settings", () => {
+    const migrated = migrateSettings(
+      {
+        webSearch: {
+          engine: "tavily",
+          tavilyApiKey: "local-search-key",
+          tavilyApiUrl: "https://search.example.com",
+          firecrawlApiKey: "local-reader-key",
+          firecrawlApiUrl: "https://reader.example.com",
+        },
+        assetSearch: {
+          engine: "pixabay",
+          pixabayApiKey: "local-asset-key",
+          pixabayApiUrl: "https://images.example.com",
+          unsplashApiKey: "local-photo-key",
+          unsplashApiUrl: "https://photos.example.com",
+        },
+      },
+      13,
+    ) as Record<string, any>;
+
+    expect(migrated.webSearch).toMatchObject({
+      engine: "tavily",
+      tavilyApiKey: "local-search-key",
+      firecrawlApiKey: "local-reader-key",
+    });
+    expect(migrated.assetSearch).toMatchObject({
+      engine: "pixabay",
+      pixabayApiKey: "local-asset-key",
+      unsplashApiKey: "local-photo-key",
+    });
+    expect(migrated.webSearch).not.toHaveProperty("tavilyApiUrl");
+    expect(migrated.webSearch).not.toHaveProperty("firecrawlApiUrl");
+    expect(migrated.assetSearch).not.toHaveProperty("pixabayApiUrl");
+    expect(migrated.assetSearch).not.toHaveProperty("unsplashApiUrl");
   });
 });

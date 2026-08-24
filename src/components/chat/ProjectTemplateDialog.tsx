@@ -88,7 +88,7 @@ export function ProjectTemplateDialog({
     <Dialog open onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="sm:max-w-2xl max-h-[82vh] flex flex-col p-0 gap-0 overflow-hidden">
         <DialogHeader className="px-5 pt-5 pb-3 border-b">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
             <DialogTitle>{t.sessions.templates.title}</DialogTitle>
             <Badge variant="secondary">{templates.length}</Badge>
           </div>

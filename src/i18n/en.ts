@@ -6,18 +6,25 @@ export const en: typeof zh = {
     startBuilding: "Start Building Your Project",
     startBuildingDesc:
       "Describe the app you want to create in the left chat box, and AI will generate complete project code for you.",
+    resources: "Open Builder resources",
+    officialWebsite: "Official website",
+    openSourceProject: "Open-source project",
   },
   settings: {
     title: "Settings",
     tabs: {
       model: "Model",
-      search: "Web Search",
-      asset: "Asset Search",
+      search: "Search Services",
+      storage: "Storage",
       system: "System",
+    },
+    searchServices: {
+      web: "Web search",
+      asset: "Asset search",
     },
     cancel: "Cancel",
     save: "Save",
-    apiKey: { hint: "Your API key will be saved in the local encrypted credential vault" },
+    apiKey: { hint: "Your API key will be saved in local browser settings" },
     apiType: {
       label: "API Type",
       hint: "Select the API provider type",
@@ -42,14 +49,8 @@ export const en: typeof zh = {
     tavilyKey: {
       hint: "Optional. Enables web search and web reading after configuration",
     },
-    tavilyUrl: {
-      hint: "Optional. Uses Tavily official API address by default",
-    },
     firecrawlKey: {
       hint: "Optional. Enables web search and web reading after configuration",
-    },
-    firecrawlUrl: {
-      hint: "Optional. Uses Firecrawl official API address by default",
     },
     assetSearch: {
       desc: "After configuration, AI will be able to search for high-quality images",
@@ -59,14 +60,8 @@ export const en: typeof zh = {
     pixabayKey: {
       hint: "Optional. Enables image asset search after configuration",
     },
-    pixabayUrl: {
-      hint: "Optional. Uses Pixabay official API address by default",
-    },
     unsplashKey: {
       hint: "Optional. Enables image asset search after configuration",
-    },
-    unsplashUrl: {
-      hint: "Optional. Uses Unsplash official API address by default",
     },
     language: {
       label: "Language",
@@ -83,10 +78,10 @@ export const en: typeof zh = {
       hint: "Adjust the app's color scheme",
     },
     autoQa: {
-      label: "Automatic QA Round",
+      label: "Auto QA",
       on: "Enabled",
       off: "Disabled",
-      hint: "When enabled, successful normal generations automatically run a project health check and try to fix obvious build or runtime errors.",
+      hint: "Automatically checks and fixes obvious issues after generation.",
     },
     reverseProxy: {
       label: "Reverse Proxy",
@@ -101,55 +96,6 @@ export const en: typeof zh = {
       clearLog: "Clear log",
       emptyLog: "No proxy requests yet.",
     },
-    vault: {
-      label: "Credential Vault",
-      modeDevice: "Device key",
-      modePassphrase: "Passphrase",
-      statusUnlocked: "Unlocked",
-      statusLocked: "Locked",
-      hintDevice:
-        "Credentials are encrypted with a device-bound key stored in IndexedDB. No prompt at startup.",
-      hintPassphrase:
-        "Credentials are encrypted with your passphrase. You will be prompted to unlock the vault at startup.",
-      enablePassphrase: "Enable passphrase",
-      disablePassphrase: "Disable passphrase",
-      lock: "Lock now",
-      enterPassphrase: "Enter passphrase",
-      newPassphrase: "New passphrase",
-      confirmPassphrase: "Confirm passphrase",
-      mismatch: "Passphrases do not match.",
-      tooShort: "Use at least 8 characters.",
-      wrong: "Wrong passphrase, try again.",
-      confirm: "Confirm",
-      cancel: "Cancel",
-      unlockTitle: "Unlock credential vault",
-      unlockBody:
-        "Your API key is encrypted. Enter your passphrase to continue.",
-    },
-    skillAudit: {
-      label: "Skill Script Audit",
-      empty: "No script executions yet.",
-      clear: "Clear log",
-      success: "Success",
-      failed: "Failed",
-      args: "args",
-    },
-    securityCenter: {
-      label: "Security Center",
-      vault: "Credential vault",
-      vaultUnlocked: "Unlocked",
-      vaultLocked: "Locked",
-      proxy: "Proxy",
-      proxyBrowser: "Unavailable in browser",
-      proxyOff: "Disabled",
-      proxyOpen: "Enabled, no host limit",
-      proxyLimited: "Enabled, {count} host rule(s)",
-      skills: "Skill scripts",
-      skillsEnabled: "{count} skill(s) enabled",
-      externalTools: "External tools",
-      externalDisabled: "Disabled",
-      externalEnabled: "{items}",
-    },
     storage: {
       label: "Storage Governance",
       total: "Estimated usage",
@@ -157,8 +103,6 @@ export const en: typeof zh = {
       snapshots: "Snapshots",
       projectFiles: "Project files",
       templates: "Templates",
-      styleAssets: "Style assets",
-      audit: "Audit log",
       messages: "messages",
       memories: "memories",
       skills: "skills",
@@ -166,7 +110,6 @@ export const en: typeof zh = {
       cleanupArchived: "Clean archived",
       cleanupEmpty: "Delete empty",
       pruneSnapshots: "Prune old snapshots",
-      clearAudit: "Clear audit log",
       keepSnapshots: "Keeps the latest 20 snapshots per conversation.",
       nothingToClean: "Nothing to clean.",
       confirmArchived:
@@ -174,25 +117,7 @@ export const en: typeof zh = {
       confirmEmpty: "Delete all non-current empty conversations?",
       confirmSnapshots:
         "Prune old snapshots? The latest 20 snapshots per conversation will be kept.",
-      confirmAudit: "Clear the skill script audit log?",
       cleaned: "Cleaned {count} item(s).",
-    },
-    styleAssets: {
-      label: "Style Assets",
-      name: "Asset name",
-      description: "Description",
-      colors: "Colors, e.g. #0f172a, #14b8a6",
-      tags: "Tags",
-      typography: "Typography tone",
-      radius: "Radius",
-      spacing: "Spacing",
-      instructions: "Design instructions",
-      save: "Save Asset",
-      saved: "Asset saved.",
-      empty: "No style assets yet.",
-      toggle: "Enable style asset",
-      delete: "Delete style asset",
-      deleteConfirm: "Delete this style asset?",
     },
     version: { label: "Version", checkUpdate: "Check for updates" },
     reset: {
@@ -262,7 +187,6 @@ export const en: typeof zh = {
   },
   header: {
     sessions: "Sessions",
-    openSource: "Source Code",
     settings: "Settings",
   },
   warning: {
@@ -282,11 +206,6 @@ export const en: typeof zh = {
     unarchive: "Unarchive",
     rename: "Rename",
     smartRename: "Smart Rename",
-    import: "Import Session",
-    export: "Export Session",
-    importSuccess: "Session imported.",
-    importFailed: "Import failed: {message}",
-    importTooLarge: "Import file is too large. Choose a session backup up to {size}.",
     templates: {
       title: "Project Templates",
       library: "Template Library",
@@ -312,13 +231,6 @@ export const en: typeof zh = {
     searchPlaceholder: "Search conversations",
     emptySearch: "No conversations match.",
     loadMore: "Show {count} more",
-    filters: {
-      all: "All",
-      pinned: "Pinned",
-      archived: "Archived",
-      project: "With project",
-      error: "With errors",
-    },
   },
   diff: {
     title: "Code Changes",
@@ -338,7 +250,6 @@ export const en: typeof zh = {
       toggleTheme: "Toggle theme",
       compressContext: "Compress context",
       stopGenerating: "Stop generating",
-      lockVault: "Lock credential vault",
     },
     groups: {
       session: "Session",

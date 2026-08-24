@@ -23,7 +23,7 @@ English | [简体中文](README.zh-CN.md)
 
 Open Builder is an AI-driven web app generator that runs entirely in the browser. Simply describe the application you want to build in natural language, and the AI will automatically create, modify, and delete files in an in-memory file system through a Tool Call loop, with live preview powered by [Sandpack](https://sandpack.codesandbox.io/).
 
-No backend server required — all computation can happen in the browser. Your API Key is stored in the local encrypted credential vault and is never uploaded to any server.
+No backend server is required. All computation can happen in the browser, and provider settings, including API keys, are stored in browser local storage. API keys are sent only to the providers you configure.
 
 It also supports building as a desktop app (macOS / Windows / Linux) and mobile app (iOS / Android) via [Tauri](https://tauri.app), delivering a native application experience.
 
@@ -49,7 +49,7 @@ It also supports building as a desktop app (macOS / Windows / Linux) and mobile 
 - **Smart File Operations** — AI uses `patch_file` for precise modifications, avoiding unnecessary full rewrites
 - **Dependency Management** — AI can modify `package.json` and trigger dependency reinstallation
 - **Project Snapshots** — Browse snapshot history, name snapshots, inspect diffs, export patches, and roll back to historical versions
-- **Project Health Check** — Run `/health` or automatic QA rounds to inspect structure, dependencies, runtime logs, accessibility, and responsive risks
+- **Project Health Check** — Run `/health` or automatic QA to inspect structure, dependencies, runtime logs, accessibility, and responsive risks
 - **Context Compression** — Automatically compresses long conversation context to reduce token usage
 - **Plan Mode** — Explore the code and submit an implementation plan for approval before writing files
 - **Subagent Collaboration** — Built-in read-only subagents for code exploration, review, dependency advice, bug investigation, and UI critique
@@ -59,15 +59,14 @@ It also supports building as a desktop app (macOS / Windows / Linux) and mobile 
 ### User Experience
 
 - **Multi-Session Management** — Sidebar with create, switch, delete sessions; history persisted locally
-- **Session Organization** — Search, filter, pin, archive, fork, import/export, and smart-rename conversations
+- **Session Organization** — Search, pin, archive, fork, and smart-rename conversations
 - **Project Templates** — Save generated projects as reusable local templates and start new sessions from them
-- **Style Assets** — Save reusable brand colors, typography notes, spacing/radius preferences, and design instructions for future generation
 - **Smart Session Naming** — Auto-generates session titles based on conversation content
 - **Slash Commands** — Input box supports `/compact`, `/review`, and other shortcut commands
 - **Image & File Input** — Upload screenshots, design mockups, or files as context input
 - **Skills System** — Import, enable, search, filter, and inspect local skills with source, permission, script, and risk summaries
-- **Credential Vault** — API keys can be encrypted with a device key or passphrase
-- **Storage Governance** — Inspect local data usage and safely clean archived sessions, empty sessions, old snapshots, and audit logs
+- **Local Settings** — Provider configuration and API keys persist in browser local storage
+- **Storage Governance** — Inspect local data usage and safely clean archived sessions, empty sessions, and old snapshots
 - **Streaming Output** — Real-time display of AI thinking process and code generation progress
 - **Extended Thinking** — Supports Extended Thinking / Reasoning mode (DeepSeek-R1, Claude 4.6, etc.)
 - **One-Click Download** — Export generated project as a ZIP file
@@ -137,7 +136,7 @@ Click the settings button in the top-right corner and fill in:
 | Model Name     | Model ID to use               | `gpt-5.3-codex`, `deepseek-chat`             |
 | Tavily API Key | (Optional) Web search feature | `tvly-...`                                   |
 
-> Regular settings are stored locally in the browser. API keys are stored in the local encrypted credential vault.
+> Settings and API keys are stored in browser local storage. Treat the browser profile and device as part of your credential security boundary.
 
 ---
 

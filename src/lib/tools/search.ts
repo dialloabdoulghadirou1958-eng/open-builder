@@ -19,6 +19,9 @@ import {
   truncateText,
 } from "./network-guard";
 
+const TAVILY_API_URL = "https://api.tavily.com";
+const FIRECRAWL_API_URL = "https://api.firecrawl.dev";
+
 // ═══════════════════════════════ 工具定义 ═══════════════════════════════════
 
 export const WEB_READER_TOOL = {
@@ -60,10 +63,9 @@ async function tavilySearch(
   if (!checkedQuery.ok) {
     return JSON.stringify({ ok: false, error: checkedQuery.error });
   }
-  const baseUrl = settings.tavilyApiUrl || "https://api.tavily.com";
   const size = clampInt(maxResults, 5, 1, WEB_SEARCH_MAX_RESULTS);
   try {
-    const res = await fetchWithTimeout(`${baseUrl}/search`, {
+    const res = await fetchWithTimeout(`${TAVILY_API_URL}/search`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -113,9 +115,8 @@ async function tavilyExtract(
   if (!checkedUrls.ok) {
     return JSON.stringify({ ok: false, error: checkedUrls.error });
   }
-  const baseUrl = settings.tavilyApiUrl || "https://api.tavily.com";
   try {
-    const res = await fetchWithTimeout(`${baseUrl}/extract`, {
+    const res = await fetchWithTimeout(`${TAVILY_API_URL}/extract`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -218,10 +219,9 @@ async function firecrawlSearch(
   if (!checkedQuery.ok) {
     return JSON.stringify({ ok: false, error: checkedQuery.error });
   }
-  const baseUrl = settings.firecrawlApiUrl || "https://api.firecrawl.dev";
   const size = clampInt(maxResults, 5, 1, WEB_SEARCH_MAX_RESULTS);
   try {
-    const res = await fetchWithTimeout(`${baseUrl}/v2/search`, {
+    const res = await fetchWithTimeout(`${FIRECRAWL_API_URL}/v2/search`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -278,9 +278,8 @@ async function firecrawlScrape(
   if (!checkedUrls.ok) {
     return JSON.stringify({ ok: false, error: checkedUrls.error });
   }
-  const baseUrl = settings.firecrawlApiUrl || "https://api.firecrawl.dev";
   try {
-    const res = await fetchWithTimeout(`${baseUrl}/v2/batch/scrape`, {
+    const res = await fetchWithTimeout(`${FIRECRAWL_API_URL}/v2/batch/scrape`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

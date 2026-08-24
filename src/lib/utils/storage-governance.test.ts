@@ -95,19 +95,6 @@ describe("storage governance", () => {
           updatedAt: 1,
         },
       },
-      styleAssets: {
-        brand: {
-          id: "brand",
-          name: "Brand",
-          instructions: "Use calm colors.",
-          tokens: { colors: ["#111111"] },
-          tags: ["brand"],
-          enabled: true,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      },
-      skillScriptExecutions: [],
       maxSnapshotsPerConversation: 2,
     });
 
@@ -118,8 +105,6 @@ describe("storage governance", () => {
     expect(report.memories.count).toBe(1);
     expect(report.templates.count).toBe(1);
     expect(report.templates.bytes).toBeGreaterThan(0);
-    expect(report.styleAssets.count).toBe(1);
-    expect(report.styleAssets.bytes).toBeGreaterThan(0);
     expect(report.cleanup.archivedConversationIds).toEqual(["archived"]);
     expect(report.cleanup.prunableSnapshotCount).toBe(1);
     expect(report.totalBytes).toBeGreaterThan(0);

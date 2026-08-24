@@ -24,8 +24,7 @@ function createRegistry(scriptContent = "console.log('ok')"): SkillRegistry {
 }
 
 describe("createSkillToolHandler", () => {
-  it("records script execution audit data on success", async () => {
-    const onScriptExecuted = vi.fn();
+  it("returns script execution output on success", async () => {
     const executor: ScriptExecutor = {
       canExecute: () => true,
       execute: vi.fn(async () => ({
@@ -37,7 +36,6 @@ describe("createSkillToolHandler", () => {
     const handler = createSkillToolHandler({
       getRegistry: async () => createRegistry(),
       getExecutor: async () => executor,
-      onScriptExecuted,
     });
 
     const result = await handler(SKILL_TOOL_NAMES.EXECUTE_SCRIPT, {
@@ -47,18 +45,9 @@ describe("createSkillToolHandler", () => {
     });
 
     expect(result).toContain("Exit code: 0");
-    expect(onScriptExecuted).toHaveBeenCalledWith(
-      expect.objectContaining({
-        skill,
-        scriptPath: "hello.js",
-        args: ["world"],
-        result: expect.objectContaining({ exitCode: 0 }),
-      }),
-    );
   });
 
-  it("records script execution audit data when execution throws", async () => {
-    const onScriptExecuted = vi.fn();
+  it("returns an error when script execution throws", async () => {
     const executor: ScriptExecutor = {
       canExecute: () => true,
       execute: vi.fn(async () => {
@@ -68,7 +57,6 @@ describe("createSkillToolHandler", () => {
     const handler = createSkillToolHandler({
       getRegistry: async () => createRegistry(),
       getExecutor: async () => executor,
-      onScriptExecuted,
     });
 
     const result = await handler(SKILL_TOOL_NAMES.EXECUTE_SCRIPT, {
@@ -77,14 +65,6 @@ describe("createSkillToolHandler", () => {
     });
 
     expect(result).toContain("Error: script execution failed: boom");
-    expect(onScriptExecuted).toHaveBeenCalledWith(
-      expect.objectContaining({
-        skill,
-        scriptPath: "hello.js",
-        args: [],
-        result: null,
-      }),
-    );
   });
 
   it("rejects invalid script args before execution", async () => {

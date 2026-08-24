@@ -11,13 +11,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 ### Removed
 
 - Removed the Mohua backend API integration, OAuth2/SSO login flow, remote model routing, server-backed search modes, and related settings UI.
+- Removed conversation import/export, session filter tabs, the header source-code shortcut, Security Center, Credential Vault workflows, the local Style Assets library, and Skill Script Audit logging.
 
 ### Changed
 
-- The generator now always uses locally configured AI, web-search, and asset-search providers, with API keys remaining in the encrypted local credential vault.
+- The generator now always uses locally configured AI, web-search, and asset-search providers, with provider settings and API keys persisted in browser local storage.
 - Upgraded the frontend to AI SDK 7, TypeScript 7, Vite 8, and the latest stable direct dependencies; standardized development and CI on Node.js 24 LTS and pnpm 11.
 - Updated Tauri and Rust dependencies within their latest compatible stable ranges.
-- Settings storage now migrates to version 12 and removes obsolete server/auth data while preserving local provider configuration and API keys.
+- Settings storage now migrates to version 14, removes obsolete server/auth data and custom search endpoint fields, and preserves legacy plaintext API keys in local provider settings.
+- Storage Governance now has its own settings tab, and Automatic QA has a shorter label.
+- Web and asset search settings now share a Search Services tab, use fixed official provider endpoints, and appear before Storage Governance and System settings.
 
 ## [1.4.0] - 2026-04-06
 

@@ -16,9 +16,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useT } from "../../i18n";
 import { ModelTab } from "./tabs/ModelTab";
-import { WebSearchTab } from "./tabs/WebSearchTab";
-import { AssetSearchTab } from "./tabs/AssetSearchTab";
+import { SearchServicesTab } from "./tabs/SearchServicesTab";
 import { SystemTab } from "./tabs/SystemTab";
+import { StorageTab } from "./tabs/StorageTab";
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -79,43 +79,62 @@ export function SettingsDialog({
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-md sm:max-w-md max-h-[90dvh] flex flex-col">
-        <DialogHeader className="px-2">
+        <DialogHeader className="shrink-0 px-2">
           <DialogTitle>{t.settings.title}</DialogTitle>
         </DialogHeader>
 
         <Tabs defaultValue="model" className="flex-1 min-h-0 flex flex-col px-2">
-          <TabsList className="w-full">
-            <TabsTrigger value="model">{t.settings.tabs.model}</TabsTrigger>
-            <TabsTrigger value="search">{t.settings.tabs.search}</TabsTrigger>
-            <TabsTrigger value="asset">{t.settings.tabs.asset}</TabsTrigger>
-            <TabsTrigger value="system">{t.settings.tabs.system}</TabsTrigger>
+          <TabsList className="w-full shrink-0">
+            <TabsTrigger value="model" className="px-1.5 text-xs sm:px-2 sm:text-sm">
+              {t.settings.tabs.model}
+            </TabsTrigger>
+            <TabsTrigger value="search" className="px-1.5 text-xs sm:px-2 sm:text-sm">
+              {t.settings.tabs.search}
+            </TabsTrigger>
+            <TabsTrigger value="storage" className="px-1.5 text-xs sm:px-2 sm:text-sm">
+              {t.settings.tabs.storage}
+            </TabsTrigger>
+            <TabsTrigger value="system" className="px-1.5 text-xs sm:px-2 sm:text-sm">
+              {t.settings.tabs.system}
+            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="model" className="py-4 space-y-4">
+          <TabsContent
+            value="model"
+            className="min-h-0 overflow-y-auto py-4 pr-1 space-y-4"
+          >
             <ModelTab formData={formData} setFormData={setFormData} />
           </TabsContent>
 
-          <TabsContent value="search" className="py-4 space-y-4">
-            <WebSearchTab
-              form={webSearchForm}
-              setForm={setWebSearchForm}
+          <TabsContent
+            value="search"
+            className="min-h-0 overflow-y-auto py-4 pr-1 space-y-4"
+          >
+            <SearchServicesTab
+              webSearchForm={webSearchForm}
+              setWebSearchForm={setWebSearchForm}
+              assetSearchForm={assetSearchForm}
+              setAssetSearchForm={setAssetSearchForm}
               apiType={formData.apiType}
             />
           </TabsContent>
 
-          <TabsContent value="asset" className="py-4 space-y-4">
-            <AssetSearchTab
-              form={assetSearchForm}
-              setForm={setAssetSearchForm}
-            />
+          <TabsContent
+            value="storage"
+            className="min-h-0 overflow-y-auto py-4 pr-1 space-y-4"
+          >
+            <StorageTab />
           </TabsContent>
 
-          <TabsContent value="system" className="py-4 space-y-4">
+          <TabsContent
+            value="system"
+            className="min-h-0 overflow-y-auto py-4 pr-1 space-y-4"
+          >
             <SystemTab form={systemForm} setForm={setSystemForm} />
           </TabsContent>
         </Tabs>
 
-        <DialogFooter className="flex-row justify-end">
+        <DialogFooter className="shrink-0 flex-row justify-end">
           <Button variant="outline" onClick={onClose}>
             {t.settings.cancel}
           </Button>

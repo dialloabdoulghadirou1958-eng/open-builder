@@ -1,4 +1,4 @@
-import { Key, Globe, Search } from "lucide-react";
+import { Key, Images } from "lucide-react";
 import type { AssetSearchSettings } from "../../../store/settings";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,8 +22,8 @@ export function AssetSearchTab({ form, setForm }: AssetSearchTabProps) {
     <>
       <div className="space-y-2">
         <Label htmlFor="assetEngine">
-          <Search size={16} className="inline mr-1" />
-          {t.settings.assetSearch.engine}
+          <Images size={16} className="inline mr-1" />
+          {t.settings.searchServices.asset}
         </Label>
         <Select
           value={form.engine}
@@ -47,87 +47,45 @@ export function AssetSearchTab({ form, setForm }: AssetSearchTabProps) {
       </div>
 
       {form.engine === "pixabay" && (
-        <>
-          <div className="space-y-2">
-            <Label htmlFor="pixabayApiKey">
-              <Key size={16} className="inline mr-1" />
-              Pixabay API Key
-            </Label>
-            <Input
-              id="pixabayApiKey"
-              type="password"
-              value={form.pixabayApiKey}
-              onChange={(e) =>
-                setForm({ ...form, pixabayApiKey: e.target.value })
-              }
-              placeholder="..."
-            />
-            <p className="text-xs text-muted-foreground">
-              {t.settings.pixabayKey.hint}
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="pixabayApiUrl">
-              <Globe size={16} className="inline mr-1" />
-              Pixabay API URL
-            </Label>
-            <Input
-              id="pixabayApiUrl"
-              type="text"
-              value={form.pixabayApiUrl}
-              onChange={(e) =>
-                setForm({ ...form, pixabayApiUrl: e.target.value })
-              }
-              placeholder="https://pixabay.com/api"
-            />
-            <p className="text-xs text-muted-foreground">
-              {t.settings.pixabayUrl.hint}
-            </p>
-          </div>
-        </>
+        <div className="space-y-2">
+          <Label htmlFor="pixabayApiKey">
+            <Key size={16} className="inline mr-1" />
+            Pixabay API Key
+          </Label>
+          <Input
+            id="pixabayApiKey"
+            type="password"
+            value={form.pixabayApiKey}
+            onChange={(e) =>
+              setForm({ ...form, pixabayApiKey: e.target.value })
+            }
+            placeholder="..."
+          />
+          <p className="text-xs text-muted-foreground">
+            {t.settings.pixabayKey.hint}
+          </p>
+        </div>
       )}
 
       {form.engine === "unsplash" && (
-        <>
-          <div className="space-y-2">
-            <Label htmlFor="unsplashApiKey">
-              <Key size={16} className="inline mr-1" />
-              Unsplash API Key
-            </Label>
-            <Input
-              id="unsplashApiKey"
-              type="password"
-              value={form.unsplashApiKey}
-              onChange={(e) =>
-                setForm({ ...form, unsplashApiKey: e.target.value })
-              }
-              placeholder="..."
-            />
-            <p className="text-xs text-muted-foreground">
-              {t.settings.unsplashKey.hint}
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="unsplashApiUrl">
-              <Globe size={16} className="inline mr-1" />
-              Unsplash API URL
-            </Label>
-            <Input
-              id="unsplashApiUrl"
-              type="text"
-              value={form.unsplashApiUrl}
-              onChange={(e) =>
-                setForm({ ...form, unsplashApiUrl: e.target.value })
-              }
-              placeholder="https://api.unsplash.com"
-            />
-            <p className="text-xs text-muted-foreground">
-              {t.settings.unsplashUrl.hint}
-            </p>
-          </div>
-        </>
+        <div className="space-y-2">
+          <Label htmlFor="unsplashApiKey">
+            <Key size={16} className="inline mr-1" />
+            Unsplash API Key
+          </Label>
+          <Input
+            id="unsplashApiKey"
+            type="password"
+            value={form.unsplashApiKey}
+            onChange={(e) =>
+              setForm({ ...form, unsplashApiKey: e.target.value })
+            }
+            placeholder="..."
+          />
+          <p className="text-xs text-muted-foreground">
+            {t.settings.unsplashKey.hint}
+          </p>
+        </div>
       )}
     </>
   );

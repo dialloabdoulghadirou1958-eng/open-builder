@@ -45,7 +45,7 @@ interface ConversationState {
   _hasHydrated: boolean;
 
   createConversation: () => string;
-  importConversation: (conversation: Conversation) => string;
+  addConversation: (conversation: Conversation) => string;
   deleteConversation: (id: string) => void;
   switchConversation: (id: string) => void;
 
@@ -94,7 +94,7 @@ export const useConversationStore = create<ConversationState>()(
         return id;
       },
 
-      importConversation: (conversation) => {
+      addConversation: (conversation) => {
         const validation = validateProjectFiles(conversation.files);
         if (!validation.ok) {
           throw new Error(validation.error);

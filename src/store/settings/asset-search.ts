@@ -3,17 +3,13 @@ import type { StateCreator } from "zustand";
 export interface AssetSearchSettings {
   engine: "pixabay" | "unsplash" | "disabled";
   pixabayApiKey: string;
-  pixabayApiUrl: string;
   unsplashApiKey: string;
-  unsplashApiUrl: string;
 }
 
 export const assetSearchDefaults: AssetSearchSettings = {
   engine: "disabled",
   pixabayApiKey: "",
-  pixabayApiUrl: "https://pixabay.com/api",
   unsplashApiKey: "",
-  unsplashApiUrl: "https://api.unsplash.com",
 };
 
 export interface AssetSearchSlice {

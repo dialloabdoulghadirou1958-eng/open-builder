@@ -1,4 +1,4 @@
-import { History, PanelLeftOpen, Settings, GitFork } from "lucide-react";
+import { History, PanelLeftOpen, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useConversationStore, DEFAULT_TITLE } from "../../store/conversation";
 import { useT } from "../../i18n";
@@ -49,16 +49,6 @@ export function ChatHeader({
         >
           <History size={18} />
         </Button>
-        <a href="https://github.com/Amery2010/open-builder" target="_blank" rel="noreferrer">
-          <Button
-            variant="ghost"
-            size="icon"
-            title={t.header.openSource}
-            className="h-8 w-8 shrink-0"
-          >
-            <GitFork size={18} />
-          </Button>
-        </a>
         <Button
           variant="ghost"
           size="icon"

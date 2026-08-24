@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { useT } from "../i18n";
-import { useSecretsStore } from "../store/secrets";
 import { useSettingsStore } from "../store/settings";
 import { SHORTCUT_LABELS } from "./useGlobalShortcuts";
 import type { CommandAction } from "../components/command-palette/CommandPalette";
@@ -23,9 +22,6 @@ export function useCommandPaletteActions({
   messagesEmpty,
 }: UseCommandPaletteActionsArgs): CommandAction[] {
   const t = useT();
-  const vaultMode = useSecretsStore((s) => s.mode);
-  const vaultUnlocked = useSecretsStore((s) => s.unlocked);
-  const lockVault = useSecretsStore((s) => s.lock);
   const setSystem = useSettingsStore((s) => s.setSystem);
   const systemSettingsLive = useSettingsStore((s) => s.system);
 
@@ -72,13 +68,6 @@ export function useCommandPaletteActions({
         group: t.commandPalette.groups.settings,
         run: cycleTheme,
       },
-      {
-        id: "lock-vault",
-        label: t.commandPalette.actions.lockVault,
-        group: t.commandPalette.groups.settings,
-        hidden: vaultMode !== "passphrase" || !vaultUnlocked,
-        run: () => lockVault(),
-      },
     ];
   }, [
     t,
@@ -90,8 +79,5 @@ export function useCommandPaletteActions({
     stop,
     systemSettingsLive,
     setSystem,
-    vaultMode,
-    vaultUnlocked,
-    lockVault,
   ]);
 }

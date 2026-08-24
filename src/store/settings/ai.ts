@@ -1,6 +1,5 @@
 import type { StateCreator } from "zustand";
 import type { ApiType } from "../../lib/ai/provider-config";
-import { useSecretsStore } from "../secrets";
 
 export interface AISettings {
   apiType: ApiType;
@@ -44,8 +43,6 @@ export const createAISlice: StateCreator<AISlice, [], [], AISlice> = (
       apiBaseUrl: settings.apiBaseUrl.replace(/\/+$/, ""),
     };
     set({ ai: normalized });
-    // Persist apiKey to the encrypted vault (not localStorage).
-    void useSecretsStore.getState().setApiKey(normalized.apiKey);
   },
   setModelCache: (cache) => set({ modelCache: cache }),
   clearModelCache: () => set({ modelCache: null }),

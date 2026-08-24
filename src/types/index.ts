@@ -202,24 +202,3 @@ export interface ProjectTemplate {
   createdAt: number;
   updatedAt: number;
 }
-
-// ─── Style asset types ──────────────────────────────────────────────────────
-
-export interface StyleAssetTokens {
-  colors: string[];
-  typography?: string;
-  radius?: string;
-  spacing?: string;
-}
-
-export interface StyleAsset {
-  id: string;
-  name: string;
-  description?: string;
-  instructions: string;
-  tokens: StyleAssetTokens;
-  tags: string[];
-  enabled: boolean;
-  createdAt: number;
-  updatedAt: number;
-}

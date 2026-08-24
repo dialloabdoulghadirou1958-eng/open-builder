@@ -26,7 +26,6 @@ import { getSkillRegistry } from "../skills/instance";
 import { scriptExecutor } from "../skills/script-executor";
 import { isSkillsAvailable } from "../skills/fs";
 import { skillActiveContext } from "../skills/active-context";
-import { useSecurityAuditStore } from "../../store/security-audit";
 import {
   INSTALL_COMPONENT_TOOL,
   createInstallComponentHandler,
@@ -165,25 +164,6 @@ export function buildToolHandlers(
             skillName: skill.name,
             allowedTools: skill.allowedTools,
             activatedAt: Date.now(),
-          });
-        },
-        onScriptExecuted: ({
-          skill,
-          scriptPath,
-          args,
-          startedAt,
-          finishedAt,
-          result,
-        }) => {
-          useSecurityAuditStore.getState().recordSkillScriptExecution({
-            skillId: skill.id,
-            skillName: skill.name,
-            scriptPath,
-            args,
-            startedAt,
-            finishedAt,
-            exitCode: result?.exitCode ?? null,
-            status: result && result.exitCode === 0 ? "success" : "failed",
           });
         },
       })

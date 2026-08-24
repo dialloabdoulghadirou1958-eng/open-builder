@@ -23,10 +23,8 @@ import type {
 } from "../types";
 import { useMemoryStore } from "../store/memory";
 import { useSkillsStore } from "../store/skills";
-import { useStyleAssetStore } from "../store/style-assets";
 import { useFileOperations } from "./useFileOperations";
 import { useTitleAndCompression } from "./useTitleAndCompression";
-import { buildStyleAssetPromptSection } from "../lib/utils/style-assets";
 import {
   classifyGenerationError,
   formatGenerationErrorMessage,
@@ -872,13 +870,9 @@ export function useGenerator({
       const skillsSuffix = runtime.buildSkillsPromptSection(
         useSkillsStore.getState().getEnabledSkills(),
       );
-      const styleAssetSuffix = buildStyleAssetPromptSection(
-        useStyleAssetStore.getState().getEnabledAssets(),
-      );
       generator.setSystemPromptSuffix(
         memorySuffix +
           skillsSuffix +
-          styleAssetSuffix +
           (planMode ? PLAN_MODE_SYSTEM_SUFFIX : ""),
       );
     },

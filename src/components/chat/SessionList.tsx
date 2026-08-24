@@ -1,27 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Plus,
-  PanelLeftClose,
-  Search,
-  Upload,
-  Library,
-} from "lucide-react";
-import { saveAs } from "file-saver";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Plus, PanelLeftClose, Search, Library } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useConversationStore, DEFAULT_TITLE } from "../../store/conversation";
 import { useProjectTemplateStore } from "../../store/project-templates";
 import { useSettingsStore } from "../../store/settings";
-import { useSnapshotStore } from "../../store/snapshot";
-import {
-  cloneImportedConversation,
-  cloneImportedSnapshots,
-  createConversationExport,
-  exportFileName,
-  formatConversationImportBytes,
-  MAX_CONVERSATION_IMPORT_BYTES,
-  parseConversationExport,
-} from "../../lib/utils/conversation-export";
 import {
   getNextVisibleCount,
   getVisibleListWindow,
@@ -43,7 +26,6 @@ interface SessionListProps {
   onClose: () => void;
 }
 
-type SessionFilter = "all" | "pinned" | "archived" | "project" | "error";
 const SESSION_LIST_BATCH = 80;
 
 export function SessionList({ onClose }: SessionListProps) {
@@ -52,7 +34,7 @@ export function SessionList({ onClose }: SessionListProps) {
   const activeId = useConversationStore((s) => s.activeId);
   const switchConversation = useConversationStore((s) => s.switchConversation);
   const createConversation = useConversationStore((s) => s.createConversation);
-  const importConversation = useConversationStore((s) => s.importConversation);
+  const addConversation = useConversationStore((s) => s.addConversation);
   const deleteConversation = useConversationStore((s) => s.deleteConversation);
   const renameConversation = useConversationStore((s) => s.renameConversation);
   const pinConversation = useConversationStore((s) => s.pinConversation);
@@ -66,18 +48,8 @@ export function SessionList({ onClose }: SessionListProps) {
   const templateRecord = useProjectTemplateStore((s) => s.templates);
   const addTemplate = useProjectTemplateStore((s) => s.addTemplate);
   const deleteTemplate = useProjectTemplateStore((s) => s.deleteTemplate);
-  const importSnapshotsForConversation = useSnapshotStore(
-    (s) => s.importSnapshotsForConversation,
-  );
-
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<SessionFilter>("all");
-  const [importMessage, setImportMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
-  const importInputRef = useRef<HTMLInputElement>(null);
 
   const [pinnedOpen, setPinnedOpen] = useState(true);
   const [normalOpen, setNormalOpen] = useState(true);
@@ -98,7 +70,7 @@ export function SessionList({ onClose }: SessionListProps) {
     setVisiblePinnedCount(SESSION_LIST_BATCH);
     setVisibleNormalCount(SESSION_LIST_BATCH);
     setVisibleArchivedCount(SESSION_LIST_BATCH);
-  }, [filter, query]);
+  }, [query]);
 
   const matchesQuery = useCallback(
     (conv: Conversation) => {
@@ -112,50 +84,12 @@ export function SessionList({ onClose }: SessionListProps) {
     [query, t.chat.newApp],
   );
 
-  const hasProject = useCallback(
-    (conv: Conversation) =>
-      conv.isProjectInitialized || Object.keys(conv.files).length > 0,
-    [],
-  );
-
-  const hasError = useCallback(
-    (conv: Conversation) =>
-      conv.messages.some(
-        (m) =>
-          m.isError ||
-          (m.role === "assistant" &&
-            typeof m.content === "string" &&
-            m.content.startsWith("⚠️")),
-      ),
-    [],
-  );
-
-  const matchesFilter = useCallback(
-    (conv: Conversation) => {
-      switch (filter) {
-        case "pinned":
-          return !!conv.pinned && !conv.archived;
-        case "archived":
-          return !!conv.archived;
-        case "project":
-          return hasProject(conv);
-        case "error":
-          return hasError(conv);
-        case "all":
-        default:
-          return true;
-      }
-    },
-    [filter, hasError, hasProject],
-  );
-
   const sorted = useMemo(
     () =>
       Object.values(conversations)
         .filter(matchesQuery)
-        .filter(matchesFilter)
         .sort((a, b) => b.updatedAt - a.updatedAt),
-    [conversations, matchesQuery, matchesFilter],
+    [conversations, matchesQuery],
   );
 
   const pinned = useMemo(
@@ -172,7 +106,7 @@ export function SessionList({ onClose }: SessionListProps) {
     [templateRecord],
   );
 
-  const hasGroups = filter === "all" && (pinned.length > 0 || archived.length > 0);
+  const hasGroups = pinned.length > 0 || archived.length > 0;
   const deleteDisabled = Object.keys(conversations).length <= 1;
   const sessionWindow = useMemo(
     () => getVisibleListWindow(sorted, visibleSessionCount),
@@ -266,90 +200,13 @@ export function SessionList({ onClose }: SessionListProps) {
         id: crypto.randomUUID(),
         now: Date.now(),
       });
-      importConversation(conversation);
-      setFilter("all");
+      addConversation(conversation);
       setQuery("");
       setTemplatesOpen(false);
       onClose();
     },
-    [importConversation, onClose],
+    [addConversation, onClose],
   );
-
-  const handleExport = useCallback(
-    (convId: string) => {
-      const conv = useConversationStore.getState().conversations[convId];
-      if (!conv) return;
-      const snapshots =
-        useSnapshotStore.getState().snapshots[convId] ?? [];
-      const payload = createConversationExport(conv, snapshots);
-      const blob = new Blob([JSON.stringify(payload, null, 2)], {
-        type: "application/json;charset=utf-8",
-      });
-      saveAs(blob, exportFileName(displayTitle(conv)));
-    },
-    [displayTitle],
-  );
-
-  const handleImportFile = useCallback(
-    async (file: File) => {
-      setImportMessage(null);
-      if (file.size > MAX_CONVERSATION_IMPORT_BYTES) {
-        setImportMessage({
-          type: "error",
-          text: t.sessions.importTooLarge.replace(
-            "{size}",
-            formatConversationImportBytes(MAX_CONVERSATION_IMPORT_BYTES),
-          ),
-        });
-        if (importInputRef.current) importInputRef.current.value = "";
-        return;
-      }
-      try {
-        const parsed = parseConversationExport(await file.text());
-        const now = Date.now();
-        const conversation = cloneImportedConversation(
-          parsed.conversation,
-          crypto.randomUUID(),
-          now,
-        );
-        const snapshots = cloneImportedSnapshots(
-          parsed.snapshots,
-          conversation.id,
-          now,
-        );
-        const id = importConversation(conversation);
-        importSnapshotsForConversation(id, snapshots);
-        switchConversation(id);
-        setFilter("all");
-        setQuery("");
-        setImportMessage({ type: "success", text: t.sessions.importSuccess });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Unknown error";
-        setImportMessage({
-          type: "error",
-          text: t.sessions.importFailed.replace("{message}", message),
-        });
-      } finally {
-        if (importInputRef.current) importInputRef.current.value = "";
-      }
-    },
-    [
-      importConversation,
-      importSnapshotsForConversation,
-      switchConversation,
-      t.sessions.importFailed,
-      t.sessions.importSuccess,
-      t.sessions.importTooLarge,
-    ],
-  );
-
-  const filterOptions: Array<{ value: SessionFilter; label: string }> = [
-    { value: "all", label: t.sessions.filters.all },
-    { value: "pinned", label: t.sessions.filters.pinned },
-    { value: "archived", label: t.sessions.filters.archived },
-    { value: "project", label: t.sessions.filters.project },
-    { value: "error", label: t.sessions.filters.error },
-  ];
 
   const handleSmartRename = useCallback(
     async (convId: string) => {
@@ -391,7 +248,6 @@ export function SessionList({ onClose }: SessionListProps) {
       onSelect={handleSelect}
       onRename={renameConversation}
       onSmartRename={handleSmartRename}
-      onExport={handleExport}
       onSaveAsTemplate={openTemplates}
       canSaveAsTemplate={Object.keys(conv.files).length > 0}
       pin={pinConversation}
@@ -450,16 +306,6 @@ export function SessionList({ onClose }: SessionListProps) {
             variant="ghost"
             size="icon"
             className="h-8 w-8"
-            onClick={() => importInputRef.current?.click()}
-            title={t.sessions.import}
-            aria-label={t.sessions.import}
-          >
-            <Upload size={17} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
             onClick={handleNew}
             aria-label={t.commandPalette.actions.newConversation}
           >
@@ -467,17 +313,7 @@ export function SessionList({ onClose }: SessionListProps) {
           </Button>
         </div>
       </div>
-      <input
-        ref={importInputRef}
-        type="file"
-        accept="application/json,.json,.open-builder.json"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) void handleImportFile(file);
-        }}
-      />
-      <div className="px-3 py-2 border-b">
+      <div className="px-3 py-3">
         <div className="relative">
           <Search
             size={14}
@@ -494,34 +330,6 @@ export function SessionList({ onClose }: SessionListProps) {
           />
         </div>
       </div>
-      <div className="px-3 py-2 border-b">
-        <div className="flex gap-1 overflow-x-auto">
-          {filterOptions.map((option) => (
-            <Button
-              key={option.value}
-              type="button"
-              variant={filter === option.value ? "secondary" : "ghost"}
-              size="sm"
-              className="h-7 shrink-0 px-2 text-xs"
-              onClick={() => setFilter(option.value)}
-            >
-              {option.label}
-            </Button>
-          ))}
-        </div>
-      </div>
-      {importMessage && (
-        <p
-          className={`border-b px-3 py-2 text-xs ${
-            importMessage.type === "error"
-              ? "text-destructive"
-              : "text-muted-foreground"
-          }`}
-          role={importMessage.type === "error" ? "alert" : "status"}
-        >
-          {importMessage.text}
-        </p>
-      )}
       <div className="flex-1 overflow-y-auto">
         {sorted.length === 0 ? (
           <p className="px-3 py-4 text-xs text-muted-foreground text-center">
