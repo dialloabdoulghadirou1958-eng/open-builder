@@ -6,8 +6,8 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Vite](https://img.shields.io/badge/Vite-7.x-646CFF?logo=vite&logoColor=white)](https://vitejs.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-7.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Vite](https://img.shields.io/badge/Vite-8.x-646CFF?logo=vite&logoColor=white)](https://vitejs.dev)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4.x-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![Tauri](https://img.shields.io/badge/Tauri-2.x-FFC131?logo=tauri&logoColor=white)](https://tauri.app)
 
@@ -55,11 +55,9 @@ Open Builder 是一个完全运行在浏览器中的 AI 驱动 Web 应用生成�
 - **子代理协作** — 内置代码浏览、代码审查、依赖建议、Bug 调查、UI 审查等只读子代理
 - **内置搜索** — 支持启用模型内置的搜索服务
 - **CORS 解决方案** — 客户端版本支持 API 反向代理转发，有效解决跨域问题
-- **统一服务端 API** — 可选接入 Mohua 服务端，在登录状态下统一代理 AI 调用、联网搜索与素材搜索
 
 ### 交互体验
 
-- **SSO 认证** — 通过 OAuth2 PKCE Authorization Code flow 登录 `u14.app`
 - **多会话管理** — 会话列表侧边栏支持创建、切换、删除，历史记录持久化保存
 - **会话整理** — 支持会话搜索、筛选、置顶、归档、复制、导入/导出与智能重命名
 - **项目模板** — 可将生成项目保存为本地模板，并从模板快速新建会话
@@ -68,7 +66,7 @@ Open Builder 是一个完全运行在浏览器中的 AI 驱动 Web 应用生成�
 - **Slash 指令** — 输入框支持 `/compact`、`/review` 等斜杠快捷命令
 - **图片与文件输入** — 支持上传截图、设计稿或文件作为上下文输入
 - **技能系统** — 支持导入、启用、搜索、筛选和检查本地技能，可查看来源、权限、脚本和风险摘要
-- **凭据金库** — API Key 与登录凭据可使用设备密钥或主密码加密保存
+- **凭据金库** — API Key 可使用设备密钥或主密码加密保存
 - **存储治理** — 可查看本地数据占用，并安全清理归档会话、空会话、旧快照和审计日志
 - **流式输出** — 实时展示 AI 思考过程和代码生成进度
 - **扩展思考** — 支持 Extended Thinking / Reasoning 模式（DeepSeek-R1、Claude 4.6 等）
@@ -88,7 +86,8 @@ Open Builder 是一个完全运行在浏览器中的 AI 驱动 Web 应用生成�
 
 ### 前置要求
 
-- Node.js 20+ 或 [Bun](https://bun.sh)
+- Node.js 24 LTS
+- pnpm 11
 - 任意 OpenAI 兼容 API 的 Key
 
 ### 安装与运行
@@ -138,7 +137,7 @@ pnpm tauri:android:build
 | 模型名称       | 使用的模型 ID         | `gpt-5.3-codex`、`deepseek-chat`             |
 | Tavily API Key | （可选）联网搜索功能  | `tvly-...`                                   |
 
-> 普通设置保存在本地浏览器存储中，API Key 与登录凭据保存在本地加密凭据金库中。登录用户会通过 Mohua 服务端安全代理请求，无需在本地配置 API Key。
+> 普通设置保存在本地浏览器存储中，API Key 保存在本地加密凭据金库中。
 
 ---
 
@@ -187,8 +186,8 @@ pnpm tauri:android:build
 
 | 类别          | 技术                              |
 | ------------- | --------------------------------- |
-| 框架          | React 19 + TypeScript 5           |
-| 构建工具      | Vite 7                            |
+| 框架          | React 19 + TypeScript 7           |
+| 构建工具      | Vite 8                            |
 | 样式          | Tailwind CSS v4                   |
 | UI 组件       | shadcn/ui + Radix UI              |
 | 代码沙箱      | Sandpack (CodeSandbox)            |
@@ -258,7 +257,7 @@ git push origin v1.0.0
 | ------------ | ---------------- |
 | 构建命令     | `pnpm run build` |
 | 输出目录     | `dist`           |
-| Node.js 版本 | `20`             |
+| Node.js 版本 | `24`             |
 
 ### 部署到 Netlify
 

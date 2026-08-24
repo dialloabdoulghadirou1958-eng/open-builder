@@ -154,7 +154,6 @@ function readConfiguredApiHosts(): string[] {
   } catch {
     // Ignore malformed local settings.
   }
-  addHostFromUrl(hosts, import.meta.env.VITE_MOHUA_API_URL);
   return [...hosts];
 }
 

@@ -7,18 +7,6 @@ export const en: typeof zh = {
     startBuildingDesc:
       "Describe the app you want to create in the left chat box, and AI will generate complete project code for you.",
   },
-  auth: {
-    login: "Sign In",
-    loginDesc: "Sign in to use server-side AI, web search & assets",
-    logout: "Sign Out",
-    loggingIn: "Signing in...",
-    callbackProcessing: "Completing authentication...",
-    callbackSuccess: "Login successful",
-    callbackError: "Login failed",
-    tokenExpired: "Session expired, please sign in again",
-    retryLogin: "Sign in again",
-    orLogin: "or sign in to Mohua",
-  },
   settings: {
     title: "Settings",
     tabs: {
@@ -26,7 +14,6 @@ export const en: typeof zh = {
       search: "Web Search",
       asset: "Asset Search",
       system: "System",
-      serverService: "Service Config",
     },
     cancel: "Cancel",
     save: "Save",
@@ -137,7 +124,7 @@ export const en: typeof zh = {
       cancel: "Cancel",
       unlockTitle: "Unlock credential vault",
       unlockBody:
-        "Your API key and session tokens are encrypted. Enter your passphrase to continue.",
+        "Your API key is encrypted. Enter your passphrase to continue.",
     },
     skillAudit: {
       label: "Skill Script Audit",
@@ -149,9 +136,6 @@ export const en: typeof zh = {
     },
     securityCenter: {
       label: "Security Center",
-      auth: "Account",
-      signedIn: "Signed in to server",
-      localMode: "Local key mode",
       vault: "Credential vault",
       vaultUnlocked: "Unlocked",
       vaultLocked: "Locked",
@@ -217,24 +201,6 @@ export const en: typeof zh = {
       confirm: "Confirm Reset",
       cancel: "Cancel",
       warning: "This will reset all settings and delete all data (conversations, snapshots, memories). This action cannot be undone.",
-    },
-    serverService: {
-      modelLabel: "AI Model",
-      modelDesc: "Select an AI model from server",
-      selectPlaceholder: "Select a model",
-      refreshModels: "Refresh model list",
-      loadingModels: "Loading models...",
-      webSearch: "Web Search",
-      webSearchDesc: "Use server-side web search to enhance AI",
-      webSearchProvider: "Search Provider",
-      assetSearch: "Asset Search",
-      assetSearchDesc: "Use server-side asset search for royalty-free images",
-      assetSearchProvider: "Asset Provider",
-      providerDefault: "Default (auto-select)",
-      enabled: "Enabled",
-      disabled: "Disabled",
-      serverInfo: "All API requests are proxied by Mohua, no API Key needed",
-      loggedInAs: "Signed in as",
     },
   },
   empty: {
@@ -474,7 +440,7 @@ export const en: typeof zh = {
         unknown: "Generation failed",
       },
       actions: {
-        auth: "Check your sign-in state, API key, base URL, and model settings.",
+        auth: "Check your API key, base URL, and model settings.",
         network: "Check your network connection, proxy settings, or service URL, then retry.",
         model: "The model service may be unavailable or rate-limited. Try again later or switch models.",
         tool: "A tool call failed. Retrying often recovers; if it repeats, inspect recent files or tool arguments.",

@@ -14,7 +14,6 @@ import { useIsMobile } from "./hooks/useIsMobile";
 import { useTheme } from "./hooks/useTheme";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 import { useCommandPaletteActions } from "./hooks/useCommandPaletteActions";
-import { useAuthStore } from "./store/auth";
 import { useConversationStore } from "./store/conversation";
 import { useT } from "./i18n";
 
@@ -33,13 +32,6 @@ export default function App() {
   const switchConversation = useConversationStore((s) => s.switchConversation);
   const isMobile = useIsMobile();
   useTheme();
-
-  useEffect(() => {
-    useAuthStore
-      .getState()
-      .getValidTokenAsync()
-      .catch(() => {});
-  }, []);
 
   const didInitConversation = useRef(false);
   useEffect(() => {
@@ -76,8 +68,6 @@ export default function App() {
     handleSaveAssetSearchSettings,
     systemSettings,
     handleSaveSystemSettings,
-    serverServiceSettings,
-    handleSaveServerServiceSettings,
     template,
     setTemplate,
     sandpackKey,
@@ -102,7 +92,6 @@ export default function App() {
     settings,
     webSearchSettings,
     assetSearchSettings,
-    serverServiceSettings,
     setMessages,
     setFiles,
     setIsGenerating,
@@ -231,8 +220,6 @@ export default function App() {
         onSaveAssetSearch={handleSaveAssetSearchSettings}
         systemSettings={systemSettings}
         onSaveSystem={handleSaveSystemSettings}
-        serverServiceSettings={serverServiceSettings}
-        onSaveServerService={handleSaveServerServiceSettings}
       />
     </ResizablePanelGroup>
   );

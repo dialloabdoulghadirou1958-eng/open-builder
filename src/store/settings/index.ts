@@ -20,28 +20,17 @@ import {
   systemDefaults,
   createSystemSlice,
 } from "./system";
-import {
-  type ServerServiceSlice,
-  createServerServiceSlice,
-} from "./server-service";
 import { SETTINGS_VERSION, migrateSettings } from "./migrations";
 
-export { SERVER_ENGINE } from "./web-search";
-export type { AISettings } from "./ai";
+export type { AISettings, ModelCache } from "./ai";
 export type { WebSearchSettings } from "./web-search";
 export type { AssetSearchSettings } from "./asset-search";
 export type { Language, Theme, SystemSettings } from "./system";
-export type {
-  ServerServiceSettings,
-  ModelCache,
-  ServerServiceCache,
-} from "./server-service";
 
 export type SettingsState = AISlice &
   WebSearchSlice &
   AssetSearchSlice &
-  SystemSlice &
-  ServerServiceSlice & {
+  SystemSlice & {
     resetAll: () => void;
   };
 
@@ -52,7 +41,6 @@ export const useSettingsStore = create<SettingsState>()(
       ...createWebSearchSlice(...a),
       ...createAssetSearchSlice(...a),
       ...createSystemSlice(...a),
-      ...createServerServiceSlice(...a),
       resetAll: () => {
         const [set] = a;
         set({
@@ -61,7 +49,6 @@ export const useSettingsStore = create<SettingsState>()(
           assetSearch: assetSearchDefaults,
           system: systemDefaults,
           modelCache: null,
-          serverServiceCache: null,
         });
       },
     }),
@@ -75,8 +62,6 @@ export const useSettingsStore = create<SettingsState>()(
         webSearch: state.webSearch,
         assetSearch: state.assetSearch,
         system: state.system,
-        serverService: state.serverService,
-        serverServiceCache: state.serverServiceCache,
       }),
       migrate: (persisted, version) =>
         migrateSettings(persisted, version) as SettingsState,

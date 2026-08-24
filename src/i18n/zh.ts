@@ -5,18 +5,6 @@ export const zh = {
     startBuildingDesc:
       "在左侧对话框中描述你想要创建的应用，AI 将为你生成完整的项目代码。",
   },
-  auth: {
-    login: "登录",
-    loginDesc: "登录后使用服务端 AI 模型、联网搜索和素材搜索",
-    logout: "退出登录",
-    loggingIn: "正在登录...",
-    callbackProcessing: "正在完成认证...",
-    callbackSuccess: "登录成功",
-    callbackError: "登录失败",
-    tokenExpired: "登录已过期，请重新登录",
-    retryLogin: "重新登录",
-    orLogin: "或登录墨华账号",
-  },
   settings: {
     title: "设置",
     tabs: {
@@ -24,7 +12,6 @@ export const zh = {
       search: "联网搜索",
       asset: "素材搜索",
       system: "系统设置",
-      serverService: "服务配置",
     },
     cancel: "取消",
     save: "保存设置",
@@ -118,7 +105,7 @@ export const zh = {
       confirm: "确认",
       cancel: "取消",
       unlockTitle: "解锁凭据金库",
-      unlockBody: "您的 API 密钥与登录凭证已加密保存。请输入主密码以继续。",
+      unlockBody: "您的 API 密钥已加密保存。请输入主密码以继续。",
     },
     skillAudit: {
       label: "技能脚本审计",
@@ -130,9 +117,6 @@ export const zh = {
     },
     securityCenter: {
       label: "安全中心",
-      auth: "账号",
-      signedIn: "已登录服务端",
-      localMode: "本地密钥模式",
       vault: "凭据金库",
       vaultUnlocked: "已解锁",
       vaultLocked: "已锁定",
@@ -197,24 +181,6 @@ export const zh = {
       cancel: "取消",
       warning:
         "此操作将重置所有设置并删除所有数据（会话、快照、记忆）。此操作不可撤销。",
-    },
-    serverService: {
-      modelLabel: "AI 模型",
-      modelDesc: "选择服务端提供的 AI 模型",
-      selectPlaceholder: "请选择模型",
-      refreshModels: "刷新模型列表",
-      loadingModels: "加载模型列表...",
-      webSearch: "联网搜索",
-      webSearchDesc: "使用服务端联网搜索增强 AI 能力",
-      webSearchProvider: "搜索供应商",
-      assetSearch: "素材搜索",
-      assetSearchDesc: "使用服务端素材搜索获取免版权图片",
-      assetSearchProvider: "素材供应商",
-      providerDefault: "默认（自动选择）",
-      enabled: "启用",
-      disabled: "停用",
-      serverInfo: "所有 API 请求由墨华服务端代理，无需配置 API Key",
-      loggedInAs: "登录为",
     },
   },
   empty: {
@@ -451,7 +417,7 @@ export const zh = {
         unknown: "生成失败",
       },
       actions: {
-        auth: "请检查登录状态、API Key、Base URL 和模型配置。",
+        auth: "请检查 API Key、Base URL 和模型配置。",
         network: "请检查网络连接、代理设置或服务地址，然后重试。",
         model: "模型服务暂时不可用或限流，请稍后重试或切换模型。",
         tool: "工具调用失败，重试通常可以恢复；如果反复失败，请检查最近的文件或工具参数。",

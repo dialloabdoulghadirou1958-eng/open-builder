@@ -1,8 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { type WebSearchSettings, SERVER_ENGINE } from "../../store/settings";
-import { serverWebSearch } from "../services/mohua-api";
-import { toolResult } from "../utils/tool-result";
+import type { WebSearchSettings } from "../../store/settings";
 import {
   WEB_PAGE_MAX_CHARS,
   WEB_READER_MAX_URLS,
@@ -354,43 +352,6 @@ export function createSearchToolHandler(
           return firecrawlSearch(settings, query!.query, a.max_results);
         case "web_reader":
           return firecrawlScrape(settings, readerUrls!.urls);
-      }
-    } else if (engine === SERVER_ENGINE) {
-      switch (name) {
-        case "web_search":
-          const maxResults = clampInt(
-            a.max_results,
-            5,
-            1,
-            WEB_SEARCH_MAX_RESULTS,
-          );
-          return toolResult(
-            serverWebSearch({
-              query: query!.query,
-              providerId: settings.backendProvider,
-              maxResults,
-            }),
-            (results) => {
-              const limited = limitArray(results, maxResults);
-              return {
-                results: limited.items.map((result: any) => ({
-                  ...result,
-                  content: truncateText(
-                    result.content ?? result.snippet ?? "",
-                    SEARCH_SNIPPET_MAX_CHARS,
-                  ).text,
-                })),
-                meta: {
-                  engine: SERVER_ENGINE,
-                  maxResults,
-                  truncatedResults: limited.truncated,
-                },
-              };
-            },
-          );
-        case "web_reader":
-          // The server doesn't support batch web_reader yet, so fallback to Jina reader directly
-          return jinaFallback(readerUrls!.urls);
       }
     }
 

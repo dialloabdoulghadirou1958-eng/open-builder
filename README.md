@@ -6,8 +6,8 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Vite](https://img.shields.io/badge/Vite-7.x-646CFF?logo=vite&logoColor=white)](https://vitejs.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-7.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Vite](https://img.shields.io/badge/Vite-8.x-646CFF?logo=vite&logoColor=white)](https://vitejs.dev)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4.x-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![Tauri](https://img.shields.io/badge/Tauri-2.x-FFC131?logo=tauri&logoColor=white)](https://tauri.app)
 
@@ -55,11 +55,9 @@ It also supports building as a desktop app (macOS / Windows / Linux) and mobile 
 - **Subagent Collaboration** — Built-in read-only subagents for code exploration, review, dependency advice, bug investigation, and UI critique
 - **Built-in Search** — Supports enabling the model's built-in search service
 - **CORS Resolution** — App Client-side (Tauri) API reverse proxy forwarding effectively resolves CORS issues
-- **Unified Backend API** — (Optional) Integrates with Mohua server to proxy AI calls, Asset Search, and Web Search under one authentication.
 
 ### User Experience
 
-- **SSO Authentication** — Simple, secure login using OAuth2 PKCE Authorization Code flow via `u14.app`.
 - **Multi-Session Management** — Sidebar with create, switch, delete sessions; history persisted locally
 - **Session Organization** — Search, filter, pin, archive, fork, import/export, and smart-rename conversations
 - **Project Templates** — Save generated projects as reusable local templates and start new sessions from them
@@ -68,7 +66,7 @@ It also supports building as a desktop app (macOS / Windows / Linux) and mobile 
 - **Slash Commands** — Input box supports `/compact`, `/review`, and other shortcut commands
 - **Image & File Input** — Upload screenshots, design mockups, or files as context input
 - **Skills System** — Import, enable, search, filter, and inspect local skills with source, permission, script, and risk summaries
-- **Credential Vault** — API keys and login credentials can be encrypted with a device key or passphrase
+- **Credential Vault** — API keys can be encrypted with a device key or passphrase
 - **Storage Governance** — Inspect local data usage and safely clean archived sessions, empty sessions, old snapshots, and audit logs
 - **Streaming Output** — Real-time display of AI thinking process and code generation progress
 - **Extended Thinking** — Supports Extended Thinking / Reasoning mode (DeepSeek-R1, Claude 4.6, etc.)
@@ -88,7 +86,8 @@ It also supports building as a desktop app (macOS / Windows / Linux) and mobile 
 
 ### Prerequisites
 
-- Node.js 20+ or [Bun](https://bun.sh)
+- Node.js 24 LTS
+- pnpm 11
 - Any OpenAI-compatible API Key
 
 ### Installation
@@ -138,8 +137,7 @@ Click the settings button in the top-right corner and fill in:
 | Model Name     | Model ID to use               | `gpt-5.3-codex`, `deepseek-chat`             |
 | Tavily API Key | (Optional) Web search feature | `tvly-...`                                   |
 
-> Regular settings are stored locally in the browser. API keys and login credentials are stored in the local encrypted credential vault.
-> Users logged in via SSO bypass local API keys and proxy requests securely through the Mohua unified server.
+> Regular settings are stored locally in the browser. API keys are stored in the local encrypted credential vault.
 
 ---
 
@@ -188,8 +186,8 @@ Built-in tools:
 
 | Category       | Technology                        |
 | -------------- | --------------------------------- |
-| Framework      | React 19 + TypeScript 5           |
-| Build Tool     | Vite 7                            |
+| Framework      | React 19 + TypeScript 7           |
+| Build Tool     | Vite 8                            |
 | Styling        | Tailwind CSS v4                   |
 | UI Components  | shadcn/ui + Radix UI              |
 | Code Sandbox   | Sandpack (CodeSandbox)            |
@@ -259,7 +257,7 @@ Or manually:
 | ------------- | ---------------- |
 | Build Command | `pnpm run build` |
 | Output Dir    | `dist`           |
-| Node.js Ver   | `20`             |
+| Node.js Ver   | `24`             |
 
 ### Netlify
 

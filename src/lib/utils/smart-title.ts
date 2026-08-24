@@ -29,17 +29,12 @@ export async function generateSmartTitle(
 
     const result = await generateText({
       model: providerModel,
-      messages: [
-        {
-          role: "system",
-          content:
-            "Generate a concise title (4-12 words) for this development conversation. " +
-            "The title should describe the app or task being built. " +
-            "Use the same language as the user's message. " +
-            "Return ONLY the title text, no quotes, no explanation, no punctuation at the end.",
-        },
-        { role: "user", content: [{ type: "text", text: relevant }] },
-      ],
+      instructions:
+        "Generate a concise title (4-12 words) for this development conversation. " +
+        "The title should describe the app or task being built. " +
+        "Use the same language as the user's message. " +
+        "Return ONLY the title text, no quotes, no explanation, no punctuation at the end.",
+      prompt: relevant,
     });
 
     const title = result.text?.trim() || "";

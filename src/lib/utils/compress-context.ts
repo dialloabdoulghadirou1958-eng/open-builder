@@ -105,14 +105,9 @@ export async function compressContext(
 
   const result = await generateText({
     model: providerModel,
-    messages: [
-      {
-        role: "system",
-        content:
-          "Summarize the following conversation concisely. Focus on: what the user requested, what was built/modified, key tool operations (files read/written, searches run, results), key decisions, and current project state. Be brief but preserve all information needed to continue.",
-      },
-      { role: "user", content: [{ type: "text", text }] },
-    ],
+    instructions:
+      "Summarize the following conversation concisely. Focus on: what the user requested, what was built/modified, key tool operations (files read/written, searches run, results), key decisions, and current project state. Be brief but preserve all information needed to continue.",
+    prompt: text,
   });
 
   const summary = normalizeCompressedSummary(

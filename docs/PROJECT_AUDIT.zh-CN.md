@@ -1,6 +1,6 @@
 # Open Builder 项目审计与功能路线图
 
-更新时间：2026-06-15
+更新时间：2026-08-24
 
 ## 1. 当前项目能力概览
 
@@ -14,8 +14,9 @@ Open Builder 当前已经不是一个简单的聊天界面，而是一个浏览�
 - 项目模板：`src/store/project-templates.ts` 与 `src/components/chat/ProjectTemplateDialog.tsx` 支持把当前项目保存为本地模板，并从模板新建会话项目。
 - 风格资产：`src/store/style-assets.ts` 与 `src/components/settings/tabs/StyleAssetsPanel.tsx` 支持保存品牌/风格资产，并将启用资产注入生成器上下文。
 - 设置与凭据：`src/store/settings/*` 和 `src/store/secrets.ts` 支持模型、搜索、素材、主题、语言、Plan Mode、反向代理和加密凭据金库。
-- 外部能力：支持 Tavily、Firecrawl、Jina Reader、Pixabay、Unsplash、NPM 搜索、Mohua 服务端代理、SSO、技能导入、技能目录、技能脚本和子代理。
+- 外部能力：支持 Tavily、Firecrawl、Jina Reader、Pixabay、Unsplash、NPM 搜索、技能导入、技能目录、技能脚本和子代理。
 - 多端包装：`src-tauri/` 已具备 Tauri 2 桌面与移动端构建配置。
+- 开发工具链：React 19、TypeScript 7、Vite 8、Node.js 24 LTS 与 pnpm 11。
 
 ## 2. 可以进一步完善的现有功能
 
@@ -40,7 +41,7 @@ Open Builder 当前已经不是一个简单的聊天界面，而是一个浏览�
 
 ### 2.4 设置、凭据与安全边界
 
-- API Key 与登录 token 已迁移到加密 vault，这是重要安全基础；后续可展示 vault 健康状态、迁移结果和最近一次解锁时间。
+- API Key 已迁移到加密 vault，这是重要安全基础；后续可展示 vault 健康状态、迁移结果和最近一次解锁时间。
 - Tauri 反向代理拥有全局 fetch/XHR 拦截能力，建议增加域名 allowlist、请求审计日志和一次性授权提示。
 - 技能脚本明确不是强沙箱，当前已有警告；后续可增加可信来源标记、脚本执行前参数预览、执行日志和禁用本地 shell 的安全模式。
 - 外部 URL 读取、图片代理、第三方搜索应统一做超时、并发限制、结果截断和来源展示。
@@ -48,7 +49,7 @@ Open Builder 当前已经不是一个简单的聊天界面，而是一个浏览�
 ### 2.5 文档与开发质量
 
 - 本次审计发现 README 曾与实现存在偏差，例如核心文件路径、凭据存储说明、Plan Mode、技能系统、凭据金库和子代理等能力描述不完整；阶段一已先行校准，后续需要保持文档与实现同步。
-- 当前只有 `pnpm lint`（`tsc --noEmit`），缺少单元测试、组件测试和端到端 smoke test。
+- 当前已具备 TypeScript 类型检查、Vitest 单元测试、UI smoke 测试、桌面安全检查和 CI 构建门槛；端到端测试仍需按发布范围单独执行。
 - 可以增加架构文档、工具协议文档、技能开发指南和数据迁移说明，方便后续贡献。
 
 ## 3. 可以拓展的新功能方向
@@ -154,7 +155,7 @@ Open Builder 当前已经不是一个简单的聊天界面，而是一个浏览�
 
 - 为技能脚本执行增加执行前参数预览与更细粒度确认。
 - 对外部 URL 读取、图片搜索、NPM 搜索统一增加超时、并发和结果大小限制。
-- 在设置中继续整合 SSO、代理、技能脚本、vault 的安全状态总览。
+- 在设置中继续整合代理、技能脚本和 vault 的安全状态总览。
 
 验收标准：
 
@@ -169,8 +170,8 @@ Open Builder 当前已经不是一个简单的聊天界面，而是一个浏览�
 
 - 已将 `CodeViewer`、移动预览、Sandpack 模板加载、智能标题、上下文压缩和 AI 生成 runtime 改为按需加载。
 - 已拆分 `provider-config`，设置页只加载默认 URL、URL 解析和模型列表 fetch；真正的 AI SDK provider 仅在生成、压缩、智能标题等需要模型时加载。
-- 已为 Vite 配置稳定 `manualChunks`，按 React、Radix、Lucide、Markdown、Sandpack、AI SDK、编辑器和工具依赖分组。
-- 生产构建不再出现超大 chunk 警告；首屏入口 chunk 从约 1.7MB 降至约 256KB，最大 chunk 为 `vendor-ai` 约 484KB。
+- 已为 Vite 配置稳定 `manualChunks`，按 React、Radix、Lucide、Markdown、Sandpack、AI SDK 核心与各模型 provider、编辑器和工具依赖分组。
+- 生产构建不再出现超大 chunk 警告；当前首屏入口 chunk 约 319KB，最大 chunk 为 `vendor-editor` 约 467KB。
 - 已通过 `pnpm lint`、`pnpm test`、`pnpm build` 验证。
 
 后续工作：
@@ -218,13 +219,9 @@ Open Builder 当前已经不是一个简单的聊天界面，而是一个浏览�
 - 已为网页搜索、网页读取、Jina fallback、图片搜索和 NPM 搜索接入超时、结果数量限制、内容截断和截断元信息。
 - `web_reader` 默认最多读取 5 个 URL，Jina fallback 并发限制为 3，页面正文截断为 12k 字符。
 - 搜索结果默认限制在 10 条以内，图片结果最多 20 条，NPM 搜索最多 10 条，NPM 详情限制 README 和依赖数量。
-- 已在系统设置中增加“安全中心”摘要，集中展示账号模式、凭据金库状态、代理 allowlist 状态、启用技能数量和外部工具状态。
+- 已在系统设置中增加“安全中心”摘要，集中展示凭据金库状态、代理 allowlist 状态、启用技能数量和外部工具状态。
 - 已新增 `src/lib/tools/network-guard.test.ts`，覆盖 clamp、数组/对象裁剪、文本截断和并发限制。
 - 已通过 `pnpm lint`、`pnpm test`、`pnpm build` 验证。
-
-后续工作：
-
-- 为服务端代理工具返回增加更细的错误分类和重试建议。
 
 验收标准：
 

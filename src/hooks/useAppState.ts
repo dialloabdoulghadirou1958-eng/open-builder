@@ -1,6 +1,5 @@
 import { useState, useCallback } from "react";
 import { useSettingsStore } from "../store/settings";
-import { useAuthStore } from "../store/auth";
 import { useConversationStore } from "../store/conversation";
 import type { Message, ProjectFiles } from "../types";
 
@@ -31,23 +30,18 @@ export function useAppState() {
   const webSearchSettings = useSettingsStore((s) => s.webSearch);
   const assetSearchSettings = useSettingsStore((s) => s.assetSearch);
   const systemSettings = useSettingsStore((s) => s.system);
-  const serverServiceSettings = useSettingsStore((s) => s.serverService);
   const setAI = useSettingsStore((s) => s.setAI);
   const setWebSearch = useSettingsStore((s) => s.setWebSearch);
   const setAssetSearch = useSettingsStore((s) => s.setAssetSearch);
   const setSystem = useSettingsStore((s) => s.setSystem);
-  const setServerService = useSettingsStore((s) => s.setServerService);
   const isAIValid = useSettingsStore((s) => s.isAIValid);
-  const isLoggedIn = useAuthStore((s) => s.isLoggedIn());
-  const serverModel = useSettingsStore((s) => s.serverService.selectedModel);
 
-  const hasValidSettings = isLoggedIn ? !!serverModel : isAIValid();
+  const hasValidSettings = isAIValid();
 
   const handleSaveSettings = setAI;
   const handleSaveWebSearchSettings = setWebSearch;
   const handleSaveAssetSearchSettings = setAssetSearch;
   const handleSaveSystemSettings = setSystem;
-  const handleSaveServerServiceSettings = setServerService;
 
   // ── Ephemeral UI state ──
   const [currentFile, setCurrentFile] = useState("src/App.tsx");
@@ -79,8 +73,6 @@ export function useAppState() {
     handleSaveAssetSearchSettings,
     systemSettings,
     handleSaveSystemSettings,
-    serverServiceSettings,
-    handleSaveServerServiceSettings,
     template,
     setTemplate,
     sandpackKey,

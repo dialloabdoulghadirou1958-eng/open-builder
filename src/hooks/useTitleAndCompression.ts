@@ -5,7 +5,7 @@ import type { ProviderConfig } from "../lib/ai/provider-config";
 import type { Message } from "../types";
 
 interface UseTitleAndCompressionArgs {
-  /** Returns the *effective* provider config — refresh tokens / merge mohua routing before resolving. */
+  /** Returns the current local provider configuration. */
   resolveConfig: () => Promise<ProviderConfig>;
   setIsGenerating: Dispatch<SetStateAction<boolean>>;
   setMessages: Dispatch<SetStateAction<Message[]>>;

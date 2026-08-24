@@ -1,4 +1,4 @@
-import { History, PanelLeftOpen, Settings, Github } from "lucide-react";
+import { History, PanelLeftOpen, Settings, GitFork } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useConversationStore, DEFAULT_TITLE } from "../../store/conversation";
 import { useT } from "../../i18n";
@@ -56,7 +56,7 @@ export function ChatHeader({
             title={t.header.openSource}
             className="h-8 w-8 shrink-0"
           >
-            <Github size={18} />
+            <GitFork size={18} />
           </Button>
         </a>
         <Button

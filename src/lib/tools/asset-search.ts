@@ -1,8 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { type AssetSearchSettings, SERVER_ENGINE } from "../../store/settings";
-import { serverAssetSearch } from "../services/mohua-api";
-import { toolResult } from "../utils/tool-result";
+import type { AssetSearchSettings } from "../../store/settings";
 import {
   ASSET_DESCRIPTION_MAX_CHARS,
   ASSET_SEARCH_MAX_RESULTS,
@@ -199,52 +197,6 @@ export function createAssetSearchToolHandler(
         a.orientation,
         a.color,
         a.per_page,
-      );
-    }
-
-    if (engine === SERVER_ENGINE && name === "image_search") {
-      const maxResults = clampInt(
-        a.per_page,
-        10,
-        1,
-        ASSET_SEARCH_MAX_RESULTS,
-      );
-      return toolResult(
-        serverAssetSearch({
-          query: a.query,
-          providerId: settings.backendProvider,
-          image_type: a.image_type,
-          orientation: a.orientation,
-          color: a.color,
-          per_page: maxResults,
-        }),
-        (res) => {
-          const images = Array.isArray((res as any).images)
-            ? (res as any).images
-            : Array.isArray((res as any).results)
-              ? (res as any).results
-              : [];
-          const limited = limitArray(images, maxResults);
-          return {
-            ...res,
-            images: limited.items.map((img: any) => {
-              const description = truncateText(
-                img.description || img.alt_description || "",
-                ASSET_DESCRIPTION_MAX_CHARS,
-              );
-              return {
-                ...img,
-                description: description.text,
-                descriptionTruncated: description.truncated,
-              };
-            }),
-            meta: {
-              engine: SERVER_ENGINE,
-              maxResults,
-              truncatedResults: limited.truncated,
-            },
-          };
-        },
       );
     }
 

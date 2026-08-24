@@ -12,62 +12,36 @@ import {
   takePendingMigration,
   unlockWithPassphrase as vaultUnlockWithPassphrase,
   upgradeToPassphrase,
-  mergePendingSecretMigration,
+  removeLegacyAuthFromPendingMigration,
   type PendingSecretMigration,
 } from "../lib/secrets/vault";
 import { useSettingsStore } from "./settings";
-import { useAuthStore } from "./auth";
 import { takeStashedApiKey } from "./settings/migrations";
 
 const LEGACY_AUTH_KEY = "open-builder-auth";
+const LEGACY_SSO_SESSION_KEYS = ["sso_code_verifier", "sso_state"];
+const LEGACY_AUTH_VAULT_KEYS = [
+  "auth.accessToken",
+  "auth.refreshToken",
+  "auth.tokenExpiresAt",
+];
 
-interface LegacyAuthPayload {
-  state?: {
-    accessToken?: string | null;
-    refreshToken?: string | null;
-    tokenExpiresAt?: number | null;
-    user?: unknown;
-  };
-  version?: number;
-}
-
-function drainLegacyAuthTokens(): {
-  accessToken?: string;
-  refreshToken?: string;
-  tokenExpiresAt?: number;
-} | null {
+export async function purgeLegacyAuthArtifacts(): Promise<void> {
   try {
-    const raw = localStorage.getItem(LEGACY_AUTH_KEY);
-    if (!raw) return null;
-    const payload = JSON.parse(raw) as LegacyAuthPayload;
-    const s = payload.state;
-    if (!s) return null;
-    const out: {
-      accessToken?: string;
-      refreshToken?: string;
-      tokenExpiresAt?: number;
-    } = {};
-    if (s.accessToken) out.accessToken = s.accessToken;
-    if (s.refreshToken) out.refreshToken = s.refreshToken;
-    if (s.tokenExpiresAt) out.tokenExpiresAt = s.tokenExpiresAt;
-    if (!out.accessToken && !out.refreshToken) return null;
-    // Rewrite localStorage without the sensitive fields. The auth store's
-    // partialize will also enforce this going forward.
-    const cleaned: LegacyAuthPayload = {
-      ...payload,
-      state: { user: s.user },
-    };
-    localStorage.setItem(LEGACY_AUTH_KEY, JSON.stringify(cleaned));
-    return out;
+    localStorage.removeItem(LEGACY_AUTH_KEY);
   } catch {
-    return null;
+    // Storage can be unavailable in restricted browser contexts.
   }
+  try {
+    for (const key of LEGACY_SSO_SESSION_KEYS) sessionStorage.removeItem(key);
+  } catch {
+    // Storage can be unavailable in restricted browser contexts.
+  }
+  await Promise.all(LEGACY_AUTH_VAULT_KEYS.map((key) => deleteSecret(key)));
+  await removeLegacyAuthFromPendingMigration();
 }
 
 export const VAULT_KEY_API_KEY = "ai.apiKey";
-export const VAULT_KEY_ACCESS_TOKEN = "auth.accessToken";
-export const VAULT_KEY_REFRESH_TOKEN = "auth.refreshToken";
-export const VAULT_KEY_TOKEN_EXPIRES_AT = "auth.tokenExpiresAt";
 
 let runtimePendingSecrets: PendingSecretMigration | null = null;
 
@@ -82,42 +56,9 @@ interface SecretsState {
   unlockWithPassphrase: (passphrase: string) => Promise<boolean>;
   lock: () => void;
   setApiKey: (value: string) => Promise<void>;
-  setAuthTokens: (tokens: {
-    accessToken: string | null;
-    refreshToken: string | null;
-    tokenExpiresAt: number | null;
-  }) => Promise<void>;
   upgradeToPassphrase: (passphrase: string) => Promise<void>;
   downgradeToDevice: () => Promise<void>;
   reset: () => Promise<void>;
-}
-
-async function flushTokensToVault(t: {
-  accessToken?: string | null;
-  refreshToken?: string | null;
-  tokenExpiresAt?: number | null;
-}): Promise<void> {
-  if ("accessToken" in t) {
-    if (t.accessToken) {
-      await vaultSetSecret(VAULT_KEY_ACCESS_TOKEN, t.accessToken);
-    } else {
-      await deleteSecret(VAULT_KEY_ACCESS_TOKEN);
-    }
-  }
-  if ("refreshToken" in t) {
-    if (t.refreshToken) {
-      await vaultSetSecret(VAULT_KEY_REFRESH_TOKEN, t.refreshToken);
-    } else {
-      await deleteSecret(VAULT_KEY_REFRESH_TOKEN);
-    }
-  }
-  if ("tokenExpiresAt" in t) {
-    if (t.tokenExpiresAt) {
-      await vaultSetSecret(VAULT_KEY_TOKEN_EXPIRES_AT, String(t.tokenExpiresAt));
-    } else {
-      await deleteSecret(VAULT_KEY_TOKEN_EXPIRES_AT);
-    }
-  }
 }
 
 async function flushPendingSecretsToVault(
@@ -130,11 +71,10 @@ async function flushPendingSecretsToVault(
       await deleteSecret(VAULT_KEY_API_KEY);
     }
   }
-  await flushTokensToVault(pending);
 }
 
 function stageRuntimePendingSecrets(data: PendingSecretMigration): void {
-  runtimePendingSecrets = mergePendingSecretMigration(runtimePendingSecrets, data);
+  runtimePendingSecrets = { ...(runtimePendingSecrets ?? {}), ...data };
 }
 
 async function flushRuntimePendingSecrets(): Promise<void> {
@@ -142,6 +82,17 @@ async function flushRuntimePendingSecrets(): Promise<void> {
   const pending = runtimePendingSecrets;
   runtimePendingSecrets = null;
   await flushPendingSecretsToVault(pending);
+}
+
+async function flushMigratedApiKeySecrets(): Promise<void> {
+  const stashedKey = takeStashedApiKey();
+  if (stashedKey) {
+    await vaultSetSecret(VAULT_KEY_API_KEY, stashedKey);
+  }
+  const pending = await takePendingMigration();
+  if (pending) {
+    await flushPendingSecretsToVault(pending);
+  }
 }
 
 export const useSecretsStore = create<SecretsState>((set) => ({
@@ -152,6 +103,7 @@ export const useSecretsStore = create<SecretsState>((set) => ({
 
   boot: async () => {
     const result = await bootVault();
+    await purgeLegacyAuthArtifacts();
     set({
       mode: result.mode,
       unlocked: result.unlocked,
@@ -159,24 +111,13 @@ export const useSecretsStore = create<SecretsState>((set) => ({
       needsUnlock: result.initialised && !result.unlocked,
     });
 
-    // First-run secret migration. Settings v8->v9 stashed apiKey; the legacy
-    // auth-store payload may still contain tokens in localStorage. Move both
-    // into the unlocked vault, then hydrate runtime state.
+    // First-run secret migration. Settings v8->v9 stashed apiKey; move it into
+    // the unlocked vault, then hydrate runtime state.
     if (result.unlocked) {
-      const stashedKey = takeStashedApiKey();
-      if (stashedKey) {
-        await vaultSetSecret(VAULT_KEY_API_KEY, stashedKey);
-      }
-      const legacy = drainLegacyAuthTokens();
-      if (legacy) await flushTokensToVault(legacy);
-      // Drain any pending migration record left by an aborted previous run.
-      const pending = await takePendingMigration();
-      if (pending) {
-        await flushPendingSecretsToVault(pending);
-      }
+      await flushMigratedApiKeySecrets();
       await flushRuntimePendingSecrets();
 
-      await Promise.all([hydrateSettingsFromVault(), hydrateAuthFromVault()]);
+      await hydrateSettingsFromVault();
     }
   },
 
@@ -184,8 +125,9 @@ export const useSecretsStore = create<SecretsState>((set) => ({
     const ok = await vaultUnlockWithPassphrase(passphrase);
     if (ok) {
       set({ unlocked: true, needsUnlock: false });
+      await flushMigratedApiKeySecrets();
       await flushRuntimePendingSecrets();
-      await Promise.all([hydrateSettingsFromVault(), hydrateAuthFromVault()]);
+      await hydrateSettingsFromVault();
     }
     return ok;
   },
@@ -206,28 +148,6 @@ export const useSecretsStore = create<SecretsState>((set) => ({
     } else {
       await deleteSecret(VAULT_KEY_API_KEY);
     }
-  },
-
-  setAuthTokens: async ({ accessToken, refreshToken, tokenExpiresAt }) => {
-    if (!isUnlocked()) {
-      stageRuntimePendingSecrets({
-        accessToken,
-        refreshToken,
-        tokenExpiresAt,
-      });
-      set({ needsUnlock: true, unlocked: false });
-      return;
-    }
-    const writeOrDelete = (key: string, value: string | null) =>
-      value ? vaultSetSecret(key, value) : deleteSecret(key);
-    await Promise.all([
-      writeOrDelete(VAULT_KEY_ACCESS_TOKEN, accessToken),
-      writeOrDelete(VAULT_KEY_REFRESH_TOKEN, refreshToken),
-      writeOrDelete(
-        VAULT_KEY_TOKEN_EXPIRES_AT,
-        tokenExpiresAt ? String(tokenExpiresAt) : null,
-      ),
-    ]);
   },
 
   upgradeToPassphrase: async (passphrase) => {
@@ -255,28 +175,4 @@ export const useSecretsStore = create<SecretsState>((set) => ({
 async function hydrateSettingsFromVault(): Promise<void> {
   const apiKey = (await getSecret(VAULT_KEY_API_KEY)) ?? "";
   useSettingsStore.setState((s) => ({ ai: { ...s.ai, apiKey } }));
-}
-
-async function hydrateAuthFromVault(): Promise<void> {
-  const [accessToken, refreshToken, expiresRaw] = await Promise.all([
-    getSecret(VAULT_KEY_ACCESS_TOKEN),
-    getSecret(VAULT_KEY_REFRESH_TOKEN),
-    getSecret(VAULT_KEY_TOKEN_EXPIRES_AT),
-  ]);
-  const parsedExpiresAt = expiresRaw ? Number(expiresRaw) : NaN;
-  const tokenExpiresAt = Number.isFinite(parsedExpiresAt)
-    ? parsedExpiresAt
-    : null;
-  const authState = useAuthStore.getState();
-  if (
-    authState.accessToken !== accessToken ||
-    authState.refreshToken !== refreshToken ||
-    authState.tokenExpiresAt !== tokenExpiresAt
-  ) {
-    useAuthStore.setState({
-      accessToken: accessToken ?? null,
-      refreshToken: refreshToken ?? null,
-      tokenExpiresAt,
-    });
-  }
 }

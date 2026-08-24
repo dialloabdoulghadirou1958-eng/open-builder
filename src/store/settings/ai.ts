@@ -16,9 +16,19 @@ export const aiDefaults: AISettings = {
   model: "",
 };
 
+export interface ModelCache {
+  models: string[];
+  apiType: string;
+  apiBaseUrl: string;
+  apiKey: string;
+}
+
 export interface AISlice {
   ai: AISettings;
+  modelCache: ModelCache | null;
   setAI: (settings: AISettings) => void;
+  setModelCache: (cache: ModelCache) => void;
+  clearModelCache: () => void;
   isAIValid: () => boolean;
 }
 
@@ -27,6 +37,7 @@ export const createAISlice: StateCreator<AISlice, [], [], AISlice> = (
   get,
 ) => ({
   ai: aiDefaults,
+  modelCache: null,
   setAI: (settings) => {
     const normalized = {
       ...settings,
@@ -36,6 +47,8 @@ export const createAISlice: StateCreator<AISlice, [], [], AISlice> = (
     // Persist apiKey to the encrypted vault (not localStorage).
     void useSecretsStore.getState().setApiKey(normalized.apiKey);
   },
+  setModelCache: (cache) => set({ modelCache: cache }),
+  clearModelCache: () => set({ modelCache: null }),
   isAIValid: () => {
     const { ai } = get();
     return !!(ai.apiKey && ai.apiBaseUrl && ai.model);

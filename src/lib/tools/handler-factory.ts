@@ -58,7 +58,6 @@ import type { FileChange } from "../ai/generator-types";
 import { validateProjectFiles } from "../utils/project-files";
 
 export interface ToolFeatures {
-  auth: boolean;
   builtinSearch: boolean;
   webSearch: boolean;
   assetSearch: boolean;
@@ -119,10 +118,9 @@ export function buildToolHandlers(
   const searchHandler = features.webSearch
     ? createSearchToolHandler(effectiveWebSearchSettings)
     : undefined;
-  const jinaReaderHandler =
-    features.builtinSearch || features.auth
-      ? createJinaReaderHandler()
-      : undefined;
+  const jinaReaderHandler = features.builtinSearch
+    ? createJinaReaderHandler()
+    : undefined;
   const assetSearchHandler = features.assetSearch
     ? createAssetSearchToolHandler(effectiveAssetSearchSettings)
     : undefined;
@@ -231,7 +229,7 @@ export function buildToolHandlers(
   const customToolSet: ToolSet = {
     ...(features.webSearch ? SEARCH_TOOLS : {}),
     ...builtinSearchTools,
-    ...(features.builtinSearch || features.auth ? WEB_READER_TOOL : {}),
+    ...(features.builtinSearch ? WEB_READER_TOOL : {}),
     ...(features.assetSearch ? ASSET_SEARCH_TOOLS : {}),
     ...NPM_SEARCH_TOOLS,
     ...MEMORY_TOOLS,

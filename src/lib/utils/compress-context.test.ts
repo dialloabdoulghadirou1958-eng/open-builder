@@ -79,7 +79,7 @@ describe("compressContext", () => {
     expect(mocks.getProviderModel).toHaveBeenCalledWith(cfg);
     expect(mocks.generateText).toHaveBeenCalledTimes(1);
     const request = mocks.generateText.mock.calls[0][0];
-    const summaryInput = request.messages[1].content[0].text as string;
+    const summaryInput = request.prompt as string;
     expect(summaryInput).toContain("user: Build a timer");
     expect(summaryInput).toContain(
       'assistant_tool_calls: write_file({"path":"src/App.tsx","content":"..."})',

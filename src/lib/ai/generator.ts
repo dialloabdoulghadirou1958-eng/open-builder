@@ -210,23 +210,17 @@ export class WebAppGenerator {
     try {
       for (let iter = 0; iter < this.maxIterations; iter++) {
         const isLastIter = iter === this.maxIterations - 1;
-        const requestMessages: Message[] = [
-          { role: "system", content: systemContent },
-          ...(isLastIter
-            ? [
-                {
-                  role: "system" as const,
-                  content:
-                    `Tool call iteration budget exhausted (limit: ${this.maxIterations}). ` +
-                    `This is your final iteration — do not call any more tools. ` +
-                    `Summarize what has been accomplished, what is still pending, and stop so the user can resume in a follow-up message.`,
-                },
-              ]
-            : []),
-          ...this.messages,
-        ];
+        const instructions = isLastIter
+          ? systemContent +
+            `\n\nTool call iteration budget exhausted (limit: ${this.maxIterations}). ` +
+            `This is your final iteration — do not call any more tools. ` +
+            `Summarize what has been accomplished, what is still pending, and stop so the user can resume in a follow-up message.`
+          : systemContent;
 
-        const assistantMsg = await this.requestWithRetry(requestMessages);
+        const assistantMsg = await this.requestWithRetry(
+          this.messages,
+          instructions,
+        );
 
         this.messages.push(assistantMsg);
         if (assistantMsg.content) {
@@ -367,10 +361,13 @@ export class WebAppGenerator {
     });
   }
 
-  private async requestWithRetry(messages: Message[]): Promise<Message> {
+  private async requestWithRetry(
+    messages: Message[],
+    instructions: string,
+  ): Promise<Message> {
     for (let attempt = 0; ; attempt++) {
       try {
-        return await this.requestAI(messages);
+        return await this.requestAI(messages, instructions);
       } catch (err: any) {
         if (!this.isRetryableError(err) || attempt >= this.maxRetries)
           throw err;
@@ -388,7 +385,10 @@ export class WebAppGenerator {
     return this.systemPrompt + listing + guidelines + this.systemPromptSuffix;
   }
 
-  private async requestAI(messages: Message[]): Promise<Message> {
+  private async requestAI(
+    messages: Message[],
+    instructions: string,
+  ): Promise<Message> {
     this.ctrl = new AbortController();
 
     const coreMessages = messagesToModelMessages(messages, this.apiType);
@@ -404,19 +404,31 @@ export class WebAppGenerator {
       : undefined;
 
     if (this.useStream) {
-      return this.requestStreamAI(model, coreMessages, providerOptions);
+      return this.requestStreamAI(
+        model,
+        coreMessages,
+        instructions,
+        providerOptions,
+      );
     } else {
-      return this.requestGenerateAI(model, coreMessages, providerOptions);
+      return this.requestGenerateAI(
+        model,
+        coreMessages,
+        instructions,
+        providerOptions,
+      );
     }
   }
 
   private async requestStreamAI(
     model: ReturnType<typeof getProviderModel>,
     coreMessages: ReturnType<typeof messagesToModelMessages>,
+    instructions: string,
     providerOptions?: ReturnType<typeof buildProviderOptions>,
   ): Promise<Message> {
     const result = streamText({
       model,
+      instructions,
       messages: coreMessages,
       tools: this.tools,
       maxRetries: 0,
@@ -428,7 +440,7 @@ export class WebAppGenerator {
     let thinkingAccum = "";
     const toolCallsAccum: ToolCall[] = [];
 
-    for await (const part of result.fullStream) {
+    for await (const part of result.stream) {
       switch (part.type) {
         case "text-delta":
           contentAccum += part.text;
@@ -472,10 +484,12 @@ export class WebAppGenerator {
   private async requestGenerateAI(
     model: ReturnType<typeof getProviderModel>,
     coreMessages: ReturnType<typeof messagesToModelMessages>,
+    instructions: string,
     providerOptions?: ReturnType<typeof buildProviderOptions>,
   ): Promise<Message> {
     const result = await generateText({
       model,
+      instructions,
       messages: coreMessages,
       tools: this.tools,
       maxRetries: 0,

@@ -12,9 +12,7 @@ import {
   Trash2,
 } from "lucide-react";
 import localforage from "localforage";
-import {
-  useSettingsStore,
-} from "../../../store/settings";
+import { useSettingsStore } from "../../../store/settings";
 import type {
   SystemSettings,
   Language,
@@ -28,7 +26,6 @@ import { useSecretsStore } from "../../../store/secrets";
 import { useSecurityAuditStore } from "../../../store/security-audit";
 import { useSkillsStore } from "../../../store/skills";
 import { useStyleAssetStore } from "../../../store/style-assets";
-import { useAuthStore } from "../../../store/auth";
 import {
   analyzeStorage,
   formatBytes,
@@ -305,7 +302,6 @@ export function SystemTab({ form, setForm }: SystemTabProps) {
 
 function SecurityCenterPanel({ form }: { form: SystemSettings }) {
   const t = useT();
-  const isAuth = useAuthStore((s) => s.isLoggedIn());
   const vaultMode = useSecretsStore((s) => s.mode);
   const vaultUnlocked = useSecretsStore((s) => s.unlocked);
   const skills = useSkillsStore((s) => s.skills);
@@ -340,15 +336,6 @@ function SecurityCenterPanel({ form }: { form: SystemSettings }) {
       </Label>
       <div className="rounded-md border border-border bg-muted/30 p-2">
         <div className="grid grid-cols-2 gap-2">
-          <SecurityStatusItem
-            label={t.settings.securityCenter.auth}
-            value={
-              isAuth
-                ? t.settings.securityCenter.signedIn
-                : t.settings.securityCenter.localMode
-            }
-            tone={isAuth ? "ok" : "neutral"}
-          />
           <SecurityStatusItem
             label={t.settings.securityCenter.vault}
             value={

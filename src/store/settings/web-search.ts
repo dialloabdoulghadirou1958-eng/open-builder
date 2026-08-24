@@ -1,19 +1,11 @@
 import type { StateCreator } from "zustand";
 
-export const SERVER_ENGINE = "server" as const;
-
 export interface WebSearchSettings {
-  engine:
-    | "tavily"
-    | "firecrawl"
-    | "builtin"
-    | "disabled"
-    | typeof SERVER_ENGINE;
+  engine: "tavily" | "firecrawl" | "builtin" | "disabled";
   tavilyApiKey: string;
   tavilyApiUrl: string;
   firecrawlApiKey: string;
   firecrawlApiUrl: string;
-  backendProvider?: string;
 }
 
 export const webSearchDefaults: WebSearchSettings = {

@@ -21,12 +21,9 @@ import type {
   GeneratorRunState,
   StructuredGenerationError,
 } from "../types";
-import { ServerServiceSettings, SERVER_ENGINE } from "../store/settings";
-import { useAuthStore } from "../store/auth";
 import { useMemoryStore } from "../store/memory";
 import { useSkillsStore } from "../store/skills";
 import { useStyleAssetStore } from "../store/style-assets";
-import { getMohuaApiUrl } from "../lib/services/mohua-api";
 import { useFileOperations } from "./useFileOperations";
 import { useTitleAndCompression } from "./useTitleAndCompression";
 import { buildStyleAssetPromptSection } from "../lib/utils/style-assets";
@@ -36,14 +33,6 @@ import {
 } from "../lib/ai/generation-error";
 import { isGenerationRunCurrent } from "../lib/ai/run-guard";
 import { getT } from "../i18n";
-
-interface EffectiveAIConfig {
-  isAuth: boolean;
-  apiType: AISettings["apiType"];
-  apiKey: string;
-  apiBaseUrl: string;
-  model: string;
-}
 
 interface GeneratorConfigSnapshot {
   apiType: AISettings["apiType"];
@@ -71,22 +60,6 @@ function sameGeneratorConfig(
     a.assetEngine === b.assetEngine &&
     a.pixabayKey === b.pixabayKey
   );
-}
-
-function getEffectiveAIConfig(
-  token: string | null,
-  settings: AISettings,
-  serverServiceSettings: ServerServiceSettings,
-): EffectiveAIConfig {
-  const mohuaUrl = getMohuaApiUrl();
-  const isAuth = !!token && !!mohuaUrl;
-  return {
-    isAuth,
-    apiType: isAuth ? "openai-compatible" : settings.apiType,
-    apiKey: isAuth ? (token as string) : settings.apiKey,
-    apiBaseUrl: isAuth ? (mohuaUrl as string) : settings.apiBaseUrl,
-    model: isAuth ? serverServiceSettings.selectedModel : settings.model,
-  };
 }
 
 const isErrorMessage = (m: Message) => {
@@ -215,7 +188,6 @@ interface UseGeneratorOptions {
   settings: AISettings;
   webSearchSettings: WebSearchSettings;
   assetSearchSettings: AssetSearchSettings;
-  serverServiceSettings: ServerServiceSettings;
   setMessages: Dispatch<SetStateAction<Message[]>>;
   setFiles: Dispatch<SetStateAction<ProjectFiles>>;
   setIsGenerating: Dispatch<SetStateAction<boolean>>;
@@ -228,7 +200,6 @@ export function useGenerator({
   settings,
   webSearchSettings,
   assetSearchSettings,
-  serverServiceSettings,
   setMessages,
   setFiles,
   setIsGenerating,
@@ -301,15 +272,13 @@ export function useGenerator({
   });
 
   const resolveEffectiveConfig = useCallback(async () => {
-    const token = await useAuthStore.getState().getValidTokenAsync();
-    const cfg = getEffectiveAIConfig(token, settings, serverServiceSettings);
     return {
-      apiType: cfg.apiType,
-      apiBaseUrl: cfg.apiBaseUrl,
-      apiKey: cfg.apiKey,
-      model: cfg.model,
+      apiType: settings.apiType,
+      apiBaseUrl: settings.apiBaseUrl,
+      apiKey: settings.apiKey,
+      model: settings.model,
     };
-  }, [settings, serverServiceSettings]);
+  }, [settings]);
 
   const { triggerSmartTitle, compressContext } = useTitleAndCompression({
     resolveConfig: resolveEffectiveConfig,
@@ -397,32 +366,16 @@ export function useGenerator({
   );
 
   const getGenerator = useCallback(async () => {
-    const token = useAuthStore.getState().getValidToken();
-    const cfg = getEffectiveAIConfig(token, settings, serverServiceSettings);
-    const {
-      isAuth,
-      apiType: currentApiType,
-      apiKey: currentApiKey,
-      apiBaseUrl: currentApiBaseUrl,
-      model: currentModel,
-    } = cfg;
+    const currentApiType = settings.apiType;
+    const currentApiKey = settings.apiKey;
+    const currentApiBaseUrl = settings.apiBaseUrl;
+    const currentModel = settings.model;
 
-    if (
-      !isAuth &&
-      (!settings.apiKey || !settings.apiBaseUrl || !settings.model)
-    )
+    if (!settings.apiKey || !settings.apiBaseUrl || !settings.model)
       return null;
 
-    const currentSearchEngine = isAuth
-      ? serverServiceSettings.webSearchEnabled
-        ? SERVER_ENGINE
-        : "disabled"
-      : webSearchSettings.engine;
-    const currentAssetEngine = isAuth
-      ? serverServiceSettings.assetSearchEnabled
-        ? SERVER_ENGINE
-        : "disabled"
-      : assetSearchSettings.engine;
+    const currentSearchEngine = webSearchSettings.engine;
+    const currentAssetEngine = assetSearchSettings.engine;
 
     // Invalidate on conversation switch
     if (prevActiveIdRef.current !== activeId) {
@@ -459,40 +412,21 @@ export function useGenerator({
     if (!generatorRef.current) {
       const runtime = await loadGeneratorRuntime();
       const generatorConversationId = activeId;
-      const isBuiltinSearch = !isAuth && webSearchSettings.engine === "builtin";
-      const webConfigured = isAuth
-        ? serverServiceSettings.webSearchEnabled
-        : !isBuiltinSearch &&
-          useSettingsStore.getState().isWebSearchConfigured();
-      const assetConfigured = isAuth
-        ? serverServiceSettings.assetSearchEnabled
-        : useSettingsStore.getState().isAssetSearchConfigured();
-
-      const effectiveWebSearchSettings = isAuth
-        ? {
-            ...webSearchSettings,
-            engine: SERVER_ENGINE,
-            backendProvider: serverServiceSettings.webSearchProviderId,
-          }
-        : webSearchSettings;
-      const effectiveAssetSearchSettings = isAuth
-        ? {
-            ...assetSearchSettings,
-            engine: SERVER_ENGINE,
-            backendProvider: serverServiceSettings.assetSearchProviderId,
-          }
-        : assetSearchSettings;
+      const isBuiltinSearch = webSearchSettings.engine === "builtin";
+      const webConfigured =
+        !isBuiltinSearch && useSettingsStore.getState().isWebSearchConfigured();
+      const assetConfigured =
+        useSettingsStore.getState().isAssetSearchConfigured();
 
       const { customToolSet, combinedToolHandler, providerToolNames } =
         runtime.buildToolHandlers({
           features: {
-            auth: isAuth,
             builtinSearch: isBuiltinSearch,
             webSearch: webConfigured,
             assetSearch: assetConfigured,
           },
-          effectiveWebSearchSettings,
-          effectiveAssetSearchSettings,
+          effectiveWebSearchSettings: webSearchSettings,
+          effectiveAssetSearchSettings: assetSearchSettings,
           apiConfig: {
             apiType: currentApiType,
             apiBaseUrl: currentApiBaseUrl,
@@ -835,24 +769,18 @@ export function useGenerator({
           },
           onCompact: async () => {
             if (!isCurrentGeneratorRun(generatorConversationId)) return null;
-            const token = await useAuthStore.getState().getValidTokenAsync();
             const s = useConversationStore.getState();
             const conv = generatorConversationId
               ? s.conversations[generatorConversationId]
               : null;
             if (!conv) return null;
-            const cfg = getEffectiveAIConfig(
-              token,
-              settings,
-              serverServiceSettings,
-            );
 
             const result = await runtime.runCompress(
               {
-                apiType: cfg.apiType,
-                apiBaseUrl: cfg.apiBaseUrl,
-                apiKey: cfg.apiKey,
-                model: cfg.model,
+                apiType: settings.apiType,
+                apiBaseUrl: settings.apiBaseUrl,
+                apiKey: settings.apiKey,
+                model: settings.model,
               },
               conv,
             );
@@ -917,7 +845,6 @@ export function useGenerator({
     settings,
     webSearchSettings,
     assetSearchSettings,
-    serverServiceSettings,
     activeId,
     setMessages,
     setFiles,
@@ -1011,8 +938,6 @@ export function useGenerator({
       const runtime = await loadGeneratorRuntime();
       if (!isCurrentGeneratorRun(runConversationId)) return;
       runtime.skillActiveContext.clear();
-      await useAuthStore.getState().getValidTokenAsync();
-      if (!isCurrentGeneratorRun(runConversationId)) return;
 
       let content: string | ContentPart[];
       if (attachments && attachments.length > 0) {

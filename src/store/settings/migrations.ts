@@ -1,4 +1,4 @@
-export const SETTINGS_VERSION = 11;
+export const SETTINGS_VERSION = 12;
 
 let stashedApiKey: string | null = null;
 
@@ -52,17 +52,6 @@ export function migrateSettings(persisted: unknown, version: number): unknown {
       state.system.reverseProxyAllowedHosts = "";
     }
   }
-  if (version < 7) {
-    if (!state.serverService) {
-      state.serverService = {
-        selectedModel: "",
-        webSearchEnabled: true,
-        webSearchProviderId: "",
-        assetSearchEnabled: true,
-        assetSearchProviderId: "",
-      };
-    }
-  }
   if (version < 8) {
     if (!state.system) state.system = {};
     if (state.system.planModeEnabled === undefined) {
@@ -89,6 +78,21 @@ export function migrateSettings(persisted: unknown, version: number): unknown {
     if (state.system.autoQaEnabled === undefined) {
       state.system.autoQaEnabled = false;
     }
+  }
+  if (version < 12) {
+    if (state.webSearch?.engine === "server") {
+      state.webSearch.engine = "disabled";
+    }
+    if (state.webSearch) delete state.webSearch.backendProvider;
+
+    if (state.assetSearch?.engine === "server") {
+      state.assetSearch.engine = "disabled";
+    }
+    if (state.assetSearch) delete state.assetSearch.backendProvider;
+
+    delete state.serverService;
+    delete state.serverServiceCache;
+    delete state.modelCache;
   }
   return state;
 }

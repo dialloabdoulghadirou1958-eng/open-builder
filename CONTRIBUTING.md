@@ -57,7 +57,8 @@ By participating in this project, you agree to abide by the following guidelines
 
 ### Prerequisites
 
-- Node.js 20+ (recommend using [nvm](https://github.com/nvm-sh/nvm) for version management)
+- Node.js 24 LTS (recommend using [nvm](https://github.com/nvm-sh/nvm) for version management)
+- pnpm 11
 - Git
 
 ### Local Development
@@ -83,6 +84,8 @@ pnpm dev      # Start dev server (hot reload)
 pnpm build    # Build for production
 pnpm preview  # Preview production build
 pnpm lint     # TypeScript type checking
+pnpm test     # Unit tests
+pnpm test:ui  # UI smoke tests
 ```
 
 ---

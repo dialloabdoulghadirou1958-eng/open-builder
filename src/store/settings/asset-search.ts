@@ -1,13 +1,11 @@
 import type { StateCreator } from "zustand";
-import { SERVER_ENGINE } from "./web-search";
 
 export interface AssetSearchSettings {
-  engine: "pixabay" | "unsplash" | "disabled" | typeof SERVER_ENGINE;
+  engine: "pixabay" | "unsplash" | "disabled";
   pixabayApiKey: string;
   pixabayApiUrl: string;
   unsplashApiKey: string;
   unsplashApiUrl: string;
-  backendProvider?: string;
 }
 
 export const assetSearchDefaults: AssetSearchSettings = {

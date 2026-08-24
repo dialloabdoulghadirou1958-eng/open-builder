@@ -45,9 +45,27 @@ interface VaultMeta {
 
 export interface PendingSecretMigration {
   apiKey?: string | null;
-  accessToken?: string | null;
-  refreshToken?: string | null;
-  tokenExpiresAt?: number | null;
+}
+
+export function sanitizePendingSecretMigration(
+  value: unknown,
+): PendingSecretMigration | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  if (!Object.prototype.hasOwnProperty.call(record, "apiKey")) return null;
+  if (typeof record.apiKey !== "string" && record.apiKey !== null) return null;
+  return { apiKey: record.apiKey };
+}
+
+export async function removeLegacyAuthFromPendingMigration(): Promise<void> {
+  const record = await vaultStorage.getItem<unknown>(PENDING_MIGRATION_KEY);
+  if (!record) return;
+  const sanitized = sanitizePendingSecretMigration(record);
+  if (sanitized) {
+    await vaultStorage.setItem(PENDING_MIGRATION_KEY, sanitized);
+  } else {
+    await vaultStorage.removeItem(PENDING_MIGRATION_KEY);
+  }
 }
 
 let currentKey: CryptoKey | null = null;
@@ -231,20 +249,12 @@ export async function deleteSecret(name: string): Promise<void> {
 }
 
 export async function takePendingMigration(): Promise<PendingSecretMigration | null> {
-  const record = (await vaultStorage.getItem<PendingSecretMigration>(
-    PENDING_MIGRATION_KEY,
-  )) ?? null;
-  if (record) {
+  const raw = await vaultStorage.getItem<unknown>(PENDING_MIGRATION_KEY);
+  const record = sanitizePendingSecretMigration(raw);
+  if (raw) {
     await vaultStorage.removeItem(PENDING_MIGRATION_KEY);
   }
   return record;
-}
-
-export function mergePendingSecretMigration(
-  current: PendingSecretMigration | null | undefined,
-  next: PendingSecretMigration,
-): PendingSecretMigration {
-  return { ...(current ?? {}), ...next };
 }
 
 /** Reset vault: erase every stored secret and the device key. Intended for the

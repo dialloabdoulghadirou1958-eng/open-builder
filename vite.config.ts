@@ -11,7 +11,7 @@ export default defineConfig(() => {
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        "@": path.resolve(__dirname, "./src"),
+        "@": path.resolve(import.meta.dirname, "./src"),
       },
     },
     // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
@@ -96,6 +96,30 @@ export default defineConfig(() => {
               id.includes("vfile")
             ) {
               return "vendor-markdown";
+            }
+            if (
+              id.includes("@ai-sdk/openai-compatible") ||
+              id.includes("@ai-sdk+openai-compatible")
+            ) {
+              return "vendor-ai-openai-compatible";
+            }
+            if (
+              id.includes("@ai-sdk/anthropic") ||
+              id.includes("@ai-sdk+anthropic")
+            ) {
+              return "vendor-ai-anthropic";
+            }
+            if (
+              id.includes("@ai-sdk/google") ||
+              id.includes("@ai-sdk+google")
+            ) {
+              return "vendor-ai-google";
+            }
+            if (
+              id.includes("@ai-sdk/openai") ||
+              id.includes("@ai-sdk+openai")
+            ) {
+              return "vendor-ai-openai";
             }
             if (
               id.includes("@ai-sdk") ||

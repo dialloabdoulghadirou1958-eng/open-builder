@@ -28,13 +28,47 @@ describe("migrateSettings", () => {
         planModeEnabled: boolean;
         autoQaEnabled: boolean;
       };
-      serverService: { webSearchEnabled: boolean; assetSearchEnabled: boolean };
     };
 
     expect(migrated.system.reverseProxy).toBe(false);
     expect(migrated.system.planModeEnabled).toBe(false);
     expect(migrated.system.autoQaEnabled).toBe(false);
-    expect(migrated.serverService.webSearchEnabled).toBe(true);
-    expect(migrated.serverService.assetSearchEnabled).toBe(true);
+  });
+
+  it("removes legacy server settings without changing local providers", () => {
+    const migrated = migrateSettings(
+      {
+        ai: { model: "local-model" },
+        webSearch: {
+          engine: "server",
+          backendProvider: "remote-search",
+          tavilyApiKey: "local-search-key",
+        },
+        assetSearch: {
+          engine: "server",
+          backendProvider: "remote-assets",
+          pixabayApiKey: "local-asset-key",
+        },
+        serverService: { selectedModel: "remote-model" },
+        serverServiceCache: { models: ["remote-model"] },
+        modelCache: { apiKey: "legacy-cache-key" },
+      },
+      11,
+    ) as Record<string, any>;
+
+    expect(migrated.ai.model).toBe("local-model");
+    expect(migrated.webSearch).toMatchObject({
+      engine: "disabled",
+      tavilyApiKey: "local-search-key",
+    });
+    expect(migrated.assetSearch).toMatchObject({
+      engine: "disabled",
+      pixabayApiKey: "local-asset-key",
+    });
+    expect(migrated.webSearch).not.toHaveProperty("backendProvider");
+    expect(migrated.assetSearch).not.toHaveProperty("backendProvider");
+    expect(migrated).not.toHaveProperty("serverService");
+    expect(migrated).not.toHaveProperty("serverServiceCache");
+    expect(migrated).not.toHaveProperty("modelCache");
   });
 });

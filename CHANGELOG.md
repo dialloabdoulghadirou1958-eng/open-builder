@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
+## [Unreleased]
+
+### Removed
+
+- Removed the Mohua backend API integration, OAuth2/SSO login flow, remote model routing, server-backed search modes, and related settings UI.
+
+### Changed
+
+- The generator now always uses locally configured AI, web-search, and asset-search providers, with API keys remaining in the encrypted local credential vault.
+- Upgraded the frontend to AI SDK 7, TypeScript 7, Vite 8, and the latest stable direct dependencies; standardized development and CI on Node.js 24 LTS and pnpm 11.
+- Updated Tauri and Rust dependencies within their latest compatible stable ranges.
+- Settings storage now migrates to version 12 and removes obsolete server/auth data while preserving local provider configuration and API keys.
+
 ## [1.4.0] - 2026-04-06
 
 ### Added
