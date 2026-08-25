@@ -64,7 +64,7 @@ Open Builder 是一个完全运行在浏览器中的 AI 驱动 Web 应用生成�
 - **智能会话命名** — 根据对话内容自动生成会话标题，无需手动命名
 - **Slash 指令** — 输入框支持 `/compact`、`/review` 等斜杠快捷命令
 - **图片与文件输入** — 支持上传截图、设计稿或文件作为上下文输入
-- **技能系统** — 支持导入、启用、搜索、筛选和检查本地技能，可查看来源、权限、脚本和风险摘要
+- **技能系统** — 支持默认 metadata 自动匹配，也可为下一条消息强制指定一项或多项技能；Web 创建纯文本技能，桌面端额外支持技能包、参考资料和脚本
 - **本地设置** — 服务商配置和 API Key 会持久化到浏览器本地存储
 - **存储治理** — 可查看本地数据占用，并安全清理归档会话、空会话和旧快照
 - **流式输出** — 实时展示 AI 思考过程和代码生成进度
@@ -178,7 +178,8 @@ pnpm tauri:android:build
 | `image_search`           | 图片搜索（支持 Pixabay、Unsplash）          |
 | `search_npm_packages`    | NPM 包搜索                                  |
 | `get_npm_package_detail` | 获取 NPM 包的详细信息                       |
-| `list_skills` / `read_skill` / `execute_skill_script` | 管理与使用本地技能 |
+| `list_skills` / `read_skill` | 发现并加载自动匹配或强制指定的技能 |
+| `execute_skill_script` | 仅在桌面端运行已激活技能的脚本 |
 | `read_env_schema` / `manage_env` | 安全读取与管理环境变量文件           |
 
 ### 技术栈

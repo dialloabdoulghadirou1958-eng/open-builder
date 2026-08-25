@@ -26,6 +26,9 @@ interface ChatInputToolbarProps {
   onPickFile: () => void;
   onManageSkills?: () => void;
   skillsAvailable: boolean;
+  skillsInitializing: boolean;
+  forcedSkillIds: readonly string[];
+  onForcedSkillIdsChange: (ids: string[]) => void;
   planModeEnabled: boolean;
   setPlanMode: (enabled: boolean) => void;
   isGenerating: boolean;
@@ -40,6 +43,9 @@ export function ChatInputToolbar({
   onPickFile,
   onManageSkills,
   skillsAvailable,
+  skillsInitializing,
+  forcedSkillIds,
+  onForcedSkillIdsChange,
   planModeEnabled,
   setPlanMode,
   isGenerating,
@@ -77,7 +83,12 @@ export function ChatInputToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
         {skillsAvailable && onManageSkills && (
-          <SkillsMenu onManage={onManageSkills} />
+          <SkillsMenu
+            selectedIds={forcedSkillIds}
+            onSelectedIdsChange={onForcedSkillIdsChange}
+            onManage={onManageSkills}
+            initializing={skillsInitializing}
+          />
         )}
       </div>
 

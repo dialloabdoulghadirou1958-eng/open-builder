@@ -1,23 +1,50 @@
 import { SKILL_TOOL_NAME_SET } from "./tools";
+import type { SkillEntry } from "./types";
 
-export interface SkillActiveContext {
+export interface ActiveSkill {
   skillId: string;
   skillName: string;
   allowedTools: string[];
   activatedAt: number;
 }
 
-let current: SkillActiveContext | null = null;
+export interface SkillActiveContext {
+  skills: ActiveSkill[];
+  allowedTools: string[];
+  restrictTools: boolean;
+}
+
+const active = new Map<string, ActiveSkill>();
 
 export const skillActiveContext = {
   get(): SkillActiveContext | null {
-    return current;
+    const skills = Array.from(active.values());
+    if (skills.length === 0) return null;
+    const declared = skills.filter((skill) => skill.allowedTools.length > 0);
+    return {
+      skills,
+      allowedTools: Array.from(
+        new Set(declared.flatMap((skill) => skill.allowedTools)),
+      ),
+      restrictTools: declared.length > 0,
+    };
   },
-  activate(ctx: SkillActiveContext): void {
-    current = ctx;
+  activate(skill: SkillEntry): void {
+    active.set(skill.id, {
+      skillId: skill.id,
+      skillName: skill.name,
+      allowedTools: skill.allowedTools ?? [],
+      activatedAt: Date.now(),
+    });
+  },
+  activateMany(skills: readonly SkillEntry[]): void {
+    for (const skill of skills) this.activate(skill);
+  },
+  isActive(skillId: string): boolean {
+    return active.has(skillId);
   },
   clear(): void {
-    current = null;
+    active.clear();
   },
 };
 

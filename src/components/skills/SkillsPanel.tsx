@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, X, AlertTriangle, FolderOpen, Inbox, Search } from "lucide-react";
+import {
+  Plus,
+  X,
+  AlertTriangle,
+  FolderOpen,
+  Inbox,
+  Loader2,
+  Search,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -43,13 +51,6 @@ interface LastImport {
 export function SkillsPanel({ open, onClose }: SkillsPanelProps) {
   const t = useT();
   const skills = useSkillsStore((s) => s.skills);
-  const setSkillEnabled = useSkillsStore((s) => s.setSkillEnabled);
-  const acknowledgeScriptWarning = useSkillsStore(
-    (s) => s.acknowledgeScriptWarning,
-  );
-  const scriptWarningAcknowledged = useSkillsStore(
-    (s) => s.scriptWarningAcknowledged,
-  );
   const [showImporter, setShowImporter] = useState(false);
   const [detailsMap, setDetailsMap] = useState<Record<string, DetailsState>>({});
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +61,10 @@ export function SkillsPanel({ open, onClose }: SkillsPanelProps) {
     useState<SkillCatalogFilter>("all");
   const [catalogSort, setCatalogSort] =
     useState<SkillCatalogSort>("recommended");
+  const [initializingRegistry, setInitializingRegistry] = useState(false);
+  const [pendingAutoIds, setPendingAutoIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   useEffect(() => {
     if (!open) {
@@ -67,15 +72,32 @@ export function SkillsPanel({ open, onClose }: SkillsPanelProps) {
       setError(null);
       setPendingDeleteId(null);
       setLastImport(null);
+      setInitializingRegistry(false);
+      setPendingAutoIds(new Set());
     }
   }, [open]);
 
   useEffect(() => {
     if (!open || !isSkillsAvailable()) return;
-    getSkillRegistry().catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg);
-    });
+    let cancelled = false;
+    setInitializingRegistry(true);
+    getSkillRegistry()
+      .then((registry) => {
+        if (cancelled) return;
+        const issue = Object.values(registry.getIssues())[0];
+        if (issue) setError(issue);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(msg);
+      })
+      .finally(() => {
+        if (!cancelled) setInitializingRegistry(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   useEffect(() => {
@@ -141,7 +163,7 @@ export function SkillsPanel({ open, onClose }: SkillsPanelProps) {
 
   const filterOptions: Array<{ value: SkillCatalogFilter; label: string }> = [
     { value: "all", label: t.skills.market.filters.all },
-    { value: "enabled", label: t.skills.market.filters.enabled },
+    { value: "auto", label: t.skills.market.filters.auto },
     { value: "builtin", label: t.skills.market.filters.builtin },
     { value: "imported", label: t.skills.market.filters.imported },
     { value: "scripts", label: t.skills.market.filters.scripts },
@@ -155,22 +177,43 @@ export function SkillsPanel({ open, onClose }: SkillsPanelProps) {
 
   const catalogStats = useMemo(
     () => [
-      `${catalogSummary.enabled} ${t.skills.market.enabled}`,
+      `${catalogSummary.autoEnabled} ${t.skills.market.autoEnabled}`,
       `${catalogSummary.imported} ${t.skills.imported}`,
       `${catalogSummary.withScripts} ${t.skills.market.withScripts}`,
     ],
     [
-      catalogSummary.enabled,
+      catalogSummary.autoEnabled,
       catalogSummary.imported,
       catalogSummary.withScripts,
       t.skills.imported,
-      t.skills.market.enabled,
+      t.skills.market.autoEnabled,
       t.skills.market.withScripts,
     ],
   );
 
-  const handleToggle = (id: string, enabled: boolean) => {
-    setSkillEnabled(id, enabled);
+  const handleToggle = async (id: string, enabled: boolean) => {
+    setPendingAutoIds((previous) => new Set(previous).add(id));
+    setError(null);
+    try {
+      const registry = await getSkillRegistry();
+      await registry.setAutoEnabled(id, enabled);
+      const [references, scripts] = await Promise.all([
+        registry.listReferences(id),
+        registry.listScripts(id),
+      ]);
+      setDetailsMap((previous) => ({
+        ...previous,
+        [id]: { references, scripts },
+      }));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPendingAutoIds((previous) => {
+        const next = new Set(previous);
+        next.delete(id);
+        return next;
+      });
+    }
   };
 
   const requestDelete = (id: string) => {
@@ -208,8 +251,6 @@ export function SkillsPanel({ open, onClose }: SkillsPanelProps) {
     setLastImport({ name: result.entry.name, warnings: result.warnings });
   };
 
-  const hasAnyScripts = catalogSummary.withScripts > 0;
-
   const isTauriEnv = isTauri();
   const pendingDeleteSkill = pendingDeleteId ? skills[pendingDeleteId] : null;
 
@@ -234,10 +275,18 @@ export function SkillsPanel({ open, onClose }: SkillsPanelProps) {
           </DialogHeader>
 
           <div className="flex items-center justify-between gap-2">
-            <p className="text-xs text-muted-foreground">
-              {catalogSummary.total === 0
-                ? t.skills.empty
-                : `${catalogSummary.enabled} / ${catalogSummary.total}`}
+            <p
+              className="flex items-center gap-1.5 text-xs text-muted-foreground"
+              aria-live="polite"
+            >
+              {initializingRegistry && (
+                <Loader2 size={12} className="animate-spin" aria-hidden="true" />
+              )}
+              {initializingRegistry
+                ? t.app.loading
+                : catalogSummary.total === 0
+                  ? t.skills.empty
+                  : `${catalogSummary.autoEnabled} / ${catalogSummary.total}`}
             </p>
             <div className="flex items-center gap-1">
               {isTauriEnv && (
@@ -280,6 +329,7 @@ export function SkillsPanel({ open, onClose }: SkillsPanelProps) {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={t.skills.market.search}
+                aria-label={t.skills.market.search}
                 className="h-8 pl-8 text-sm"
               />
             </div>
@@ -350,31 +400,11 @@ export function SkillsPanel({ open, onClose }: SkillsPanelProps) {
             </div>
           )}
 
-          {hasAnyScripts && !scriptWarningAcknowledged && (
-            <div className="border border-amber-500/20 bg-amber-500/10 rounded-lg p-3 flex gap-2">
-              <AlertTriangle
-                size={16}
-                className="text-amber-600 shrink-0 mt-0.5"
-              />
-              <div className="flex-1 space-y-2">
-                <p className="text-xs font-medium">{t.skills.scriptWarning.title}</p>
-                <p className="text-xs text-muted-foreground">
-                  {t.skills.scriptWarning.body}
-                </p>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={acknowledgeScriptWarning}
-                >
-                  {t.skills.scriptWarning.acknowledge}
-                </Button>
-              </div>
-            </div>
-          )}
-
           {error && (
-            <div className="border border-destructive/30 bg-destructive/5 rounded-lg p-3 flex gap-2">
+            <div
+              role="alert"
+              className="border border-destructive/30 bg-destructive/5 rounded-lg p-3 flex gap-2"
+            >
               <AlertTriangle
                 size={16}
                 className="text-destructive shrink-0 mt-0.5"
@@ -403,8 +433,9 @@ export function SkillsPanel({ open, onClose }: SkillsPanelProps) {
                     key={skill.id}
                     skill={skill}
                     catalog={catalog}
-                    onToggleEnabled={handleToggle}
+                    onToggleAutoEnabled={handleToggle}
                     onDelete={requestDelete}
+                    pending={pendingAutoIds.has(skill.id)}
                     details={detailsMap[skill.id]}
                     onRequestDetails={handleRequestDetails}
                   />

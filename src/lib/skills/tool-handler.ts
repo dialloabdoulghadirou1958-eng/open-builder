@@ -6,19 +6,25 @@ import {
   validateScriptExecuteParams,
 } from "./script-execution-guard";
 import { SKILL_TOOL_NAMES } from "./tools";
+import type { PreparedSkill } from "./types";
 
 export interface SkillToolDeps {
   getRegistry: () => Promise<SkillRegistry>;
   getExecutor: () => Promise<ScriptExecutor>;
-  /** Called after a successful read_skill. Caller can activate allowed-tools whitelist. */
+  scriptExecutionEnabled?: boolean;
+  isSkillActive?: (id: string) => boolean;
+  /** Called after a successful read_skill. */
   onActivate?: (skill: SkillEntry) => void;
 }
 
 function findByName(
   registry: SkillRegistry,
   name: string,
+  includeAutoDisabled = false,
 ): SkillEntry | undefined {
-  const enabled = registry.getEnabled();
+  const enabled = includeAutoDisabled
+    ? registry.list()
+    : registry.getAutoEnabled();
   return (
     enabled.find((s) => s.name === name) ?? enabled.find((s) => s.id === name)
   );
@@ -41,7 +47,7 @@ export function createSkillToolHandler(
   return async (name, args) => {
     if (name === SKILL_TOOL_NAMES.LIST) {
       const registry = await deps.getRegistry();
-      const skills = registry.getEnabled();
+      const skills = registry.getAutoEnabled();
       if (skills.length === 0) {
         return "No skills are currently enabled.";
       }
@@ -56,12 +62,31 @@ export function createSkillToolHandler(
     }
 
     if (name === SKILL_TOOL_NAMES.READ) {
-      const { name: skillName } = args as { name: string };
+      const { name: skillName, reference_path: referencePath } = args as {
+        name: string;
+        reference_path?: string;
+      };
       if (!skillName) return "Error: 'name' is required.";
       const registry = await deps.getRegistry();
-      const skill = findByName(registry, skillName);
+      const autoMatched = findByName(registry, skillName);
+      const forced = autoMatched
+        ? undefined
+        : findByName(registry, skillName, true);
+      const skill =
+        autoMatched ??
+        (forced && deps.isSkillActive?.(forced.id) ? forced : undefined);
       if (!skill) {
         return `Error: skill "${skillName}" not found or not enabled.`;
+      }
+      if (referencePath) {
+        try {
+          const reference = await registry.readReference(skill.id, referencePath);
+          deps.onActivate?.(skill);
+          return `# Skill reference: ${skill.name}/${referencePath}\n\n${reference}`;
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return `Error: cannot read reference "${referencePath}" in skill "${skillName}": ${msg}`;
+        }
       }
       const body = await registry.readSkillContent(skill.id);
       const references = await registry.listReferences(skill.id);
@@ -71,12 +96,12 @@ export function createSkillToolHandler(
       sections.push(body.trim());
       if (references.length > 0) {
         sections.push(
-          `\n## References available\n${references.map((r) => `- ${r} (call read_skill again or ask the user to share if you need the full content)`).join("\n")}`,
+          `\n## References available\n${references.map((r) => `- ${r} (call read_skill with reference_path="${r}" to load it)`).join("\n")}`,
         );
       }
       if (scripts.length > 0) {
         sections.push(
-          `\n## Scripts available\n${scripts.map((s) => `- ${s} — invoke via execute_skill_script with skill_name="${skill.name}" and script_path="${s}"`).join("\n")}`,
+          `\n## Scripts available\n${scripts.map((s) => `- ${s} - invoke via execute_skill_script with skill_name="${skill.name}" and script_path="${s}"`).join("\n")}`,
         );
       }
       if (skill.allowedTools && skill.allowedTools.length > 0) {
@@ -84,12 +109,15 @@ export function createSkillToolHandler(
           `\n## Tool restriction\nThis skill declares allowed-tools: ${skill.allowedTools.join(", ")}. ` +
             `Until the next user message, only these tools (plus flow tools like ask_user_question / exit_plan_mode / list_skills / read_skill / execute_skill_script / dispatch_subagent / compact_context) are available.`,
         );
-        deps.onActivate?.(skill);
       }
+      deps.onActivate?.(skill);
       return sections.join("\n");
     }
 
     if (name === SKILL_TOOL_NAMES.EXECUTE_SCRIPT) {
+      if (!deps.scriptExecutionEnabled) {
+        return "Error: skill script execution is only available in the desktop app.";
+      }
       const {
         skill_name: skillName,
         script_path: scriptPath,
@@ -106,9 +134,12 @@ export function createSkillToolHandler(
         return `Error: ${msg}`;
       }
       const registry = await deps.getRegistry();
-      const skill = findByName(registry, skillName);
+      const skill = findByName(registry, skillName, true);
       if (!skill) {
-        return `Error: skill "${skillName}" not found or not enabled.`;
+        return `Error: skill "${skillName}" not found.`;
+      }
+      if (!deps.isSkillActive?.(skill.id)) {
+        return `Error: skill "${skillName}" must be loaded with read_skill or explicitly forced before running its scripts.`;
       }
       let scriptContent: string;
       try {
@@ -154,18 +185,39 @@ export function createSkillToolHandler(
 export function buildSkillsPromptSection(enabled: SkillEntry[]): string {
   if (enabled.length === 0) return "";
   const lines = enabled.map((s) => {
-    const allowed =
-      s.allowedTools && s.allowedTools.length > 0
-        ? ` (suggested tools: ${s.allowedTools.join(", ")})`
-        : "";
-    return `- **${s.name}**${allowed}: ${s.description}`;
+    const metadata = [
+      `id: ${s.id}`,
+      `version: ${s.version}`,
+      ...(s.tags && s.tags.length > 0
+        ? [`tags: ${s.tags.join(", ")}`]
+        : []),
+      ...(s.allowedTools && s.allowedTools.length > 0
+        ? [`allowed-tools: ${s.allowedTools.join(", ")}`]
+        : []),
+    ];
+    return `- **${s.name}** (${metadata.join("; ")}): ${s.description}`;
   });
   return `\n\n<skills>
 ## Available skills
-You have access to the following installed skills. Each is a focused knowledge pack the user has enabled.
-When the user's request matches a skill's domain, call \`read_skill\` to load its full guidance before doing the work.
+You have access to the following installed skills. Each is a focused knowledge pack available for automatic matching.
+Before planning or acting, evaluate every skill below against the user's request. Call \`read_skill\` for each clearly relevant skill before doing the work. A request may require more than one skill.
 Call \`list_skills\` if you need a fresh listing.
 
 ${lines.join("\n")}
 </skills>`;
+}
+
+export function buildForcedSkillsPromptSection(
+  prepared: readonly PreparedSkill[],
+): string {
+  if (prepared.length === 0) return "";
+  const blocks = prepared.map(
+    ({ entry, content }) =>
+      `<skill id="${entry.id}" name="${entry.name}">\n${content.trim()}\n</skill>`,
+  );
+  return `\n\n<mandatory_skills>
+The user explicitly selected the following skills for this request. Their instructions are mandatory for the entire request and for any subagents you dispatch. Apply all compatible instructions. If two selected skills conflict and the conflict changes the result, call ask_user_question instead of choosing silently. System instructions and the user's explicit request remain higher priority.
+
+${blocks.join("\n\n")}
+</mandatory_skills>`;
 }

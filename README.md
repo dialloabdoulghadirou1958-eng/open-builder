@@ -64,7 +64,7 @@ It also supports building as a desktop app (macOS / Windows / Linux) and mobile 
 - **Smart Session Naming** — Auto-generates session titles based on conversation content
 - **Slash Commands** — Input box supports `/compact`, `/review`, and other shortcut commands
 - **Image & File Input** — Upload screenshots, design mockups, or files as context input
-- **Skills System** — Import, enable, search, filter, and inspect local skills with source, permission, script, and risk summaries
+- **Skills System** — Auto-match installed skill metadata or force one or more skills for the next message; Web creates text-only skills while desktop also supports package imports, references, and scripts
 - **Local Settings** — Provider configuration and API keys persist in browser local storage
 - **Storage Governance** — Inspect local data usage and safely clean archived sessions, empty sessions, and old snapshots
 - **Streaming Output** — Real-time display of AI thinking process and code generation progress
@@ -178,7 +178,8 @@ Built-in tools:
 | `image_search`           | Image search (supports Pixabay, Unsplash)         |
 | `search_npm_packages`    | NPM package search                                |
 | `get_npm_package_detail` | Get detailed information about NPM package        |
-| `list_skills` / `read_skill` / `execute_skill_script` | Manage and use local skills |
+| `list_skills` / `read_skill` | Discover and load auto-matched or forced skills |
+| `execute_skill_script` | Run an active skill script in the desktop app only |
 | `read_env_schema` / `manage_env` | Safely inspect and manage env files       |
 
 ### Tech Stack

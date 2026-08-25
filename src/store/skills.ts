@@ -4,9 +4,15 @@ import localforage from "localforage";
 import type { SkillEntry } from "../lib/skills/types";
 import { createLocalforageStorage } from "./utils/localforage-storage";
 import { runMigrations, type MigrationStep } from "./utils/migrate";
+import {
+  migrateSkillsState,
+  SKILLS_STORE_VERSION,
+} from "./skills-migrations";
 
-const SKILLS_STORE_VERSION = 1;
-const skillsMigrations: MigrationStep[] = [];
+const skillsMigrations: MigrationStep[] = [
+  (state) => state,
+  migrateSkillsState,
+];
 
 const skillsStorage = createLocalforageStorage(
   localforage.createInstance({ name: "open-builder-skills" }),
@@ -14,24 +20,21 @@ const skillsStorage = createLocalforageStorage(
 
 interface SkillsState {
   skills: Record<string, SkillEntry>;
-  scriptWarningAcknowledged: boolean;
   _hasHydrated: boolean;
 
   registerSkill: (entry: SkillEntry) => void;
   unregisterSkill: (id: string) => void;
-  setSkillEnabled: (id: string, enabled: boolean) => void;
-  acknowledgeScriptWarning: () => void;
+  setSkillAutoEnabled: (id: string, enabled: boolean) => void;
 
   getSkill: (id: string) => SkillEntry | undefined;
   listAll: () => SkillEntry[];
-  getEnabledSkills: () => SkillEntry[];
+  getAutoEnabledSkills: () => SkillEntry[];
 }
 
 export const useSkillsStore = create<SkillsState>()(
   persist(
     (set, get) => ({
       skills: {},
-      scriptWarningAcknowledged: false,
       _hasHydrated: false,
 
       registerSkill: (entry) =>
@@ -44,21 +47,19 @@ export const useSkillsStore = create<SkillsState>()(
           return { skills: rest };
         }),
 
-      setSkillEnabled: (id, enabled) =>
+      setSkillAutoEnabled: (id, autoEnabled) =>
         set((s) => {
           const existing = s.skills[id];
           if (!existing) return s;
           return {
-            skills: { ...s.skills, [id]: { ...existing, enabled } },
+            skills: { ...s.skills, [id]: { ...existing, autoEnabled } },
           };
         }),
 
-      acknowledgeScriptWarning: () => set({ scriptWarningAcknowledged: true }),
-
       getSkill: (id) => get().skills[id],
       listAll: () => Object.values(get().skills),
-      getEnabledSkills: () =>
-        Object.values(get().skills).filter((s) => s.enabled),
+      getAutoEnabledSkills: () =>
+        Object.values(get().skills).filter((s) => s.autoEnabled),
     }),
     {
       name: "open-builder-skills",
@@ -66,7 +67,6 @@ export const useSkillsStore = create<SkillsState>()(
       storage: createJSONStorage(() => skillsStorage),
       partialize: (state) => ({
         skills: state.skills,
-        scriptWarningAcknowledged: state.scriptWarningAcknowledged,
       }),
       migrate: (persisted, version) =>
         runMigrations(

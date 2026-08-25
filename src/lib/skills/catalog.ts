@@ -2,7 +2,7 @@ import type { SkillEntry } from "./types";
 
 export type SkillCatalogFilter =
   | "all"
-  | "enabled"
+  | "auto"
   | "builtin"
   | "imported"
   | "scripts";
@@ -28,7 +28,7 @@ export interface SkillCatalogItem {
 
 export interface SkillCatalogSummary {
   total: number;
-  enabled: number;
+  autoEnabled: number;
   builtin: number;
   imported: number;
   withScripts: number;
@@ -81,7 +81,7 @@ export function summarizeSkillCatalog(
   const items = buildSkillCatalogItems(skills, details);
   return {
     total: items.length,
-    enabled: items.filter((item) => item.skill.enabled).length,
+    autoEnabled: items.filter((item) => item.skill.autoEnabled).length,
     builtin: items.filter((item) => item.skill.source === "builtin").length,
     imported: items.filter((item) => item.skill.source === "imported").length,
     withScripts: items.filter((item) => item.scriptCount > 0).length,
@@ -101,8 +101,8 @@ function getSkillRisk(
 
 function matchesFilter(item: SkillCatalogItem, filter: SkillCatalogFilter) {
   switch (filter) {
-    case "enabled":
-      return item.skill.enabled;
+    case "auto":
+      return item.skill.autoEnabled;
     case "builtin":
       return item.skill.source === "builtin";
     case "imported":

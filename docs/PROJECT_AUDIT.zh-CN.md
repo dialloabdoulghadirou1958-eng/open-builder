@@ -1,6 +1,6 @@
 # Open Builder 项目审计与功能路线图
 
-更新时间：2026-08-24
+更新时间：2026-08-25
 
 ## 1. 当前项目能力概览
 
@@ -13,7 +13,7 @@ Open Builder 当前已经不是一个简单的聊天界面，而是一个浏览�
 - 历史快照：`src/store/snapshot.ts` 使用 patch chain + checkpoint 存储项目历史，可在消息层查看 diff 与回滚。
 - 项目模板：`src/store/project-templates.ts` 与 `src/components/chat/ProjectTemplateDialog.tsx` 支持把当前项目保存为本地模板，并从模板新建会话项目。
 - 设置与凭据：`src/store/settings/*` 支持模型、搜索服务、存储治理、主题、语言、Plan Mode 和反向代理，API Key 随设置保存在浏览器本地存储中；联网与素材搜索统一使用服务商官方端点。
-- 外部能力：支持 Tavily、Firecrawl、Jina Reader、Pixabay、Unsplash、NPM 搜索、技能导入、技能目录、技能脚本和子代理。
+- 外部能力：支持 Tavily、Firecrawl、Jina Reader、Pixabay、Unsplash、NPM 搜索、技能目录和子代理；Web 仅创建纯文本技能，桌面端额外支持完整导入、references 和脚本。
 - 多端包装：`src-tauri/` 已具备 Tauri 2 桌面与移动端构建配置。
 - 开发工具链：React 19、TypeScript 7、Vite 8、Node.js 24 LTS 与 pnpm 11。
 
@@ -42,7 +42,7 @@ Open Builder 当前已经不是一个简单的聊天界面，而是一个浏览�
 
 - API Key 当前以明文随设置保存在浏览器本地存储中，需要将浏览器配置文件和设备视为凭据安全边界。
 - Tauri 反向代理拥有全局 fetch/XHR 拦截能力，建议增加域名 allowlist、请求审计日志和一次性授权提示。
-- 技能脚本明确不是强沙箱，当前已有警告；后续可增加可信来源标记、脚本执行前参数预览和禁用本地 shell 的安全模式。
+- 技能脚本明确不是强沙箱，现已限制为桌面端、已激活 Skill 和非 Plan Mode；后续仍可增加可信来源标记、脚本执行前参数预览和禁用本地 shell 的安全模式。
 - 外部 URL 读取、图片代理、第三方搜索应统一做超时、并发限制、结果截断和来源展示。
 
 ### 2.5 文档与开发质量
@@ -308,19 +308,25 @@ Open Builder 当前已经不是一个简单的聊天界面，而是一个浏览�
 阶段进展：
 
 - 已新增 `src/lib/skills/catalog.ts`，提供技能目录摘要、筛选、排序、权限/脚本/引用统计和本地风险等级计算。
-- 已在 `src/components/skills/SkillsPanel.tsx` 中增加搜索、来源/启用/脚本筛选、推荐/最近/权限排序，以及目录摘要。
-- 已在打开技能面板时批量读取技能 references/scripts，用于展示脚本数量、引用数量和脚本安全提示。
+- 已在 `src/components/skills/SkillsPanel.tsx` 中增加搜索、来源/自动匹配/脚本筛选、推荐/最近/权限排序，以及目录摘要。
+- 已将内置 Skills 移到 `public/skills`，通过 manifest 下载并按平台缓存到 OPFS 或 AppData。
+- 已拆分默认 metadata 自动匹配和“下一条消息强制执行”，强制 Skill 正文会在请求前完整加载。
+- 已限制 Web 端只创建纯文本 Skill；桌面端保留文本、Zip、URL、文件夹、references 和脚本完整能力。
+- 已在打开技能面板时批量读取技能 references/scripts，用于展示脚本数量、引用数量和风险摘要。
 - 已增强 `src/components/skills/SkillCard.tsx`，展示风险等级、权限数量、脚本数量、引用数量和安装日期。
 - 已新增 `src/lib/skills/catalog.test.ts`，覆盖目录摘要、筛选、搜索、排序和风险等级。
 
 后续工作：
 
 - 接入远程技能源后展示评分、发布者、签名/校验信息和更新时间。
-- 增加按权限类别批量禁用、技能更新检查和导入前权限预览。
+- 为 manifest 增加逐文件摘要和暂存目录切换，避免缓存损坏或刷新写入中断破坏旧版本。
+- 将活动 Skill 上下文从模块级集合收敛到每个生成/子代理运行实例，为未来并发运行隔离状态。
+- 统一 Skills 运行时模块的静态/动态导入边界，消除当前 Vite 的 ineffective dynamic import 提示。
+- 增加按权限类别批量禁用和导入前权限预览。
 
 验收标准：
 
-- 用户可以按关键词、来源、启用状态和脚本能力查找技能。
+- 用户可以按关键词、来源、自动匹配状态和脚本能力查找技能。
 - 用户可以看到每个技能的权限、脚本、引用和风险摘要。
 - 目录逻辑有单元测试覆盖。
 

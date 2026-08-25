@@ -36,6 +36,9 @@ export interface Message {
   errorKind?: StructuredGenerationErrorKind;
   errorRetryable?: boolean;
   errorStatus?: number;
+  /** Skills explicitly attached to this user request. Persisted so retry can
+   *  rebuild the same mandatory system context. */
+  forcedSkillIds?: string[];
 }
 
 /** Tool call (OpenAI function calling format) */

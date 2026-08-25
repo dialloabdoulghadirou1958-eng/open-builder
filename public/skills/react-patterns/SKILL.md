@@ -1,7 +1,7 @@
 ---
 name: react-patterns
 description: Modern React 19 patterns for building maintainable components. Use when writing or refactoring React code (JSX/TSX), choosing between hooks, designing component APIs, or wiring state management.
-version: 1.0.0
+version: 1.0.1
 author: open-builder
 tags: [react, frontend, best-practices]
 ---

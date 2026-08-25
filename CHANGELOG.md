@@ -8,10 +8,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Added a public Skills manifest, on-demand built-in Skill caching, automatic metadata matching, and one-request forced Skill context.
+- Added structured text Skill creation on Web and desktop, plus nested reference loading through `read_skill`.
+
 ### Removed
 
 - Removed the Mohua backend API integration, OAuth2/SSO login flow, remote model routing, server-backed search modes, and related settings UI.
 - Removed conversation import/export, session filter tabs, the header source-code shortcut, Security Center, Credential Vault workflows, the local Style Assets library, and Skill Script Audit logging.
+- Removed Web Skill script execution and the dismissible Skill script warning banner; script execution is now desktop-only.
+- Web upgrades now remove references, scripts, and other package resources from existing Skill directories, retaining only each root `SKILL.md`.
 
 ### Changed
 
@@ -21,6 +28,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 - Settings storage now migrates to version 14, removes obsolete server/auth data and custom search endpoint fields, and preserves legacy plaintext API keys in local provider settings.
 - Storage Governance now has its own settings tab, and Automatic QA has a shorter label.
 - Web and asset search settings now share a Search Services tab, use fixed official provider endpoints, and appear before Storage Governance and System settings.
+- Built-in Skills now ship from `public/skills`, cache to OPFS on Web and AppData on desktop, and refresh only after being disabled and re-enabled.
 
 ## [1.4.0] - 2026-04-06
 

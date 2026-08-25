@@ -83,9 +83,9 @@ function createRegistry(): {
     unregisterSkill: (id) => {
       entries.delete(id);
     },
-    setSkillEnabled: (id, enabled) => {
+    setSkillAutoEnabled: (id, autoEnabled) => {
       const existing = entries.get(id);
-      if (existing) entries.set(id, { ...existing, enabled });
+      if (existing) entries.set(id, { ...existing, autoEnabled });
     },
   };
   return { fs, registry: new SkillRegistry(fs, store), store };

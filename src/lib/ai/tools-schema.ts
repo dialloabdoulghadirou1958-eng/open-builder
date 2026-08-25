@@ -296,6 +296,7 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "install_component",
   "screenshot_to_code",
   "apply_design_style",
+  "execute_skill_script",
 ]);
 
 export const READONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
@@ -315,7 +316,6 @@ export const READONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
   "get_npm_package_detail",
   "list_skills",
   "read_skill",
-  "execute_skill_script",
   "memory",
   "project_health_check",
 ]);

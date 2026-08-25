@@ -19,7 +19,7 @@ async function waitForStoreHydration(): Promise<void> {
 
 export function getSkillRegistry(): Promise<SkillRegistry> {
   if (registryPromise) return registryPromise;
-  registryPromise = (async () => {
+  const pending = (async () => {
     if (!isSkillsAvailable()) {
       throw new Error(
         "Skills storage is not available in this environment (neither Tauri FS nor OPFS).",
@@ -34,6 +34,11 @@ export function getSkillRegistry(): Promise<SkillRegistry> {
     }
     return registry;
   })();
+  registryPromise = pending.catch((error) => {
+    registryPromise = null;
+    initialized = false;
+    throw error;
+  });
   return registryPromise;
 }
 

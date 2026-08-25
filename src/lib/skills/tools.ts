@@ -11,7 +11,7 @@ export const SKILL_TOOL_NAME_SET: ReadonlySet<string> = new Set(
   Object.values(SKILL_TOOL_NAMES),
 );
 
-export const SKILL_TOOLS = {
+export const BASE_SKILL_TOOLS = {
   [SKILL_TOOL_NAMES.LIST]: tool({
     description:
       "List all currently enabled skills with their name and description. " +
@@ -29,9 +29,17 @@ export const SKILL_TOOLS = {
       name: z
         .string()
         .describe("The skill name, as returned by list_skills."),
+      reference_path: z
+        .string()
+        .optional()
+        .describe(
+          "Optional path relative to the skill's references/ directory. Use a path returned by read_skill.",
+        ),
     }),
   }),
+};
 
+export const SCRIPT_SKILL_TOOL = {
   [SKILL_TOOL_NAMES.EXECUTE_SCRIPT]: tool({
     description:
       "Execute a script from a skill's scripts/ directory. " +
@@ -51,3 +59,10 @@ export const SKILL_TOOLS = {
     }),
   }),
 };
+
+export function getSkillTools(scriptExecutionEnabled: boolean) {
+  return {
+    ...BASE_SKILL_TOOLS,
+    ...(scriptExecutionEnabled ? SCRIPT_SKILL_TOOL : {}),
+  };
+}

@@ -9,11 +9,11 @@ import type {
 import { BUILTIN_TOOLS, BUILTIN_WRITE_TOOL_NAMES } from "../tools-schema";
 import type { ApiType } from "../provider";
 import { useSubagentStore } from "../../../store/subagent";
-import { useSkillsStore } from "../../../store/skills";
 import { filterToolSet } from "../../tools/tool-set-utils";
 import { buildSkillsPromptSection } from "../../skills/tool-handler";
-import { SKILL_TOOL_NAME_SET } from "../../skills/tools";
-import { isSkillsAvailable } from "../../skills/fs";
+import { SKILL_TOOL_NAMES } from "../../skills/tools";
+import { isSkillsAvailable, isTauri } from "../../skills/fs";
+import { getSkillRegistry } from "../../skills/instance";
 import {
   SUBAGENT_BUILTIN_TOOL_NAMES,
   getSubagentByName,
@@ -45,6 +45,7 @@ export interface RunSubagentOpts {
   parentApiConfig: ParentApiConfig;
   parentCustomToolSet: ToolSet;
   parentCombinedToolHandler: (name: string, args: unknown) => Promise<string>;
+  parentForcedSkillsPrompt: string;
 }
 
 export interface CreateDispatcherOpts {
@@ -54,6 +55,7 @@ export interface CreateDispatcherOpts {
     name: string,
     args: unknown,
   ) => Promise<string>;
+  getForcedSkillsPrompt: () => string;
 }
 
 type WritePolicy = "readonly" | "fullWrite";
@@ -67,7 +69,11 @@ function effectiveSubagentWhitelist(
     for (const name of BUILTIN_WRITE_TOOL_NAMES) whitelist.delete(name);
   }
   if (isSkillsAvailable()) {
-    for (const name of SKILL_TOOL_NAME_SET) whitelist.add(name);
+    whitelist.add(SKILL_TOOL_NAMES.LIST);
+    whitelist.add(SKILL_TOOL_NAMES.READ);
+    if (policy === "fullWrite" && isTauri()) {
+      whitelist.add(SKILL_TOOL_NAMES.EXECUTE_SCRIPT);
+    }
   }
   return whitelist;
 }
@@ -176,10 +182,11 @@ export async function runSubagent(
   const apiConfig = resolveApiConfig(opts.parentApiConfig, def.modelOverride);
 
   const enabledSkills = isSkillsAvailable()
-    ? useSkillsStore.getState().getEnabledSkills()
+    ? (await getSkillRegistry()).getAutoEnabled()
     : [];
   const skillsSuffix = buildSkillsPromptSection(enabledSkills);
-  const effectiveSystemPrompt = def.systemPrompt + skillsSuffix;
+  const effectiveSystemPrompt =
+    def.systemPrompt + skillsSuffix + opts.parentForcedSkillsPrompt;
 
   const events: GeneratorEvents = {
     onText: (delta) => {
@@ -306,5 +313,6 @@ export function createSubagentDispatcher(
       parentApiConfig: opts.getApiConfig(),
       parentCustomToolSet: opts.getCustomToolSet(),
       parentCombinedToolHandler: opts.getCombinedToolHandler(),
+      parentForcedSkillsPrompt: opts.getForcedSkillsPrompt(),
     });
 }

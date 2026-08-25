@@ -48,7 +48,11 @@ interface ChatInterfaceProps {
   messages: Message[];
   isGenerating: boolean;
   hasValidSettings: boolean;
-  onGenerate: (prompt: string, attachments?: Attachment[]) => Promise<void>;
+  onGenerate: (
+    prompt: string,
+    attachments?: Attachment[],
+    options?: { forcedSkillIds?: string[] },
+  ) => Promise<void>;
   onStop: () => void;
   onOpenSettings: () => void;
   onSetFiles: (files: ProjectFiles) => void;
@@ -84,6 +88,7 @@ export function ChatInterface({
   const t = useT();
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [forcedSkillIds, setForcedSkillIds] = useState<string[]>([]);
   const [showSessionList, setShowSessionList] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesViewportRef = useRef<HTMLDivElement>(null);
@@ -92,6 +97,9 @@ export function ChatInterface({
   const isMobile = useIsMobile();
 
   const activeId = useConversationStore((s) => s.activeId);
+  useEffect(() => {
+    setForcedSkillIds([]);
+  }, [activeId]);
   const compressFromIndex = useConversationStore((s) =>
     s.activeId
       ? (s.conversations[s.activeId]?.compressedContext?.fromIndex ?? -1)
@@ -219,8 +227,10 @@ export function ChatInterface({
     }
     const prompt = input.trim();
     const atts = [...attachments];
+    const forced = [...forcedSkillIds];
     setInput("");
     setAttachments([]);
+    setForcedSkillIds([]);
     shouldAutoScrollRef.current = true;
 
     flushSnapshotUpdate();
@@ -231,7 +241,9 @@ export function ChatInterface({
       setRollbackInfo(null);
     }
 
-    await onGenerate(prompt, atts.length > 0 ? atts : undefined);
+    await onGenerate(prompt, atts.length > 0 ? atts : undefined, {
+      forcedSkillIds: forced.length > 0 ? forced : undefined,
+    });
   };
 
   return (
@@ -369,6 +381,8 @@ export function ChatInterface({
         attachments={attachments}
         onAttachmentsChange={setAttachments}
         onSlashCommand={handleSlashCommand}
+        forcedSkillIds={forcedSkillIds}
+        onForcedSkillIdsChange={setForcedSkillIds}
       />
 
       {diffMessageId && activeId && (

@@ -12,12 +12,14 @@ describe("tool policies", () => {
     expect(isWriteToolName("install_component")).toBe(true);
     expect(isWriteToolName("screenshot_to_code")).toBe(true);
     expect(isWriteToolName("apply_design_style")).toBe(true);
+    expect(isWriteToolName("execute_skill_script")).toBe(true);
     expect(isWriteToolName("read_files")).toBe(false);
   });
 
   it("filters builtin and custom write tools in plan mode", () => {
     const custom = {
       install_component: {} as ToolSet[string],
+      execute_skill_script: {} as ToolSet[string],
       project_health_check: {} as ToolSet[string],
     };
     const builtins = filterToolSet(BUILTIN_TOOLS, isPlanModeToolVisible);
@@ -26,6 +28,7 @@ describe("tool policies", () => {
     expect(builtins.write_file).toBeUndefined();
     expect(builtins.read_files).toBeDefined();
     expect(customs.install_component).toBeUndefined();
+    expect(customs.execute_skill_script).toBeUndefined();
     expect(customs.project_health_check).toBeDefined();
   });
 });

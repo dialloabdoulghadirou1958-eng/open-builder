@@ -20,11 +20,10 @@ import {
   type MemoryDeps,
 } from "./memory";
 import { DISPATCH_SUBAGENT_TOOL } from "./subagent-tool";
-import { SKILL_TOOLS, SKILL_TOOL_NAME_SET } from "../skills/tools";
+import { getSkillTools, SKILL_TOOL_NAME_SET } from "../skills/tools";
 import { createSkillToolHandler } from "../skills/tool-handler";
 import { getSkillRegistry } from "../skills/instance";
-import { scriptExecutor } from "../skills/script-executor";
-import { isSkillsAvailable } from "../skills/fs";
+import { isSkillsAvailable, isTauri } from "../skills/fs";
 import { skillActiveContext } from "../skills/active-context";
 import {
   INSTALL_COMPONENT_TOOL,
@@ -153,18 +152,22 @@ export function buildToolHandlers(
       })
     : null;
   const skillsAvailable = isSkillsAvailable();
+  const desktopSkills = isTauri();
+  const skillTools = getSkillTools(desktopSkills);
   const skillToolHandler = skillsAvailable
     ? createSkillToolHandler({
         getRegistry: () => getSkillRegistry(),
-        getExecutor: async () => scriptExecutor,
+        getExecutor: async () => {
+          if (!desktopSkills) {
+            throw new Error("Skill scripts are only available on desktop.");
+          }
+          return (await import("../skills/script-executor-tauri"))
+            .TauriScriptExecutor;
+        },
+        scriptExecutionEnabled: desktopSkills,
+        isSkillActive: (id) => skillActiveContext.isActive(id),
         onActivate: (skill) => {
-          if (!skill.allowedTools || skill.allowedTools.length === 0) return;
-          skillActiveContext.activate({
-            skillId: skill.id,
-            skillName: skill.name,
-            allowedTools: skill.allowedTools,
-            activatedAt: Date.now(),
-          });
+          skillActiveContext.activate(skill);
         },
       })
     : null;
@@ -222,7 +225,7 @@ export function buildToolHandlers(
           ...PROJECT_HEALTH_CHECK_TOOL,
         }
       : {}),
-    ...(skillsAvailable ? SKILL_TOOLS : {}),
+    ...(skillsAvailable ? skillTools : {}),
   };
 
   return { customToolSet, combinedToolHandler, providerToolNames };

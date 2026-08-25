@@ -11,7 +11,7 @@ const skills: SkillEntry[] = [
     name: "React Patterns",
     source: "builtin",
     allowedTools: ["read_file"],
-    enabled: true,
+    autoEnabled: true,
     installedAt: 10,
   }),
   skill({
@@ -19,7 +19,7 @@ const skills: SkillEntry[] = [
     name: "Imported Shell",
     source: "imported",
     allowedTools: ["read_file", "write_file", "execute_skill_script"],
-    enabled: false,
+    autoEnabled: false,
     installedAt: 30,
   }),
   skill({
@@ -28,7 +28,7 @@ const skills: SkillEntry[] = [
     source: "builtin",
     allowedTools: ["a", "b", "c", "d"],
     tags: ["review"],
-    enabled: true,
+    autoEnabled: true,
     installedAt: 20,
   }),
 ];
@@ -44,16 +44,16 @@ describe("skill catalog utilities", () => {
   it("summarizes local skill catalog signals", () => {
     expect(summarizeSkillCatalog(skills, details)).toEqual({
       total: 3,
-      enabled: 2,
+      autoEnabled: 2,
       builtin: 2,
       imported: 1,
       withScripts: 1,
     });
   });
 
-  it("filters by source, enabled state and scripts", () => {
+  it("filters by source, automatic matching state and scripts", () => {
     expect(
-      filterAndSortSkillCatalog(skills, details, { filter: "enabled" }).map(
+      filterAndSortSkillCatalog(skills, details, { filter: "auto" }).map(
         (item) => item.skill.id,
       ),
     ).toEqual(["react", "wide"]);
@@ -101,7 +101,7 @@ function skill(overrides: Partial<SkillEntry>): SkillEntry {
     version: "1.0.0",
     allowedTools: [],
     tags: [],
-    enabled: true,
+    autoEnabled: true,
     source: "builtin",
     installedAt: 1,
     ...overrides,

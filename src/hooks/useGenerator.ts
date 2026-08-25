@@ -22,7 +22,6 @@ import type {
   StructuredGenerationError,
 } from "../types";
 import { useMemoryStore } from "../store/memory";
-import { useSkillsStore } from "../store/skills";
 import { useFileOperations } from "./useFileOperations";
 import { useTitleAndCompression } from "./useTitleAndCompression";
 import {
@@ -71,6 +70,14 @@ const isErrorMessage = (m: Message) => {
 const removeErrorMessages = (prev: Message[]) =>
   prev.filter((m) => !isErrorMessage(m));
 
+function getLastForcedSkillIds(messages: readonly Message[]): string[] {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (message.role === "user") return message.forcedSkillIds ?? [];
+  }
+  return [];
+}
+
 /** Apply compression: return summary + messages after compression point. */
 function getMessagesForAPI(conv: Conversation): Message[] {
   const ctx = conv.compressedContext;
@@ -109,6 +116,7 @@ const AUTO_QA_PROMPT =
 
 interface GenerateRunOptions {
   skipAutoQa?: boolean;
+  forcedSkillIds?: string[];
 }
 
 interface GeneratorRuntime {
@@ -118,6 +126,9 @@ interface GeneratorRuntime {
   runCompress: typeof import("../lib/utils/run-compress").runCompress;
   buildMemoryPromptSection: typeof import("../lib/tools/memory").buildMemoryPromptSection;
   buildSkillsPromptSection: typeof import("../lib/skills/tool-handler").buildSkillsPromptSection;
+  buildForcedSkillsPromptSection: typeof import("../lib/skills/tool-handler").buildForcedSkillsPromptSection;
+  getSkillRegistry: typeof import("../lib/skills/instance").getSkillRegistry;
+  isSkillsAvailable: typeof import("../lib/skills/fs").isSkillsAvailable;
   skillActiveContext: typeof import("../lib/skills/active-context").skillActiveContext;
   buildToolSet: (args: { custom: ToolSet; planMode: boolean }) => ToolSet;
 }
@@ -135,6 +146,8 @@ function loadGeneratorRuntime(): Promise<GeneratorRuntime> {
     import("../lib/utils/run-compress"),
     import("../lib/skills/tool-handler"),
     import("../lib/skills/active-context"),
+    import("../lib/skills/instance"),
+    import("../lib/skills/fs"),
   ]).then(
     ([
       client,
@@ -146,6 +159,8 @@ function loadGeneratorRuntime(): Promise<GeneratorRuntime> {
       runCompressModule,
       skillToolHandler,
       activeContext,
+      skillInstance,
+      skillFs,
     ]) => {
       const buildToolSet = ({
         custom,
@@ -174,6 +189,10 @@ function loadGeneratorRuntime(): Promise<GeneratorRuntime> {
         runCompress: runCompressModule.runCompress,
         buildMemoryPromptSection: memory.buildMemoryPromptSection,
         buildSkillsPromptSection: skillToolHandler.buildSkillsPromptSection,
+        buildForcedSkillsPromptSection:
+          skillToolHandler.buildForcedSkillsPromptSection,
+        getSkillRegistry: skillInstance.getSkillRegistry,
+        isSkillsAvailable: skillFs.isSkillsAvailable,
         skillActiveContext: activeContext.skillActiveContext,
         buildToolSet,
       };
@@ -218,6 +237,7 @@ export function useGenerator({
   const lastCharTimeRef = useRef(0);
   const lastThinkingTimeRef = useRef(0);
   const runConversationIdRef = useRef<string | null>(null);
+  const forcedSkillsPromptRef = useRef("");
 
   const clearOutputBuffers = useCallback(() => {
     if (typewriterTimerRef.current) {
@@ -245,6 +265,7 @@ export function useGenerator({
   useEffect(
     () => () => {
       clearOutputBuffers();
+      forcedSkillsPromptRef.current = "";
       generatorRef.current?.abort();
     },
     [clearOutputBuffers],
@@ -256,6 +277,7 @@ export function useGenerator({
     generatorRef.current = null;
     generatorConfigRef.current = null;
     runConversationIdRef.current = null;
+    forcedSkillsPromptRef.current = "";
     clearOutputBuffers();
     prevActiveIdRef.current = activeId;
     useInteractiveStore.getState().rejectAllPending("conversation switched");
@@ -465,6 +487,7 @@ export function useGenerator({
         }),
         getCustomToolSet: () => customToolSet,
         getCombinedToolHandler: () => combinedToolHandler,
+        getForcedSkillsPrompt: () => forcedSkillsPromptRef.current,
       });
 
       const initialPlanMode =
@@ -856,23 +879,44 @@ export function useGenerator({
   // Apply state that can change between generations: tool set (plan mode toggle),
   // system prompt suffix (memory + plan mode addendum). Called at the start of every run.
   const applyDynamicGeneratorState = useCallback(
-    async (generator: WebAppGenerator) => {
+    async (
+      generator: WebAppGenerator,
+      forcedSkillIds: readonly string[] = [],
+    ) => {
       const runtime = await loadGeneratorRuntime();
-	      const planMode = useSettingsStore.getState().system.planModeEnabled;
-	      const customToolSet = generator.getCustomToolSet();
-	      generator.setReadOnlyMode(planMode);
-	      generator.setTools(
-	        runtime.buildToolSet({ custom: customToolSet, planMode }),
-	      );
+      const planMode = useSettingsStore.getState().system.planModeEnabled;
+      const customToolSet = generator.getCustomToolSet();
+      generator.setReadOnlyMode(planMode);
+      generator.setTools(
+        runtime.buildToolSet({ custom: customToolSet, planMode }),
+      );
       const memorySuffix = runtime.buildMemoryPromptSection(
         useMemoryStore.getState().getAll(),
       );
-      const skillsSuffix = runtime.buildSkillsPromptSection(
-        useSkillsStore.getState().getEnabledSkills(),
-      );
+      runtime.skillActiveContext.clear();
+      let skillsSuffix = "";
+      let forcedSkillsSuffix = "";
+      if (runtime.isSkillsAvailable()) {
+        const registry = await runtime.getSkillRegistry();
+        skillsSuffix = runtime.buildSkillsPromptSection(
+          registry.getAutoEnabled(),
+        );
+        const prepared = await registry.prepareForcedSkills(forcedSkillIds);
+        runtime.skillActiveContext.activateMany(
+          prepared.map((skill) => skill.entry),
+        );
+        forcedSkillsSuffix =
+          runtime.buildForcedSkillsPromptSection(prepared);
+      } else if (forcedSkillIds.length > 0) {
+        throw new Error(
+          "Forced skills cannot be loaded because skill storage is unavailable.",
+        );
+      }
+      forcedSkillsPromptRef.current = forcedSkillsSuffix;
       generator.setSystemPromptSuffix(
         memorySuffix +
           skillsSuffix +
+          forcedSkillsSuffix +
           (planMode ? PLAN_MODE_SYSTEM_SUFFIX : ""),
       );
     },
@@ -929,9 +973,6 @@ export function useGenerator({
 	      setRunState("preparing");
 	      setLastError(null);
 	      setIsGenerating(true);
-      const runtime = await loadGeneratorRuntime();
-      if (!isCurrentGeneratorRun(runConversationId)) return;
-      runtime.skillActiveContext.clear();
 
       let content: string | ContentPart[];
       if (attachments && attachments.length > 0) {
@@ -952,28 +993,37 @@ export function useGenerator({
         content = prompt;
       }
 
-	      const generator = await getGenerator();
-	      if (!isCurrentGeneratorRun(runConversationId)) return;
-      if (generator) {
-        const storeState = useConversationStore.getState();
-        const activeConv = runConversationId
-          ? storeState.conversations[runConversationId]
-          : null;
-        if (activeConv) {
-          generator.syncMessages(getMessagesForAPI(activeConv));
-        }
-        await applyDynamicGeneratorState(generator);
-      }
-      if (!isCurrentGeneratorRun(runConversationId)) return;
-      useInteractiveStore
-        .getState()
-        .rejectAllPending("new generation started");
-
-      setMessages((prev) => [
-        ...removeErrorMessages(prev),
-        { role: "user", content },
-      ]);
+      let userMessageAdded = false;
       try {
+	        const generator = await getGenerator();
+	        if (!isCurrentGeneratorRun(runConversationId)) return;
+        if (generator) {
+          const storeState = useConversationStore.getState();
+          const activeConv = runConversationId
+            ? storeState.conversations[runConversationId]
+            : null;
+          if (activeConv) {
+            generator.syncMessages(getMessagesForAPI(activeConv));
+          }
+          await applyDynamicGeneratorState(
+            generator,
+            options.forcedSkillIds ?? [],
+          );
+        }
+        if (!isCurrentGeneratorRun(runConversationId)) return;
+        useInteractiveStore
+          .getState()
+          .rejectAllPending("new generation started");
+
+        setMessages((prev) => [
+          ...removeErrorMessages(prev),
+          {
+            role: "user",
+            content,
+            forcedSkillIds: options.forcedSkillIds,
+          },
+        ]);
+        userMessageAdded = true;
         if (generator) {
           const result = await generator.generate(prompt, attachments);
           if (!options.skipAutoQa) {
@@ -982,6 +1032,16 @@ export function useGenerator({
         }
 	      } catch (err: any) {
 	        if (!isCurrentGeneratorRun(runConversationId)) return;
+        if (!userMessageAdded) {
+          setMessages((prev) => [
+            ...removeErrorMessages(prev),
+            {
+              role: "user",
+              content,
+              forcedSkillIds: options.forcedSkillIds,
+            },
+          ]);
+        }
         console.error("Error generating:", err);
         if (err?.name !== "AbortError") {
 	          appendGenerationError(err, { replaceExisting: true });
@@ -993,6 +1053,7 @@ export function useGenerator({
 	          setRunState((state) =>
 	            state === "error" || state === "aborted" ? state : "idle",
 	          );
+	          forcedSkillsPromptRef.current = "";
 	          runConversationIdRef.current = null;
 	        }
 	      }
@@ -1041,6 +1102,7 @@ export function useGenerator({
       thinkingBufferRef.current = "";
     }
 	    generatorRef.current?.abort();
+	    forcedSkillsPromptRef.current = "";
 	    runConversationIdRef.current = null;
 	    useInteractiveStore.getState().rejectAllPending("user stopped");
 	    setRunState("aborted");
@@ -1078,7 +1140,10 @@ export function useGenerator({
 	        if (activeConv) {
 	          generator.syncMessages(getMessagesForAPI(activeConv));
 	        }
-	        await applyDynamicGeneratorState(generator);
+	        await applyDynamicGeneratorState(
+	          generator,
+	          getLastForcedSkillIds(activeConv?.messages ?? []),
+	        );
 	        if (!isCurrentGeneratorRun(runConversationId)) return;
 	        await generator.retry();
 	      }
@@ -1092,10 +1157,11 @@ export function useGenerator({
 		      if (isCurrentGeneratorRun(runConversationId)) {
 		        setMessages((prev) => filterMemoryMessages(prev));
 		        setIsGenerating(false);
-		        setRunState((state) =>
-		          state === "error" || state === "aborted" ? state : "idle",
-		        );
-		        runConversationIdRef.current = null;
+	        setRunState((state) =>
+	          state === "error" || state === "aborted" ? state : "idle",
+	        );
+	        forcedSkillsPromptRef.current = "";
+	        runConversationIdRef.current = null;
 		      }
 		    }
   }, [
@@ -1160,6 +1226,7 @@ export function useGenerator({
 	        setRunState((state) =>
 	          state === "error" || state === "aborted" ? state : "idle",
 	        );
+	        forcedSkillsPromptRef.current = "";
 	        runConversationIdRef.current = null;
 	      }
 	    }

@@ -551,12 +551,15 @@ export class WebAppGenerator {
     }
 
     if (
-      activeCtx &&
+      activeCtx?.restrictTools &&
       !ALWAYS_ALLOWED_TOOL_NAMES.has(name) &&
       !activeCtx.allowedTools.includes(name)
     ) {
+      const activeNames = activeCtx.skills
+        .map((skill) => `"${skill.skillName}"`)
+        .join(", ");
       const errMsg =
-        `Tool "${name}" is not in the active skill "${activeCtx.skillName}"'s ` +
+        `Tool "${name}" is not in the active skills ${activeNames} ` +
         `allowed-tools. Available now: ${activeCtx.allowedTools.join(", ")}. ` +
         `Work within these tools, or call read_skill on a different skill, or wait for the next user message to clear the restriction.`;
       this.events.onToolResult?.(name, args, errMsg, toolCall.id);

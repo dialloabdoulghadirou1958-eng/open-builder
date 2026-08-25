@@ -1,7 +1,9 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { X } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useT } from "../../i18n";
 import { useSettingsStore } from "../../store/settings";
+import { useSkillsStore } from "../../store/skills";
 import type { Attachment } from "../../types";
 import type { Message } from "../../lib/ai/generator-types";
 import {
@@ -13,6 +15,7 @@ import { AttachmentPreview } from "./chat-input/AttachmentPreview";
 import { ChatInputToolbar } from "./chat-input/ChatInputToolbar";
 import { SkillsPanel } from "../skills/SkillsPanel";
 import { isSkillsAvailable } from "../../lib/skills/fs";
+import { getSkillRegistry } from "../../lib/skills/instance";
 import {
   formatAttachmentBytes,
   isAcceptedFileMime,
@@ -44,6 +47,8 @@ interface ChatInputProps {
   attachments: Attachment[];
   onAttachmentsChange: (attachments: Attachment[]) => void;
   onSlashCommand: (cmd: string) => void;
+  forcedSkillIds: readonly string[];
+  onForcedSkillIdsChange: (ids: string[]) => void;
 }
 
 function formatAttachmentError(
@@ -94,6 +99,8 @@ export function ChatInput({
   attachments,
   onAttachmentsChange,
   onSlashCommand,
+  forcedSkillIds,
+  onForcedSkillIdsChange,
 }: ChatInputProps) {
   const t = useT();
   const planModeEnabled = useSettingsStore((s) => s.system.planModeEnabled);
@@ -102,8 +109,41 @@ export function ChatInput({
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
+  const [skillsInitializing, setSkillsInitializing] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const skillsAvailable = isSkillsAvailable();
+  const skills = useSkillsStore((state) => state.skills);
+
+  useEffect(() => {
+    if (!skillsAvailable) return;
+    let cancelled = false;
+    setSkillsInitializing(true);
+    getSkillRegistry()
+      .catch(() => {
+        // The management panel surfaces registry errors inline.
+      })
+      .finally(() => {
+        if (!cancelled) setSkillsInitializing(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [skillsAvailable]);
+
+  const forcedSkills = useMemo(
+    () =>
+      forcedSkillIds
+        .map((id) => skills[id])
+        .filter((skill) => skill !== undefined),
+    [forcedSkillIds, skills],
+  );
+
+  useEffect(() => {
+    const validIds = forcedSkillIds.filter((id) => skills[id] !== undefined);
+    if (validIds.length !== forcedSkillIds.length) {
+      onForcedSkillIdsChange(validIds);
+    }
+  }, [forcedSkillIds, onForcedSkillIdsChange, skills]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -332,6 +372,35 @@ export function ChatInput({
       onDrop={handleDrop}
     >
       <form onSubmit={onSubmit}>
+        {forcedSkills.length > 0 && (
+          <div
+            className="mb-2 flex flex-wrap items-center gap-1.5"
+            aria-label={t.skills.forcedSelection}
+          >
+            <span className="mr-0.5 text-[11px] font-medium text-muted-foreground">
+              {t.skills.forcedLabel}
+            </span>
+            {forcedSkills.map((skill) => (
+              <button
+                key={skill.id}
+                type="button"
+                className="inline-flex h-6 items-center gap-1 rounded-md border border-primary/20 bg-primary/10 px-2 text-[11px] font-medium text-foreground transition-colors hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={t.skills.removeForced.replace(
+                  "{name}",
+                  skill.name,
+                )}
+                onClick={() =>
+                  onForcedSkillIdsChange(
+                    forcedSkillIds.filter((id) => id !== skill.id),
+                  )
+                }
+              >
+                <span>{skill.name}</span>
+                <X size={11} aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        )}
         <AttachmentPreview
           attachments={attachments}
           onRemove={removeAttachment}
@@ -395,6 +464,9 @@ export function ChatInput({
                 skillsAvailable ? () => setSkillsOpen(true) : undefined
               }
               skillsAvailable={skillsAvailable}
+              skillsInitializing={skillsInitializing}
+              forcedSkillIds={forcedSkillIds}
+              onForcedSkillIdsChange={onForcedSkillIdsChange}
               planModeEnabled={planModeEnabled}
               setPlanMode={setPlanMode}
               isGenerating={isGenerating}

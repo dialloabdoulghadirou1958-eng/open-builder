@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { ChevronRight, Trash2, BookOpen, Play } from "lucide-react";
+import {
+  ChevronRight,
+  Trash2,
+  BookOpen,
+  Play,
+  Loader2,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -11,8 +17,9 @@ import { useT } from "../../i18n";
 interface SkillCardProps {
   skill: SkillEntry;
   catalog?: Omit<SkillCatalogItem, "skill">;
-  onToggleEnabled: (id: string, enabled: boolean) => void;
+  onToggleAutoEnabled: (id: string, enabled: boolean) => void;
   onDelete: (id: string) => void;
+  pending?: boolean;
   details?: {
     references: string[];
     scripts: string[];
@@ -23,8 +30,9 @@ interface SkillCardProps {
 export function SkillCard({
   skill,
   catalog,
-  onToggleEnabled,
+  onToggleAutoEnabled,
   onDelete,
+  pending = false,
   details,
   onRequestDetails,
 }: SkillCardProps) {
@@ -44,11 +52,23 @@ export function SkillCard({
     <div className="border border-border/60 rounded-lg overflow-hidden bg-muted/30">
       <div className="flex items-start gap-3 p-3">
         <Switch
-          checked={skill.enabled}
-          onCheckedChange={(next) => onToggleEnabled(skill.id, next)}
-          aria-label={skill.enabled ? t.skills.disable : t.skills.enable}
+          checked={skill.autoEnabled}
+          disabled={pending}
+          onCheckedChange={(next) => onToggleAutoEnabled(skill.id, next)}
+          aria-label={
+            skill.autoEnabled
+              ? t.skills.disableAutoMatch
+              : t.skills.enableAutoMatch
+          }
           className="mt-0.5"
         />
+        {pending && (
+          <Loader2
+            size={13}
+            className="mt-1 animate-spin text-muted-foreground"
+            aria-label={t.skills.updating}
+          />
+        )}
         <button
           type="button"
           onClick={toggleExpand}
@@ -67,6 +87,13 @@ export function SkillCard({
             <span className="text-[10px] text-muted-foreground font-mono">
               v{skill.version}
             </span>
+            {skill.availableVersion &&
+              skill.cachedVersion &&
+              skill.availableVersion !== skill.cachedVersion && (
+                <Badge variant="outline" className="text-[10px] h-4 px-1.5">
+                  {t.skills.updateAvailable}
+                </Badge>
+              )}
             {catalog && (
               <Badge
                 variant={
