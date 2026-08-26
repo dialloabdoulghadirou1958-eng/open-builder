@@ -4,6 +4,8 @@ export const zh = {
     startBuilding: "开始构建你的项目",
     startBuildingDesc:
       "在左侧对话框中描述你想要创建的应用，AI 将为你生成完整的项目代码。",
+    startBuildingDescTablet:
+      "在下方对话框中描述你想要创建的应用，AI 将为你生成完整的项目代码。",
     resources: "Open Builder 资源",
     officialWebsite: "官方网站",
     openSourceProject: "开源项目",
@@ -23,6 +25,7 @@ export const zh = {
       search: "搜索服务",
       storage: "存储治理",
       system: "系统设置",
+      advanced: "高级设置",
     },
     searchServices: {
       web: "联网搜索",

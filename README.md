@@ -11,7 +11,7 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4.x-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![Tauri](https://img.shields.io/badge/Tauri-2.x-FFC131?logo=tauri&logoColor=white)](https://tauri.app)
 
-[Deployment](#deployment) · [Quick Start](#quick-start) · [Features](#features) · [Architecture](#architecture) · [Project Audit](docs/PROJECT_AUDIT.zh-CN.md) · [Contributing](CONTRIBUTING.md)
+[Deployment](#deployment) · [Quick Start](#quick-start) · [Features](#features) · [Architecture](#architecture) · [Changelog](CHANGELOG.md) · [Project Audit (Chinese)](docs/PROJECT_AUDIT.zh-CN.md) · [Contributing](CONTRIBUTING.md)
 
 English | [简体中文](README.zh-CN.md)
 
@@ -23,17 +23,17 @@ English | [简体中文](README.zh-CN.md)
 
 Open Builder is a desktop-first AI web app generator with a browser-compatible interface. Simply describe the application you want to build in natural language, and the AI will create, modify, and delete files in an in-memory file system through a Tool Call loop, with live preview powered by [Sandpack](https://sandpack.codesandbox.io/).
 
-No backend server is required. All computation can happen in the browser, and provider settings, including API keys, are stored in browser local storage. API keys are sent only to the providers you configure.
+Open Builder does not require a hosted application backend. The Web app connects directly to the providers and approved remote tools you configure; provider settings, including API keys, are stored in browser local storage and are sent only when required by those configured services.
 
 The Tauri desktop build (macOS / Windows / Linux) provides local runtime capabilities such as stdio MCP. Web and experimental mobile builds intentionally omit local process and Skill script execution.
 
-> An API service compatible with a wide range of mainstream models—such as OpenAI, Anthropic, Google, Ollama, and others.
+> Native adapters are included for OpenAI Responses, Anthropic, and Google, plus OpenAI-compatible endpoints such as Ollama and other compatible gateways.
 
 ---
 
 ## Demo
 
-![screenshot](/public/images/screenshot.jpg)
+![screenshot](public/images/screenshot.jpg)
 
 [Live Demo](https://builder.u14.app)
 
@@ -48,13 +48,15 @@ The Tauri desktop build (macOS / Windows / Linux) provides local runtime capabil
 - **Multi-Framework Support** — 20+ templates including React, Vue, Svelte, Angular, SolidJS, Astro, etc.
 - **Smart File Operations** — AI uses `patch_file` for precise modifications, avoiding unnecessary full rewrites
 - **Dependency Management** — AI can modify `package.json` and trigger dependency reinstallation
+- **Build Accelerators** — Install shadcn components, translate screenshots into components, apply design specifications, and manage typed environment schemas through dedicated tools
+- **Project Guidance** — Root-level `AGENTS.md`, `CLAUDE.md`, and `DESIGN.md` files can guide generation while remaining untrusted project data that cannot override tool or safety policy
 - **Project Snapshots** — Browse snapshot history, name snapshots, inspect diffs, export patches, and roll back to historical versions
-- **Project Health Check** — Run `/health` or automatic QA to inspect structure, dependencies, runtime logs, accessibility, and responsive risks
-- **Context Compression** — Automatically compresses long conversation context to reduce token usage
+- **Project Health Check** — Run `/health` to inspect structure, dependencies, runtime logs, accessibility, and responsive risks; isolated Automatic QA performs a restricted project check without MCP or preview-console access
+- **Context Compression** — Use `/compact` or the command palette to summarize long conversations and reduce token usage
 - **Plan Mode** — Explore the code and submit an implementation plan for approval before writing files
 - **Subagent Collaboration** — Built-in read-only subagents for code exploration, review, dependency advice, bug investigation, and UI critique
 - **Built-in Search** — Supports enabling the model's built-in search service
-- **CORS Resolution** — App Client-side (Tauri) API reverse proxy forwarding effectively resolves CORS issues
+- **Desktop API Proxy** — Tauri can forward approved HTTP/HTTPS provider requests that would otherwise be blocked by browser CORS; static Web deployments still depend on provider CORS support
 
 ### User Experience
 
@@ -62,7 +64,8 @@ The Tauri desktop build (macOS / Windows / Linux) provides local runtime capabil
 - **Session Organization** — Search, pin, archive, fork, and smart-rename conversations
 - **Project Templates** — Save generated projects as reusable local templates and start new sessions from them
 - **Smart Session Naming** — Auto-generates session titles based on conversation content
-- **Slash Commands** — Input box supports `/compact`, `/review`, and other shortcut commands
+- **Slash Commands** — Input box supports `/new`, `/fork`, `/clear`, `/reset`, `/compact`, `/health`, `/review`, `/continue`, and `/retry`
+- **Command Palette & Shortcuts** — Open commands with `Cmd/Ctrl+K`, create sessions, open settings, focus input, or stop generation from the keyboard
 - **Image & File Input** — Upload screenshots, text files, or PDFs; PDF-capable models receive PDFs as native file input without local text extraction
 - **Skills System** — Auto-match installed skill metadata or force one or more skills for the next message; imported Skills are disabled by default, and desktop scripts require the developer switch plus approval for every invocation
 - **Local Settings** — Provider configuration and API keys persist in browser local storage
@@ -70,9 +73,43 @@ The Tauri desktop build (macOS / Windows / Linux) provides local runtime capabil
 - **Streaming Output** — Real-time display of AI thinking process and code generation progress
 - **Extended Thinking** — Supports Extended Thinking / Reasoning mode (DeepSeek-R1, Claude 4.6, etc.)
 - **One-Click Download** — Export generated project as a ZIP file
-- **Flexible Layout** — Drag to resize chat and editor panels
-- **Multi-Language & Themes** — Multiple UI languages and appearance themes
-- **Mobile Responsive** — Responsive layout with embedded preview on mobile devices
+- **Workspace Tools** — Switch between code and preview, search and manage files, inspect the Sandpack console, and preview desktop/tablet/phone widths with fit and zoom controls
+- **Adaptive Layout** — Desktop uses a horizontal resizable split, tablets use a vertical resizable workspace-over-chat split, and phones use a chat-first layout with inline preview
+- **Languages & Themes** — English and Simplified Chinese interfaces with system, light, and dark themes
+
+### Commands and Shortcuts
+
+| Command     | Behavior                                                  |
+| ----------- | --------------------------------------------------------- |
+| `/new`      | Start a new session                                       |
+| `/fork`     | Fork the current session and project                      |
+| `/clear`    | Clear chat context while keeping current project files    |
+| `/reset`    | Reset the current conversation and project after approval |
+| `/compact`  | Compress the current conversation context                 |
+| `/health`   | Run the project health check                              |
+| `/review`   | Ask the AI to review the current project                  |
+| `/continue` | Continue an interrupted or incomplete task                |
+| `/retry`    | Retry the latest generation                               |
+
+| Shortcut     | Action                                             |
+| ------------ | -------------------------------------------------- |
+| `Cmd/Ctrl+K` | Toggle the command palette                         |
+| `Cmd/Ctrl+N` | Start a new session                                |
+| `Cmd/Ctrl+,` | Open settings                                      |
+| `Cmd/Ctrl+/` | Focus the chat input                               |
+| `Esc`        | Close the palette first, otherwise stop generation |
+
+### MCP and Platform Capabilities (Optional)
+
+- Configure remote HTTPS MCP servers with Streamable HTTP or SSE, static headers, OAuth authorization code, or OAuth client credentials; desktop builds also support stdio servers.
+- Import server definitions from JSON, enable servers and tools independently, and review tool-definition drift before changed capabilities can run.
+- Plan Mode and subagents receive only MCP tools explicitly approved as read-only for those modes.
+
+| Runtime             | Remote HTTPS MCP | stdio MCP | Skill scripts                        |
+| ------------------- | ---------------- | --------- | ------------------------------------ |
+| Web                 | Yes              | No        | No                                   |
+| Desktop             | Yes              | Yes       | Developer switch + per-call approval |
+| Experimental mobile | Yes              | No        | No                                   |
 
 ### Web Search (Optional)
 
@@ -87,7 +124,7 @@ The Tauri desktop build (macOS / Windows / Linux) provides local runtime capabil
 
 - Node.js 24 LTS
 - pnpm 11
-- Any OpenAI-compatible API Key
+- A supported provider endpoint and an API key when that provider requires one
 
 ### Installation
 
@@ -117,10 +154,12 @@ pnpm tauri:dev
 pnpm tauri:build
 
 # iOS development / build
+pnpm tauri ios init # first setup only
 pnpm tauri:ios:dev
 pnpm tauri:ios:build
 
 # Android development / build
+pnpm tauri android init # first setup only
 pnpm tauri:android:dev
 pnpm tauri:android:build
 ```
@@ -129,14 +168,18 @@ pnpm tauri:android:build
 
 Click the settings button in the top-right corner and fill in:
 
-| Option         | Description                   | Example                          |
-| -------------- | ----------------------------- | -------------------------------- |
-| API Key        | Your AI service API key       | `sk-...`                         |
-| API Base URL   | Provider origin/base path     | `https://api.openai.com`         |
-| Model Name     | Model ID to use               | `gpt-5.3-codex`, `deepseek-chat` |
-| Tavily API Key | (Optional) Web search feature | `tvly-...`                       |
+| Option       | Description                                   | Example                               |
+| ------------ | --------------------------------------------- | ------------------------------------- |
+| API Type     | Provider protocol adapter                     | OpenAI, Anthropic, Google, compatible |
+| API Key      | Provider credential, when required            | `sk-...`                              |
+| API Base URL | Provider origin or base path                  | `https://api.openai.com`              |
+| Model Name   | Model ID; supported providers can list models | `gpt-5.3-codex`, `deepseek-chat`      |
+| Web Search   | Optional Tavily or Firecrawl credential       | `tvly-...`                            |
+| Image Search | Optional Pixabay or Unsplash credential       | Provider API key                      |
 
 > Settings and API keys are stored in browser local storage. Treat the browser profile and device as part of your credential security boundary.
+
+MCP servers and Skills are managed from the chat toolbar. Desktop-only options are shown only when the native runtime reports the required capability.
 
 ---
 
@@ -178,9 +221,14 @@ Built-in tools:
 | `image_search`                   | Image search (supports Pixabay, Unsplash)                                                               |
 | `search_npm_packages`            | NPM package search                                                                                      |
 | `get_npm_package_detail`         | Get detailed information about NPM package                                                              |
+| `install_component`              | Install an approved shadcn registry component and its dependencies                                      |
+| `screenshot_to_code`             | Generate and write a component from a supplied UI image                                                 |
+| `apply_design_style`             | Add a selected design specification to the project                                                      |
 | `list_skills` / `read_skill`     | Discover and load auto-matched or forced skills                                                         |
 | `execute_skill_script`           | Run an active skill script in the desktop app only                                                      |
 | `read_env_schema` / `manage_env` | Safely inspect and manage env files                                                                     |
+
+Enabled MCP tools are injected dynamically after server discovery and approval, then filtered by the current platform and Chat, Plan, Automatic QA, or subagent run policy.
 
 ### Tech Stack
 
@@ -199,26 +247,24 @@ Built-in tools:
 
 ---
 
-## Supported Models
+## Supported API Protocols
 
-Open Builder is compatible with the API formats of mainstream large language models:
+Open Builder selects a native AI SDK adapter from the configured API Type and can query supported provider endpoints for their model list.
 
-| Provider  | Recommended Models                   | API Base URL                                     |
-| --------- | ------------------------------------ | ------------------------------------------------ |
-| OpenAI    | `gpt-5.3-codex`, `gpt-5.2`           | `https://api.openai.com`                         |
-| Anthropic | `claude-4.6-sonnet`, `claude-opus-4` | `https://api.anthropic.com`                      |
-| Google    | `gemini-2.0-flash-exp`               | `https://generativelanguage.googleapis.com`      |
-| DeepSeek  | `deepseek-chat`, `deepseek-reasoner` | `https://api.deepseek.com`                       |
-| Qwen      | `qwen-3.5`, `qwen3-coder-plus`       | `https://dashscope.aliyuncs.com/compatible-mode` |
-| Moonshot  | `kimi-k2.5`                          | `https://api.moonshot.cn`                        |
-| Zhipu AI  | `glm-5`                              | `https://open.bigmodel.cn/api/paas/v4`           |
-| Ollama    | `gpt-oss:120b`, `qwen3:8b`           | `http://localhost:11434`                         |
+| API Type          | Protocol/adapter           | Default base URL                            | Typical use                    |
+| ----------------- | -------------------------- | ------------------------------------------- | ------------------------------ |
+| OpenAI Compatible | OpenAI-compatible chat API | `http://localhost:11434`                    | Ollama and compatible gateways |
+| OpenAI            | Responses API              | `https://api.openai.com`                    | OpenAI                         |
+| Anthropic         | Messages API               | `https://api.anthropic.com`                 | Anthropic                      |
+| Google            | Generative Language API    | `https://generativelanguage.googleapis.com` | Google Gemini                  |
 
 > For best results, use a model with strong Function Calling support.
 
 ---
 
 ## Deployment
+
+Static Web deployments do not include the Tauri API proxy, stdio MCP, or Skill script execution. Model and search endpoints used directly from a browser must allow the deployment origin through CORS.
 
 ### Build for Production
 

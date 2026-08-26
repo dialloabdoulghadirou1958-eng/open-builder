@@ -1,6 +1,6 @@
 # Open Builder 安全与质量基线
 
-更新时间：2026-08-25
+更新时间：2026-08-26
 
 本文件记录当前实现边界和发布前验证口径，不替代变更日志，也不把本地静态检查等同于真实模型、设备或生产验证。
 
@@ -8,7 +8,8 @@
 
 - 产品采用桌面优先定位。Web 与实验性移动端不提供 stdio MCP、本机进程或 Skill 脚本执行。
 - 保留现有凭证字段、持久化 key、存储位置和默认保存行为。设置与 API Key 仍存放在浏览器本地存储中，不宣称存在加密 vault；浏览器配置文件和设备属于凭证安全边界。
-- 首次启动右侧区域保持原有结构、内容和 CTA。
+- 桌面端保持对话在左、工作区在右的横向可调分栏；iPad/Android 平板使用工作区在上、对话在下的纵向可调分栏；手机端保持对话优先并使用内嵌预览。
+- 紧凑布局的会话列表通过全视口抽屉呈现，点击遮罩关闭时不能由抽屉内容点击误触发。
 - 移动端保留紧凑控件尺寸，不统一扩大到 44×44 px；无障碍完善集中在语义、Tooltip、焦点、键盘顺序和状态反馈。
 
 ## 2. 工具与运行权限
@@ -50,7 +51,7 @@
 ## 5. UI、性能与工程治理
 
 - 保留现有工作区、首屏和视觉体系，仅统一状态语义、共享 Tooltip、焦点样式、地标、标题层级、复制反馈和 reduced-motion。
-- 设置在桌面保持弹窗结构；小屏优化滚动、固定操作区和裁切。预览设备模式支持 scale-to-fit、缩放和滚动。
+- 设置在桌面保持弹窗结构；小屏优化滚动、固定操作区和裁切。Automatic QA 与权限活动记录集中在独立的“高级设置”页签。预览设备模式支持 scale-to-fit、缩放和滚动。
 - 长消息采用动态高度虚拟列表；Settings、MCP、Skills、Markdown/Diff 与 Sandpack 相关界面按需加载。
 - `package.json` 是应用版本的唯一来源；`pnpm version:sync` 同步 Cargo、Tauri 和 MCP client identity，CI 使用 `pnpm version:check` 防止漂移。
 - `pnpm typecheck`、ESLint `pnpm lint`、Prettier `pnpm format:check`、Vitest、桌面安全脚本和 Rust fmt/clippy/test 构成静态质量门禁。
@@ -65,10 +66,12 @@ pnpm typecheck
 pnpm lint
 pnpm format:check
 pnpm version:check
+pnpm workflow:check
 pnpm test
 pnpm test:components
 pnpm security:desktop
 pnpm build
+pnpm build:check
 
 cd src-tauri
 cargo fmt --check

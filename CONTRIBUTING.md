@@ -13,6 +13,7 @@ Thank you for your interest in Open Builder! We welcome all forms of contributio
 - [Commit Convention](#commit-convention)
 - [Pull Request Process](#pull-request-process)
 - [Code Style](#code-style)
+- [Versioning and Release Notes](#versioning-and-release-notes)
 
 ---
 
@@ -30,7 +31,7 @@ By participating in this project, you agree to abide by the following guidelines
 
 ### Reporting Bugs
 
-1. Search [Issues](https://github.com/your-username/open-builder/issues) first to ensure the bug hasn't been reported
+1. Search [Issues](https://github.com/Amery2010/open-builder/issues) first to ensure the bug hasn't been reported
 2. Create a new Issue using the **Bug Report** template
 3. Provide the following information:
    - Operating system and browser version
@@ -80,15 +81,19 @@ Visit `http://localhost:5173` and enter your API Key in settings to start debugg
 ### Available Commands
 
 ```bash
-pnpm dev      # Start dev server (hot reload)
-pnpm build    # Build for production
-pnpm preview  # Preview production build
-pnpm typecheck # TypeScript type checking
-pnpm lint     # ESLint
-pnpm format:check # Prettier verification
-pnpm version:check # Package/Cargo/Tauri/MCP version contract
-pnpm test     # Unit tests
-pnpm test:components # Component-level Vitest tests
+pnpm dev               # Start the Vite dev server
+pnpm build             # Build for production
+pnpm build:check       # Verify production artifact budgets
+pnpm preview           # Preview the production build
+pnpm typecheck         # TypeScript type checking
+pnpm lint              # ESLint with zero warnings
+pnpm format:check      # Prettier verification, including documentation
+pnpm version:check     # Package/Cargo/Tauri/in-app version contract
+pnpm version:sync      # Write package.json version to the other version files
+pnpm workflow:check    # GitHub Actions and release-workflow contract
+pnpm test              # Unit tests
+pnpm test:components   # Component-level Vitest tests
+pnpm security:desktop  # Desktop capability and security policy checks
 ```
 
 ---
@@ -102,6 +107,9 @@ src/
 ├── lib/ai/generator.ts   # Core engine: WebAppGenerator (Tool Call loop)
 ├── lib/tools/            # Built-in project and network tools
 ├── lib/mcp/              # MCP validation, transports, and runtime policy
+├── lib/skills/           # Skill storage, import, activation, and execution policy
+├── lib/attachments/      # Blob-backed attachment persistence
+├── lib/security/         # Permission activity and native execution revocation
 ├── store/settings/       # Settings persistence
 ├── store/conversation.ts # Zustand session state management
 ├── hooks/useGenerator.ts # Hook connecting engine to UI
@@ -167,8 +175,18 @@ refactor(store): migrate session persistence to Zustand middleware
    pnpm typecheck
    pnpm lint
    pnpm format:check
+   pnpm version:check
+   pnpm workflow:check
    pnpm test
+   pnpm test:components
+   pnpm security:desktop
    pnpm build
+   pnpm build:check
+
+   cd src-tauri
+   cargo fmt --check
+   cargo clippy --all-targets --all-features -- -D warnings
+   cargo test
    ```
 
 4. **Push and create PR**
@@ -191,6 +209,8 @@ refactor(store): migrate session persistence to Zustand middleware
 - Keep PRs focused — one PR per concern
 - Ensure your PR is based on the latest `main` branch (rebase if there are conflicts)
 - Do not include unrelated formatting changes in the PR
+- Update both `README.md` and `README.zh-CN.md` when user-facing behavior changes
+- Add user-visible changes to the `Unreleased` section of `CHANGELOG.md`
 
 ---
 
@@ -201,6 +221,14 @@ refactor(store): migrate session persistence to Zustand middleware
 - File naming: PascalCase for components, camelCase for utility functions
 - Keep code concise and avoid over-abstraction
 - When adding a tool, define its capability in `src/lib/ai/tools-schema.ts`; schema visibility and execution authorization must derive from the same policy
+
+---
+
+## Versioning and Release Notes
+
+`package.json` is the version source of truth. After intentionally changing it, run `pnpm version:sync` and verify with `pnpm version:check`. Do not edit Cargo, Tauri, or the in-app version independently.
+
+Keep `CHANGELOG.md` in reverse chronological order under `Unreleased`. A `v*` tag triggers the desktop draft-release workflow only after the frontend and Rust quality gates pass; Pages deployment remains tied to `main` or a manual workflow run.
 
 ---
 

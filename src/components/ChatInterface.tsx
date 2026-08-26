@@ -13,14 +13,13 @@ import { EmptyState } from "./chat/EmptyState";
 import { MessageBubble } from "./chat/MessageBubble";
 import { GeneratingIndicator } from "./chat/GeneratingIndicator";
 import { SettingsWarning } from "./chat/SettingsWarning";
-import { SessionList } from "./chat/SessionList";
+import { SessionListOverlay } from "./chat/SessionListOverlay";
 import { ResetProjectConfirmDialog } from "./chat/ResetProjectConfirmDialog";
 import {
   RollbackHint,
   RollbackConfirmDialog,
 } from "./chat/RollbackConfirmBanner";
 import { useMergedMessages } from "../hooks/useMergedMessages";
-import { useIsMobile } from "../hooks/useIsMobile";
 import { useRollback } from "../hooks/useRollback";
 import {
   findAssistantGroupEnd,
@@ -73,6 +72,7 @@ interface ChatInterfaceProps {
   template: string;
   sandpackKey: number;
   isProjectInitialized: boolean;
+  showInlinePreview: boolean;
   onCompressContext: () => Promise<void>;
   onRetry: () => Promise<void>;
   onContinue: () => Promise<void>;
@@ -93,6 +93,7 @@ export function ChatInterface({
   template,
   sandpackKey,
   isProjectInitialized,
+  showInlinePreview,
   onCompressContext,
   onRetry,
   onContinue,
@@ -120,8 +121,6 @@ export function ChatInterface({
     overscan: 6,
     scrollMargin: virtualScrollMargin,
   });
-  const isMobile = useIsMobile();
-
   const activeId = useConversationStore((s) => s.activeId);
   useEffect(() => {
     setForcedSkillIds([]);
@@ -391,17 +390,10 @@ export function ChatInterface({
       />
 
       {showSessionList && (
-        <div className="absolute inset-0 top-0 z-40">
-          <button
-            type="button"
-            aria-label={t.sessions.close}
-            className="absolute inset-0 cursor-default backdrop-blur-sm bg-black/20 animate-in fade-in duration-200"
-            onClick={() => setShowSessionList(false)}
-          />
-          <aside className="relative h-full w-full max-w-80 bg-background border-r shadow-lg animate-in slide-in-from-left duration-200">
-            <SessionList onClose={() => setShowSessionList(false)} />
-          </aside>
-        </div>
+        <SessionListOverlay
+          closeLabel={t.sessions.close}
+          onClose={() => setShowSessionList(false)}
+        />
       )}
 
       <div
@@ -447,7 +439,7 @@ export function ChatInterface({
           ))
         )}
 
-        {isMobile && isProjectInitialized && !isGenerating && (
+        {showInlinePreview && isProjectInitialized && !isGenerating && (
           <Suspense
             fallback={
               <div className="flex min-h-40 items-center justify-center rounded-lg border bg-muted/30">

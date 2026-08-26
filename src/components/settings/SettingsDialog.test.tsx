@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "vitest-axe";
 import { describe, expect, it, vi } from "vitest";
@@ -48,6 +48,7 @@ describe("SettingsDialog", () => {
   it("keeps edits transactional until a valid Save and passes axe checks", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn();
+    const onSaveSystem = vi.fn();
     const onClose = vi.fn();
     const { container } = render(
       <TooltipProvider>
@@ -61,7 +62,7 @@ describe("SettingsDialog", () => {
           assetSearchSettings={assetSearchDefaults}
           onSaveAssetSearch={vi.fn()}
           systemSettings={systemDefaults}
-          onSaveSystem={vi.fn()}
+          onSaveSystem={onSaveSystem}
         />
       </TooltipProvider>,
     );
@@ -80,6 +81,16 @@ describe("SettingsDialog", () => {
     );
     await user.type(screen.getByLabelText("Model Name"), "test-model");
 
+    await user.click(screen.getByRole("tab", { name: "Advanced" }));
+    expect(screen.getByText("Permission activity")).toBeInTheDocument();
+    const autoQa = screen.getByRole("group", { name: "Auto QA" });
+    await user.click(within(autoQa).getByRole("button", { name: "Enabled" }));
+
+    await user.click(screen.getByRole("tab", { name: "System" }));
+    expect(
+      screen.queryByRole("group", { name: "Auto QA" }),
+    ).not.toBeInTheDocument();
+
     expect(onSave).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(onSave).toHaveBeenCalledWith({
@@ -87,6 +98,10 @@ describe("SettingsDialog", () => {
       apiKey: "test-key",
       apiBaseUrl: "https://api.example.com",
       model: "test-model",
+    });
+    expect(onSaveSystem).toHaveBeenCalledWith({
+      ...systemDefaults,
+      autoQaEnabled: true,
     });
     expect(onClose).toHaveBeenCalledOnce();
     expect(
@@ -96,5 +111,31 @@ describe("SettingsDialog", () => {
         })
       ).violations,
     ).toEqual([]);
+  });
+
+  it("keeps the shared close control above the sticky header", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(
+      <TooltipProvider>
+        <SettingsDialog
+          isOpen
+          onClose={onClose}
+          settings={aiDefaults}
+          onSave={vi.fn()}
+          webSearchSettings={webSearchDefaults}
+          onSaveWebSearch={vi.fn()}
+          assetSearchSettings={assetSearchDefaults}
+          onSaveAssetSearch={vi.fn()}
+          systemSettings={systemDefaults}
+          onSaveSystem={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    const close = screen.getByRole("button", { name: "Close" });
+    expect(close).toHaveClass("z-20", "size-8");
+    await user.click(close);
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });

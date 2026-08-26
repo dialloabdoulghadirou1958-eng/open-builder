@@ -6,6 +6,8 @@ export const en: typeof zh = {
     startBuilding: "Start Building Your Project",
     startBuildingDesc:
       "Describe the app you want to create in the left chat box, and AI will generate complete project code for you.",
+    startBuildingDescTablet:
+      "Describe the app you want to create in the chat panel below, and AI will generate complete project code for you.",
     resources: "Open Builder resources",
     officialWebsite: "Official website",
     openSourceProject: "Open-source project",
@@ -26,6 +28,7 @@ export const en: typeof zh = {
       search: "Search Services",
       storage: "Storage",
       system: "System",
+      advanced: "Advanced",
     },
     searchServices: {
       web: "Web search",

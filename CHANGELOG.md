@@ -4,46 +4,91 @@ All notable changes to Open Builder are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and versioning adheres to [Semantic Versioning](https://semver.org/).
 
+Tagged versions use their Git tag date. Versions 1.4.0 through 1.7.0 were not tagged in this repository history; their entries are reconstructed from the compare range ending at the commit that first changed `package.json` to that version. These are version milestones, not evidence of published GitHub releases.
+
 ---
 
-## [Unreleased]
+## [v1.7.0]
 
 ### Added
 
-- Added a public Skills manifest, on-demand built-in Skill caching, automatic metadata matching, and one-request forced Skill context.
-- Added structured text Skill creation on Web and desktop, plus nested reference loading through `read_skill`.
+- Added MCP server management with JSON import, per-server and per-tool enablement, definition-drift review, remote Streamable HTTP and SSE transports, OAuth authorization-code and client-credentials flows, and desktop stdio support.
+- Added a central tool capability and authorization policy shared by schema exposure and execution, immutable per-run permission contexts, and a local redacted permission activity log.
+- Added Blob-backed attachment persistence and native PDF file parts for models that support PDF input.
+- Added version synchronization, workflow validation, desktop security checks, component tests, and build-budget checks to the release quality gates.
+- Added a dedicated tablet workspace for iPad and Android tablets, with the project workspace above chat in a resizable vertical split.
+- Added a full-viewport session drawer for compact layouts and a dedicated Advanced settings tab for Automatic QA and permission activity.
+
+### Changed
+
+- Hardened project-file, secret, registry, proxy, redirect, streaming, MCP, and Skill-import boundaries with explicit size, time, origin, approval, and platform limits.
+- Improved session and Sandpack persistence, reset/clear lifecycle behavior, device-preview scaling, message virtualization, lazy loading, shared tooltips, focus behavior, and tool-result rendering.
+- Settings storage migrated to version 15 and disables desktop Skill script execution by default during upgrade.
+- Pinned the current frontend toolchain to TypeScript 6 and synchronized version 1.7.0 across the package, Rust, Tauri, and in-app version contracts.
+- Phone layouts remain chat-first with inline preview, while desktop keeps the horizontal resizable chat-and-workspace split.
+
+## [1.7.0] - 2026-08-25
+
+### Added
+
+- Added a command palette and global keyboard shortcuts, richer diff rendering, and copy/download actions across chat and file surfaces.
+- Added `install_component`, `screenshot_to_code`, `apply_design_style`, `rename_file`, `move_file`, `read_env_schema`, and `manage_env` tooling, plus guarded support for root-level `AGENTS.md`, `CLAUDE.md`, and `DESIGN.md` project references.
+- Added reusable project templates, searchable/pinnable/archivable/forkable sessions, expanded snapshot history with names, diffs, patch export and replay, Storage Governance, and Automatic QA through `project_health_check`.
+- Added a public Skills manifest, on-demand built-in Skill caching, automatic metadata matching, one-request forced Skill context, structured text Skill creation, and nested reference loading through `read_skill`.
+- Added frontend CI, desktop security checks, and broad unit coverage for generator, storage, file, network, Skill, and UI behavior.
+
+### Changed
+
+- Refactored the generator, settings, chat input, session list, file explorer, stores, and tool handlers into smaller modules with explicit runtime and persistence boundaries.
+- Upgraded the development line to AI SDK 7, TypeScript 7, Vite 8, current compatible Tauri/Rust dependencies, Node.js 24 LTS, and pnpm 11.
+- The generator now uses locally configured AI, web-search, and asset-search providers, with provider settings and API keys persisted in browser local storage.
+- Settings storage migrated through version 14, removed obsolete server/auth and custom search endpoint fields, and split Search Services, Storage Governance, and System settings into dedicated tabs.
+- Built-in Skills now ship from `public/skills`, cache to OPFS on Web and AppData on desktop, and refresh only after being disabled and re-enabled.
+- Tightened retry, cancellation, context compression, subagent limits, Skill-import limits, network access, deletion confirmation, and project-file validation.
 
 ### Removed
 
 - Removed the Mohua backend API integration, OAuth2/SSO login flow, remote model routing, server-backed search modes, and related settings UI.
-- Removed conversation import/export, session filter tabs, the header source-code shortcut, Security Center, Credential Vault workflows, the local Style Assets library, and Skill Script Audit logging.
-- Removed Web Skill script execution and the dismissible Skill script warning banner; script execution is now desktop-only.
+- Removed conversation import/export, session filter tabs, the header source-code shortcut, Security Center, Credential Vault workflows, the local Style Assets library, and Skill Script Audit logging during the 1.7 development line.
+- Removed Web Skill script execution and the dismissible Skill script warning banner; local scripts became desktop-only.
 - Web upgrades now remove references, scripts, and other package resources from existing Skill directories, retaining only each root `SKILL.md`.
+- Removed generated Tauri Android and Apple project artifacts from source control; platform projects are generated by Tauri when needed.
 
-### Changed
-
-- The generator now always uses locally configured AI, web-search, and asset-search providers, with provider settings and API keys persisted in browser local storage.
-- Upgraded the frontend to AI SDK 7, TypeScript 7, Vite 8, and the latest stable direct dependencies; standardized development and CI on Node.js 24 LTS and pnpm 11.
-- Updated Tauri and Rust dependencies within their latest compatible stable ranges.
-- Settings storage now migrates to version 14, removes obsolete server/auth data and custom search endpoint fields, and preserves legacy plaintext API keys in local provider settings.
-- Storage Governance now has its own settings tab, and Automatic QA has a shorter label.
-- Web and asset search settings now share a Search Services tab, use fixed official provider endpoints, and appear before Storage Governance and System settings.
-- Built-in Skills now ship from `public/skills`, cache to OPFS on Web and AppData on desktop, and refresh only after being disabled and re-enabled.
-
-## [1.4.0] - 2026-04-06
+## [1.6.0] - 2026-05-25
 
 ### Added
 
-- **Unified Server API**: Seamless integration with Mohua API (`mohua.u14.app`) offering centralized proxying for AI models, web search, and asset search.
-- **SSO Authentication**: Implemented pure frontend OAuth2 Public Client + PKCE flow via `u14.app` SSO, replacing the legacy email/password JWT system.
-- **Dynamic Providers**: Support dynamically fetching and rendering available web search and asset search providers from the server.
-- **Server UI Mode**: Settings Dialog auto-hides local API and provider configurations when authenticated, substituting them with active server configurations.
-- **Auth Callback UI**: New secure callback processing page showing SSO redirect and token exchange status.
+- Added read-only subagent collaboration for code exploration, review, dependency advice, bug investigation, and UI critique, with dedicated progress/result cards and up to three parallel dispatches per turn.
+- Added the Skills system with built-in and imported Skills, enable/disable and removal controls, message-level Skill selection, reference/script discovery, and the `list_skills`, `read_skill`, and `execute_skill_script` tools.
+- Added OPFS persistence for Web Skills and Tauri-backed persistence for desktop Skills.
 
-### Refactored
+### Changed
 
-- Removed JWT auto-refresh mechanism locally; implemented token timeout checks defaulting to SSO reauthorization.
-- Deprecated client-side Asset Search configuration for logged-in users, using the server API entirely.
+- Refactored the message input into a dedicated toolbar with separate media and Skills controls.
+
+## [1.5.0] - 2026-05-24
+
+### Added
+
+- Added Plan Mode, including project exploration, an approval/rejection card, feedback-driven replanning, and write-tool blocking until approval.
+- Added `ask_user_question` with single-select, multi-select, and free-text clarification flows.
+- Added an explicit rollback confirmation flow.
+
+### Changed
+
+- Reorganized the generator, AI client, tools, settings, chat input, session list, and file explorer into focused modules while preserving the existing project and conversation data model.
+
+## [1.4.0] - 2026-05-21
+
+### Added
+
+- Added the Mohua unified server API for centrally proxied model, web-search, and asset-search requests.
+- Added OAuth2 Public Client + PKCE SSO through `u14.app`, dynamic server provider discovery, authenticated settings mode, and a dedicated authentication callback screen.
+
+### Changed
+
+- Removed local JWT auto-refresh in favor of SSO reauthorization after token expiry.
+- Authenticated users used server-provided asset-search configuration instead of local asset-search settings.
 
 ---
 
@@ -65,7 +110,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
-## [1.2.0] - 2026-03-05
+## [1.2.0] - 2026-03-06
 
 ### Added
 
@@ -82,6 +127,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 - Global memory tool call for persistent AI context
 - Automatic retry mechanism for failed requests
 - Tauri framework integration for cross-platform desktop app builds
+- System reset control for clearing local project and application data
+- Automated desktop release workflows for version tags
 
 ### Refactored
 
@@ -106,6 +153,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 - Introduced GFM (GitHub Flavored Markdown) support for improved todolist rendering
 - Optimized scrollbar styles throughout the project
+
+---
+
+## [1.1.1] - 2026-02-27
+
+### Added
+
+- Added `get_console_logs` so the AI could inspect Sandpack errors and warnings before completing a task, with console details surfaced in tool cards.
+
+### Fixed
+
+- Fixed transient request-error handling and missing streaming Tool Call IDs.
+- Fixed generator lifecycle state that prevented a conversation from continuing after a task completed, a page refresh, a session switch, or generator reconstruction.
+
+---
+
+## [1.1.0] - 2026-02-27
+
+### Added
+
+- Added File Explorer context menus with inline create, rename, and delete actions, plus drag-and-drop file and folder moves.
 
 ---
 
@@ -147,8 +215,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 - OpenAI-compatible API support (OpenAI, DeepSeek, etc.)
 - Basic file operation tools: `write_file`, `read_files`, `list_files`, `delete_file`
 
-[1.4.0]: https://github.com/Amery2010/open-builder/compare/v1.3.0...v1.4.0
+[Unreleased]: https://github.com/Amery2010/open-builder/compare/f3aae1f...HEAD
+[1.7.0]: https://github.com/Amery2010/open-builder/compare/086c92a...f3aae1f
+[1.6.0]: https://github.com/Amery2010/open-builder/compare/7c44060...086c92a
+[1.5.0]: https://github.com/Amery2010/open-builder/compare/c0990ae...7c44060
+[1.4.0]: https://github.com/Amery2010/open-builder/compare/v1.3.0...c0990ae
 [1.3.0]: https://github.com/Amery2010/open-builder/compare/v1.2.0...v1.3.0
-[1.2.0]: https://github.com/Amery2010/open-builder/compare/v1.0.0...v1.2.0
-[1.0.0]: https://github.com/Amery2010/open-builder/compare/v0.3.0...v1.0.0
-[0.1.0]: https://github.com/Amery2010/open-builder/releases/tag/v0.1.0
+[1.2.0]: https://github.com/Amery2010/open-builder/compare/v1.1.1...v1.2.0
+[1.1.1]: https://github.com/Amery2010/open-builder/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/Amery2010/open-builder/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/Amery2010/open-builder/compare/4319310...v1.0.0
+[0.1.0]: https://github.com/Amery2010/open-builder/tree/4319310

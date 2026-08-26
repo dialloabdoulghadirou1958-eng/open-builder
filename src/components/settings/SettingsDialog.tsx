@@ -19,6 +19,7 @@ import { ModelTab } from "./tabs/ModelTab";
 import { SearchServicesTab } from "./tabs/SearchServicesTab";
 import { SystemTab } from "./tabs/SystemTab";
 import { StorageTab } from "./tabs/StorageTab";
+import { AdvancedTab } from "./tabs/AdvancedTab";
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -135,30 +136,36 @@ export function SettingsDialog({
           defaultValue="model"
           className="min-h-0 flex-1 overflow-hidden px-4 py-3 sm:px-2 sm:py-0"
         >
-          <TabsList className="w-full shrink-0">
+          <TabsList className="w-full shrink-0 justify-start overflow-x-auto sm:justify-center sm:overflow-visible">
             <TabsTrigger
               value="model"
-              className="px-1.5 text-xs sm:px-2 sm:text-sm"
+              className="min-w-fit px-1.5 text-xs sm:min-w-0 sm:px-2 sm:text-sm"
             >
               {t.settings.tabs.model}
             </TabsTrigger>
             <TabsTrigger
               value="search"
-              className="px-1.5 text-xs sm:px-2 sm:text-sm"
+              className="min-w-fit px-1.5 text-xs sm:min-w-0 sm:px-2 sm:text-sm"
             >
               {t.settings.tabs.search}
             </TabsTrigger>
             <TabsTrigger
               value="storage"
-              className="px-1.5 text-xs sm:px-2 sm:text-sm"
+              className="min-w-fit px-1.5 text-xs sm:min-w-0 sm:px-2 sm:text-sm"
             >
               {t.settings.tabs.storage}
             </TabsTrigger>
             <TabsTrigger
               value="system"
-              className="px-1.5 text-xs sm:px-2 sm:text-sm"
+              className="min-w-fit px-1.5 text-xs sm:min-w-0 sm:px-2 sm:text-sm"
             >
               {t.settings.tabs.system}
+            </TabsTrigger>
+            <TabsTrigger
+              value="advanced"
+              className="min-w-fit px-1.5 text-xs sm:min-w-0 sm:px-2 sm:text-sm"
+            >
+              {t.settings.tabs.advanced}
             </TabsTrigger>
           </TabsList>
 
@@ -198,6 +205,13 @@ export function SettingsDialog({
             className="min-h-0 overflow-y-auto py-4 pr-1 space-y-4"
           >
             <SystemTab form={systemForm} setForm={setSystemForm} />
+          </TabsContent>
+
+          <TabsContent
+            value="advanced"
+            className="min-h-0 overflow-y-auto py-4 pr-1 space-y-4"
+          >
+            <AdvancedTab form={systemForm} setForm={setSystemForm} />
           </TabsContent>
         </Tabs>
 
