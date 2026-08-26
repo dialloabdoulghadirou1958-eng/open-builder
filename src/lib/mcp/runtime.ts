@@ -5,6 +5,7 @@ import type {
 } from "../ai/generator-types";
 import { TOOL_POLICY_VERSION } from "../ai/tool-policy-version";
 import { buildApprovedMcpInstructions, selectAvailableMcpTools } from "./index";
+import { compileMcpToolInputValidator } from "./tool-input-validator";
 import type { McpServerEntry, McpServerRuntimeState } from "./types";
 
 export interface McpToolCaller {
@@ -37,9 +38,9 @@ export interface BuildMcpRuntimeOptions {
   caller: McpToolCaller;
 }
 
-export function buildMcpRuntimeBundle(
+export async function buildMcpRuntimeBundle(
   options: BuildMcpRuntimeOptions,
-): McpRuntimeBundle {
+): Promise<McpRuntimeBundle> {
   const aliases = new Map<string, { serverId: string; toolName: string }>();
   const planModeToolNames = new Set<string>();
   const subagentToolNames = new Set<string>();
@@ -50,31 +51,42 @@ export function buildMcpRuntimeBundle(
     mode: "chat",
   });
   for (const selected of available) {
-    aliases.set(selected.alias, {
-      serverId: selected.serverId,
-      toolName: selected.toolName,
-    });
-    tools[selected.alias] = {
-      description:
-        `[MCP: ${selected.serverName} / ${selected.definition.title || selected.toolName}] ` +
-        (selected.definition.description ||
-          "No description supplied by the server."),
-      inputSchema: jsonSchema(selected.definition.inputSchema as never),
-    };
+    try {
+      const validate = await compileMcpToolInputValidator(
+        selected.definition.inputSchema,
+      );
+      aliases.set(selected.alias, {
+        serverId: selected.serverId,
+        toolName: selected.toolName,
+      });
+      tools[selected.alias] = {
+        description:
+          `[MCP: ${selected.serverName} / ${selected.definition.title || selected.toolName}] ` +
+          (selected.definition.description ||
+            "No description supplied by the server."),
+        inputSchema: jsonSchema(selected.definition.inputSchema as never, {
+          validate,
+        }),
+      };
+    } catch (error) {
+      warnings.push(
+        `${selected.serverName} / ${selected.toolName}: input schema is unsupported (${error instanceof Error ? error.message : String(error)})`,
+      );
+    }
   }
   for (const selected of selectAvailableMcpTools(
     options.servers,
     options.runtime,
     { globalEnabled: options.globalEnabled, mode: "plan" },
   )) {
-    planModeToolNames.add(selected.alias);
+    if (aliases.has(selected.alias)) planModeToolNames.add(selected.alias);
   }
   for (const selected of selectAvailableMcpTools(
     options.servers,
     options.runtime,
     { globalEnabled: options.globalEnabled, mode: "subagent" },
   )) {
-    subagentToolNames.add(selected.alias);
+    if (aliases.has(selected.alias)) subagentToolNames.add(selected.alias);
   }
   for (const server of Object.values(options.servers)) {
     const state = options.runtime[server.id];

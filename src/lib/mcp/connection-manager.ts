@@ -40,6 +40,7 @@ import {
   validateMcpServerEntry,
 } from "./validation";
 import { recordPermissionActivity } from "../security/activity-log";
+import { validateMcpToolInput } from "./tool-input-validator";
 import {
   assertMcpLifecycleCurrent,
   captureMcpLifecycleEpoch,
@@ -546,6 +547,22 @@ export class McpConnectionManager {
         isError: true,
       };
     }
+    const inputValidation = await validateMcpToolInput(tool.inputSchema, args);
+    if (!inputValidation.success) {
+      recordPermissionActivity({
+        tool: toolName,
+        source: "mcp",
+        mode: context.run.mode,
+        platform: context.run.platform,
+        decision: "denied",
+        target: server.url,
+        reason: "tool arguments failed the approved JSON Schema",
+      });
+      return {
+        text: `Error: invalid arguments for MCP tool "${toolName}": ${inputValidation.error.message}`,
+        isError: true,
+      };
+    }
     recordPermissionActivity({
       tool: toolName,
       source: "mcp",
@@ -564,13 +581,17 @@ export class McpConnectionManager {
     let raw: McpCallToolResultLike;
     try {
       if (connection.kind === "remote") {
-        raw = await connection.client.callTool(toolName, args, context.signal);
+        raw = await connection.client.callTool(
+          toolName,
+          inputValidation.value,
+          context.signal,
+        );
       } else {
         raw = await callTauriStdioTool(
           serverId,
           context.toolCallId,
           toolName,
-          args,
+          inputValidation.value,
           server.requestTimeoutMs ?? MCP_LIMITS.defaultRequestTimeoutMs,
           context.signal,
         );

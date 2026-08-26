@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useSettingsStore } from "../store/settings";
 import { useConversationStore } from "../store/conversation";
 import type { Message, ProjectFiles } from "../types";
@@ -40,8 +40,21 @@ export function useAppState() {
   const setAssetSearch = useSettingsStore((s) => s.setAssetSearch);
   const setSystem = useSettingsStore((s) => s.setSystem);
   const isAIValid = useSettingsStore((s) => s.isAIValid);
+  const localAgentCapability = useSettingsStore((s) => s.localAgentCapability);
+  const refreshLocalAgentCapability = useSettingsStore(
+    (s) => s.refreshLocalAgentCapability,
+  );
 
-  const hasValidSettings = isAIValid();
+  useEffect(() => {
+    if (localAgentCapability === "loading") {
+      void refreshLocalAgentCapability();
+    }
+  }, [localAgentCapability, refreshLocalAgentCapability]);
+
+  const hasValidSettings =
+    settings.runtime === "localCli"
+      ? localAgentCapability === "supported"
+      : isAIValid();
 
   const handleSaveSettings = setAI;
   const handleSaveWebSearchSettings = setWebSearch;

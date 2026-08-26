@@ -194,6 +194,17 @@ export interface CompressedContext {
   fromIndex: number;
 }
 
+export type LocalAgentProvider = "codex" | "claude";
+
+export interface LocalAgentSessionRef {
+  provider: LocalAgentProvider;
+  sessionId: string;
+  transcriptFingerprint: string;
+  model?: string;
+  cliVersion: string;
+  updatedAt: number;
+}
+
 export interface Conversation {
   id: string;
   title: string;
@@ -202,6 +213,9 @@ export interface Conversation {
   template: string;
   isProjectInitialized: boolean;
   compressedContext?: CompressedContext;
+  localAgentSessions?: Partial<
+    Record<LocalAgentProvider, LocalAgentSessionRef>
+  >;
   activeFile?: string;
   pinned?: boolean;
   archived?: boolean;

@@ -107,7 +107,8 @@ export function SessionList({ onClose }: SessionListProps) {
   );
   const archived = useMemo(() => sorted.filter((c) => c.archived), [sorted]);
   const templates = useMemo(
-    () => Object.values(templateRecord).sort((a, b) => b.updatedAt - a.updatedAt),
+    () =>
+      Object.values(templateRecord).sort((a, b) => b.updatedAt - a.updatedAt),
     [templateRecord],
   );
 
@@ -159,7 +160,7 @@ export function SessionList({ onClose }: SessionListProps) {
 
   const templateSourceConversation = useMemo(() => {
     const sourceId = templateSourceId ?? activeId;
-    return sourceId ? conversations[sourceId] ?? null : null;
+    return sourceId ? (conversations[sourceId] ?? null) : null;
   }, [activeId, conversations, templateSourceId]);
 
   const templateSourceTitle = templateSourceConversation
@@ -190,7 +191,8 @@ export function SessionList({ onClose }: SessionListProps) {
       } catch (err) {
         return {
           ok: false as const,
-          error: err instanceof Error ? err.message : "Failed to save template.",
+          error:
+            err instanceof Error ? err.message : "Failed to save template.",
         };
       }
     },
@@ -219,19 +221,42 @@ export function SessionList({ onClose }: SessionListProps) {
       if (!conv || conv.messages.length === 0) return;
 
       const ai = useSettingsStore.getState().ai;
-      if (!ai.apiKey || !ai.apiBaseUrl || !ai.model) return;
+      if (ai.runtime === "api" && (!ai.apiKey || !ai.apiBaseUrl || !ai.model))
+        return;
 
       setRenamingId(convId);
       try {
-        const { generateSmartTitle } = await import(
-          "../../lib/utils/smart-title"
+        const { generateSmartTitle } =
+          await import("../../lib/utils/smart-title");
+        const localText =
+          ai.runtime === "localCli"
+            ? await import("../../lib/local-agent/generator").then(
+                ({ runLocalUtilityText }) => {
+                  const provider = ai.localAgent.provider;
+                  const preferences = ai.localAgent[provider];
+                  return (instructions: string, prompt: string) =>
+                    runLocalUtilityText(
+                      {
+                        provider,
+                        model: preferences.model,
+                        effort: preferences.effort,
+                      },
+                      instructions,
+                      prompt,
+                    );
+                },
+              )
+            : undefined;
+        const title = await generateSmartTitle(
+          conv.messages,
+          {
+            apiType: ai.apiType,
+            apiBaseUrl: ai.apiBaseUrl,
+            apiKey: ai.apiKey,
+            model: ai.model,
+          },
+          localText,
         );
-        const title = await generateSmartTitle(conv.messages, {
-          apiType: ai.apiType,
-          apiBaseUrl: ai.apiBaseUrl,
-          apiKey: ai.apiKey,
-          model: ai.model,
-        });
         if (title) {
           renameConversation(convId, title);
         }
@@ -264,10 +289,7 @@ export function SessionList({ onClose }: SessionListProps) {
     />
   );
 
-  const renderLoadMore = (
-    hiddenCount: number,
-    onClick: () => void,
-  ) =>
+  const renderLoadMore = (hiddenCount: number, onClick: () => void) =>
     hiddenCount > 0 ? (
       <div className="px-3 py-2">
         <Button
@@ -369,11 +391,7 @@ export function SessionList({ onClose }: SessionListProps) {
               {pinnedWindow.visible.map(renderItem)}
               {renderLoadMore(pinnedWindow.hiddenCount, () =>
                 setVisiblePinnedCount((count) =>
-                  getNextVisibleCount(
-                    count,
-                    pinned.length,
-                    SESSION_LIST_BATCH,
-                  ),
+                  getNextVisibleCount(count, pinned.length, SESSION_LIST_BATCH),
                 ),
               )}
             </SessionGroup>
@@ -386,11 +404,7 @@ export function SessionList({ onClose }: SessionListProps) {
               {normalWindow.visible.map(renderItem)}
               {renderLoadMore(normalWindow.hiddenCount, () =>
                 setVisibleNormalCount((count) =>
-                  getNextVisibleCount(
-                    count,
-                    normal.length,
-                    SESSION_LIST_BATCH,
-                  ),
+                  getNextVisibleCount(count, normal.length, SESSION_LIST_BATCH),
                 ),
               )}
             </SessionGroup>
@@ -417,11 +431,7 @@ export function SessionList({ onClose }: SessionListProps) {
             {sessionWindow.visible.map(renderItem)}
             {renderLoadMore(sessionWindow.hiddenCount, () =>
               setVisibleSessionCount((count) =>
-                getNextVisibleCount(
-                  count,
-                  sorted.length,
-                  SESSION_LIST_BATCH,
-                ),
+                getNextVisibleCount(count, sorted.length, SESSION_LIST_BATCH),
               ),
             )}
           </>

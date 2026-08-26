@@ -1,17 +1,17 @@
 import { useCallback } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { WebAppGenerator } from "../lib/ai/generator";
+import type { GenerationBackend } from "../lib/ai/generator";
 import type { ProjectFiles } from "../types";
 import { validateProjectFiles } from "../lib/utils/project-files";
 
 interface UseFileOperationsArgs {
   setFiles: Dispatch<SetStateAction<ProjectFiles>>;
-  generatorRef: MutableRefObject<WebAppGenerator | null>;
+  generatorRef: MutableRefObject<GenerationBackend | null>;
 }
 
 function commitProjectFiles(
   files: ProjectFiles,
-  generatorRef?: MutableRefObject<WebAppGenerator | null>,
+  generatorRef?: MutableRefObject<GenerationBackend | null>,
 ): { ok: true; files: ProjectFiles } | { ok: false; error: string } {
   const validation = validateProjectFiles(files);
   if (!validation.ok) {

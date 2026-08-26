@@ -108,4 +108,56 @@ describe("migrateSettings", () => {
     expect(migrated.assetSearch).not.toHaveProperty("pixabayApiUrl");
     expect(migrated.assetSearch).not.toHaveProperty("unsplashApiUrl");
   });
+
+  it("adds local CLI defaults without changing existing API configuration", () => {
+    const migrated = migrateSettings(
+      {
+        ai: {
+          apiType: "anthropic",
+          apiKey: "existing-key",
+          apiBaseUrl: "https://api.anthropic.com",
+          model: "existing-model",
+        },
+      },
+      15,
+    ) as Record<string, any>;
+
+    expect(migrated.ai).toMatchObject({
+      runtime: "api",
+      apiType: "anthropic",
+      apiKey: "existing-key",
+      apiBaseUrl: "https://api.anthropic.com",
+      model: "existing-model",
+      localAgent: {
+        provider: "codex",
+        codex: { model: "", effort: "" },
+        claude: { model: "", effort: "" },
+      },
+    });
+  });
+
+  it("preserves valid provider-specific local CLI preferences", () => {
+    const migrated = migrateSettings(
+      {
+        ai: {
+          runtime: "localCli",
+          localAgent: {
+            provider: "claude",
+            codex: { model: "codex-model", effort: "high" },
+            claude: { model: "claude-model", effort: "medium" },
+          },
+        },
+      },
+      15,
+    ) as Record<string, any>;
+
+    expect(migrated.ai).toMatchObject({
+      runtime: "localCli",
+      localAgent: {
+        provider: "claude",
+        codex: { model: "codex-model", effort: "high" },
+        claude: { model: "claude-model", effort: "medium" },
+      },
+    });
+  });
 });

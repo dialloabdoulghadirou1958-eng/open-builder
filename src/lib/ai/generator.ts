@@ -57,6 +57,8 @@ import type {
   AskUserQuestion,
   ToolExecutionOutput,
   ResolvedAttachment,
+  GenerationBackend,
+  AgentToolExecutor,
 } from "./generator-types";
 
 // Re-export everything so callers can keep importing types from this module.
@@ -78,9 +80,11 @@ export type {
   ToolExecutionContext,
   ToolExecutionOutput,
   McpToolExecutionIdentity,
+  GenerationBackend,
+  AgentToolExecutor,
 } from "./generator-types";
 
-export class WebAppGenerator {
+export class WebAppGenerator implements GenerationBackend, AgentToolExecutor {
   // ── internal state ──
   private files: ProjectFiles;
   private messages: Message[];
@@ -165,6 +169,22 @@ export class WebAppGenerator {
     return [...this.messages];
   }
 
+  appendMessage(message: Message): void {
+    this.messages.push(message);
+  }
+
+  getTools(): ToolSet {
+    return this.tools;
+  }
+
+  getSystemContent(): string {
+    return this.buildSystemContent();
+  }
+
+  getUntrustedReferenceContext(): string {
+    return this.untrustedReferenceContext;
+  }
+
   resetMessages(): void {
     this.messages = [];
   }
@@ -236,17 +256,17 @@ export class WebAppGenerator {
     this.ctrl = null;
   }
 
-  /** Retry the loop without adding a new user message (user message is already in history). */
-  async retry(): Promise<GenerateResult> {
+  beginExternalRun(): AbortSignal {
+    this.ctrl?.abort();
     this.runId = this.createRunId();
-    return this._runGenerateLoop();
+    this.ctrl = new AbortController();
+    return this.ctrl.signal;
   }
 
-  async generate(
+  appendUserMessage(
     userMessage: string,
     attachments?: ResolvedAttachment[],
-  ): Promise<GenerateResult> {
-    this.runId = this.createRunId();
+  ): void {
     if (attachments && attachments.length > 0) {
       const parts: ContentPart[] = [];
       if (userMessage) parts.push({ type: "text", text: userMessage });
@@ -270,9 +290,29 @@ export class WebAppGenerator {
         }
       }
       this.messages.push({ role: "user", content: parts });
-    } else {
-      this.messages.push({ role: "user", content: userMessage });
+      return;
     }
+    this.messages.push({ role: "user", content: userMessage });
+  }
+
+  executeToolCall(
+    toolCall: ToolCall,
+  ): Promise<{ result: ToolExecutionOutput; changes: FileChange[] }> {
+    return this.executeTool(toolCall);
+  }
+
+  /** Retry the loop without adding a new user message (user message is already in history). */
+  async retry(): Promise<GenerateResult> {
+    this.runId = this.createRunId();
+    return this._runGenerateLoop();
+  }
+
+  async generate(
+    userMessage: string,
+    attachments?: ResolvedAttachment[],
+  ): Promise<GenerateResult> {
+    this.runId = this.createRunId();
+    this.appendUserMessage(userMessage, attachments);
 
     return this._runGenerateLoop();
   }

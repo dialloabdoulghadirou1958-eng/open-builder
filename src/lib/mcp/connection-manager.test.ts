@@ -149,4 +149,144 @@ describe("McpConnectionManager tool errors", () => {
     }
     expect(serialized).toContain("[REDACTED]");
   });
+
+  it("rejects invalid approved tool arguments before invoking the transport", async () => {
+    const base = createMcpServerEntry(
+      {
+        name: "Validated remote",
+        enabled: true,
+        transport: "streamable-http",
+        url: "https://mcp.example.com/rpc",
+      },
+      { id: "validated-remote", now: 1 },
+    );
+    const server: McpServerEntry = {
+      ...base,
+      tools: {
+        lookup: {
+          name: "lookup",
+          inputSchema: {
+            type: "object",
+            properties: { id: { type: "integer" } },
+            required: ["id"],
+            additionalProperties: false,
+          },
+          fingerprint: "approved-tool",
+          enabled: true,
+          allowInPlanMode: false,
+          allowForSubagents: false,
+        },
+      },
+    };
+    useMcpStore.setState({
+      globalEnabled: true,
+      servers: { [server.id]: server },
+      runtime: {
+        [server.id]: {
+          status: "ready",
+          drift: {
+            status: "clean",
+            added: [],
+            removed: [],
+            changed: [],
+            instructionsChanged: false,
+            currentFingerprint: "approved-server",
+          },
+          updatedAt: 1,
+        },
+      },
+      _hasHydrated: true,
+    });
+    const manager = new McpConnectionManager();
+    const callTool = vi.fn();
+    (
+      manager as unknown as {
+        connections: Map<string, unknown>;
+      }
+    ).connections.set(server.id, {
+      kind: "remote",
+      updatedAt: server.updatedAt,
+      client: { callTool },
+    });
+    const alias = createMcpToolAlias(server.id, "lookup");
+    const args = { id: "1", extra: true };
+
+    await expect(
+      manager.callTool(server.id, "lookup", args, chatContext(alias)),
+    ).resolves.toMatchObject({ isError: true });
+    expect(args).toEqual({ id: "1", extra: true });
+    expect(callTool).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid stdio arguments at the same shared boundary", async () => {
+    const base = createMcpServerEntry(
+      {
+        name: "Validated stdio",
+        enabled: true,
+        transport: "stdio",
+        command: "fixture-mcp",
+      },
+      { id: "validated-stdio", now: 1 },
+    );
+    const server: McpServerEntry = {
+      ...base,
+      tools: {
+        lookup: {
+          name: "lookup",
+          inputSchema: {
+            type: "object",
+            properties: { id: { type: "integer" } },
+            required: ["id"],
+            additionalProperties: false,
+          },
+          fingerprint: "approved-tool",
+          enabled: true,
+          allowInPlanMode: false,
+          allowForSubagents: false,
+        },
+      },
+    };
+    useMcpStore.setState({
+      globalEnabled: true,
+      servers: { [server.id]: server },
+      runtime: {
+        [server.id]: {
+          status: "ready",
+          drift: {
+            status: "clean",
+            added: [],
+            removed: [],
+            changed: [],
+            instructionsChanged: false,
+            currentFingerprint: "approved-server",
+          },
+          updatedAt: 1,
+        },
+      },
+      _hasHydrated: true,
+    });
+    const manager = new McpConnectionManager();
+    (
+      manager as unknown as {
+        connections: Map<string, unknown>;
+      }
+    ).connections.set(server.id, {
+      kind: "stdio",
+      updatedAt: server.updatedAt,
+      discovery: { tools: [] },
+    });
+    const alias = createMcpToolAlias(server.id, "lookup");
+
+    const result = await manager.callTool(
+      server.id,
+      "lookup",
+      { id: "not-an-integer" },
+      chatContext(alias),
+    );
+
+    expect(result).toMatchObject({
+      isError: true,
+      text: expect.stringMatching(/invalid arguments/i),
+    });
+  });
 });

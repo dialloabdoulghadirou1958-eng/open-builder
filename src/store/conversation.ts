@@ -6,6 +6,8 @@ import { runMigrations, type MigrationStep } from "./utils/migrate";
 import type {
   Conversation,
   CompressedContext,
+  LocalAgentProvider,
+  LocalAgentSessionRef,
   Message,
   ProjectFiles,
 } from "../types";
@@ -86,6 +88,11 @@ interface ConversationState {
   setCompressedContextForConversation: (
     id: string,
     ctx: CompressedContext,
+  ) => void;
+  setLocalAgentSessionForConversation: (
+    id: string,
+    provider: LocalAgentProvider,
+    session: LocalAgentSessionRef | undefined,
   ) => void;
   renameConversation: (id: string, title: string) => void;
   pinConversation: (id: string) => void;
@@ -283,6 +290,7 @@ export const useConversationStore = create<ConversationState>()(
                 ...conv,
                 messages: [],
                 compressedContext: undefined,
+                localAgentSessions: undefined,
                 updatedAt: Date.now(),
               },
             },
@@ -307,6 +315,7 @@ export const useConversationStore = create<ConversationState>()(
                 template: DEFAULT_PROJECT_TEMPLATE,
                 isProjectInitialized: false,
                 compressedContext: undefined,
+                localAgentSessions: undefined,
                 activeFile: undefined,
                 updatedAt: Date.now(),
               },
@@ -368,6 +377,32 @@ export const useConversationStore = create<ConversationState>()(
               [id]: {
                 ...conv,
                 compressedContext: normalizedContext,
+                localAgentSessions: undefined,
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        });
+      },
+
+      setLocalAgentSessionForConversation: (id, provider, session) => {
+        set((state) => {
+          const conversation = state.conversations[id];
+          if (!conversation) return state;
+          const localAgentSessions = {
+            ...(conversation.localAgentSessions ?? {}),
+          };
+          if (session) localAgentSessions[provider] = session;
+          else delete localAgentSessions[provider];
+          return {
+            conversations: {
+              ...state.conversations,
+              [id]: {
+                ...conversation,
+                localAgentSessions:
+                  Object.keys(localAgentSessions).length > 0
+                    ? localAgentSessions
+                    : undefined,
                 updatedAt: Date.now(),
               },
             },

@@ -1,4 +1,4 @@
-export const SETTINGS_VERSION = 15;
+export const SETTINGS_VERSION = 16;
 
 export function migrateSettings(persisted: unknown, version: number): unknown {
   const state = persisted as Record<string, any>;
@@ -85,6 +85,34 @@ export function migrateSettings(persisted: unknown, version: number): unknown {
   if (version < 15) {
     if (!state.system) state.system = {};
     state.system.developerSkillScriptsEnabled = false;
+  }
+  if (version < 16) {
+    if (!state.ai) state.ai = {};
+    state.ai.runtime = state.ai.runtime === "localCli" ? "localCli" : "api";
+    const localAgent = state.ai.localAgent ?? {};
+    state.ai.localAgent = {
+      provider: localAgent.provider === "claude" ? "claude" : "codex",
+      codex: {
+        model:
+          typeof localAgent.codex?.model === "string"
+            ? localAgent.codex.model
+            : "",
+        effort:
+          typeof localAgent.codex?.effort === "string"
+            ? localAgent.codex.effort
+            : "",
+      },
+      claude: {
+        model:
+          typeof localAgent.claude?.model === "string"
+            ? localAgent.claude.model
+            : "",
+        effort:
+          typeof localAgent.claude?.effort === "string"
+            ? localAgent.claude.effort
+            : "",
+      },
+    };
   }
   return state;
 }

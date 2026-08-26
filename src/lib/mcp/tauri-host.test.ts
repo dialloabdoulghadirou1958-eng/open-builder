@@ -123,6 +123,7 @@ describe("desktop MCP fetch bridge", () => {
           stdio: true,
           oauthLoopback: true,
           skillScripts: true,
+          localAgents: true,
         };
       }
     });
@@ -140,6 +141,7 @@ describe("desktop MCP fetch bridge", () => {
           stdio: false,
           oauthLoopback: false,
           skillScripts: false,
+          localAgents: false,
         };
       }
     });

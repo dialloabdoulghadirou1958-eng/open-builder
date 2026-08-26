@@ -282,3 +282,35 @@ export interface GeneratorEvents {
   onRetry?: (attempt: number, maxAttempts: number, error: Error) => void;
   onCompact?: () => Promise<Message[] | null>;
 }
+
+/** Runtime-independent generation surface consumed by the React orchestrator. */
+export interface GenerationBackend {
+  getFiles(): ProjectFiles;
+  setFiles(files: ProjectFiles): void;
+  getMessages(): Message[];
+  resetMessages(): void;
+  syncMessages(messages: Message[]): void;
+  setSystemPromptSuffix(suffix: string): void;
+  setUntrustedReferenceContext(reference: string): void;
+  setTools(tools: ToolSet): void;
+  setReadOnlyMode(readOnly: boolean): void;
+  setExecutionMode(mode: ExecutionMode): void;
+  setAllowedMcpAliases(aliases: ReadonlySet<string>): void;
+  getSkillContext(): SkillActiveContextController;
+  getRunContext(): ToolRunContext;
+  getCustomToolSet(): ToolSet;
+  setCustomToolSet(tools: ToolSet): void;
+  abort(): void;
+  retry(): Promise<GenerateResult>;
+  generate(
+    userMessage: string,
+    attachments?: ResolvedAttachment[],
+  ): Promise<GenerateResult>;
+}
+
+/** Shared authoritative tool boundary used by API and local CLI runtimes. */
+export interface AgentToolExecutor {
+  executeToolCall(
+    toolCall: ToolCall,
+  ): Promise<{ result: ToolExecutionOutput; changes: FileChange[] }>;
+}

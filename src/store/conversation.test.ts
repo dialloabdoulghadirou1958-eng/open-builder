@@ -262,4 +262,75 @@ describe("conversation store", () => {
     await Promise.resolve();
     expect(localforageMock.removeItem).toHaveBeenCalledWith("shared-pdf");
   });
+
+  it("keeps provider sessions independent and excludes them from forks", () => {
+    const original = useConversationStore.getState().createConversation();
+    const session = {
+      provider: "codex" as const,
+      sessionId: "thread-1",
+      transcriptFingerprint: "fingerprint-1",
+      cliVersion: "1.0.0",
+      model: "codex-model",
+      updatedAt: 1,
+    };
+    useConversationStore
+      .getState()
+      .setLocalAgentSessionForConversation(original, "codex", session);
+    useConversationStore
+      .getState()
+      .setLocalAgentSessionForConversation(original, "claude", {
+        ...session,
+        provider: "claude",
+        sessionId: "session-2",
+      });
+
+    expect(
+      useConversationStore.getState().conversations[original]
+        .localAgentSessions,
+    ).toMatchObject({
+      codex: { sessionId: "thread-1" },
+      claude: { sessionId: "session-2" },
+    });
+
+    const fork = useConversationStore.getState().forkConversation();
+    expect(
+      useConversationStore.getState().conversations[fork].localAgentSessions,
+    ).toBeUndefined();
+  });
+
+  it("invalidates external sessions when context or project authority changes", () => {
+    const id = useConversationStore.getState().createConversation();
+    const session = {
+      provider: "codex" as const,
+      sessionId: "thread-1",
+      transcriptFingerprint: "fingerprint-1",
+      cliVersion: "1.0.0",
+      updatedAt: 1,
+    };
+    const installSession = () =>
+      useConversationStore
+        .getState()
+        .setLocalAgentSessionForConversation(id, "codex", session);
+
+    installSession();
+    useConversationStore.getState().clearContext();
+    expect(
+      useConversationStore.getState().conversations[id].localAgentSessions,
+    ).toBeUndefined();
+
+    installSession();
+    useConversationStore.getState().setCompressedContextForConversation(id, {
+      summary: "new authority",
+      fromIndex: 1,
+    });
+    expect(
+      useConversationStore.getState().conversations[id].localAgentSessions,
+    ).toBeUndefined();
+
+    installSession();
+    useConversationStore.getState().resetProject();
+    expect(
+      useConversationStore.getState().conversations[id].localAgentSessions,
+    ).toBeUndefined();
+  });
 });

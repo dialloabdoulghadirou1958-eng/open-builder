@@ -57,6 +57,7 @@ Tauri 桌面版（macOS / Windows / Linux）提供 stdio MCP 等本机运行能�
 - **子代理协作** — 内置代码浏览、代码审查、依赖建议、Bug 调查、UI 审查等只读子代理
 - **内置搜索** — 支持启用模型内置的搜索服务
 - **桌面 API 代理** — Tauri 可转发经允许的 HTTP/HTTPS 模型请求，处理浏览器 CORS 限制；静态 Web 部署仍依赖服务商允许跨域访问
+- **桌面本地 CLI 运行时** — 可主动选择通过已登录的 Codex CLI 执行完整生成流程，同时保持 API 为默认模式；Claude 适配器会在 CLI 尚不具备兼容的预输入隔离能力时保持失败关闭
 
 ### 交互体验
 
@@ -164,6 +165,21 @@ pnpm tauri:android:dev
 pnpm tauri:android:build
 ```
 
+### 本地 CLI 运行时（桌面端）
+
+桌面版可以把已安装的 Codex CLI 作为完整代理运行时。API 仍是默认运行方式，Open Builder 不会在两种运行时之间静默降级。Claude 适配器已经包含在应用中，但当前 Claude CLI 无法在保留 Open Builder MCP 工具桥和订阅账号认证的同时，于接收用户内容前证明隔离，因此会明确显示为**版本不支持**。
+
+1. 安装官方 Codex CLI，并通过 `codex login` 登录。
+2. 启动桌面版，打开 **设置 → 模型 → 运行方式 → 本地 CLI**。
+3. 选择 Codex。Open Builder 会扫描 `PATH` 与常见安装位置；也可通过**选择程序**将验证过的可执行文件路径保存到原生 app data。Claude 仍会显示用于能力诊断，但在兼容协议可用前不会启动 turn。
+4. 确认状态为**已安装并登录**，再按需选择 CLI 实际报告的模型与推理强度。
+
+本地 CLI 不等于离线模型。提示词、附件、联网搜索活动和工具结果通常仍会发送给所选服务商，并可能消耗账号订阅或用量额度。Open Builder 只检查登录状态，不读取、复制或持久化 CLI 凭据。
+
+项目仍保存在 Open Builder 的内存虚拟文件系统中。CLI 在隔离的空目录运行，只能通过每次运行独立的 loopback MCP 工具桥访问项目。附件使用不可猜测 ID，不暴露宿主文件路径；在发送用户内容前，应用会禁用或拒绝服务商配置、hooks、无关 MCP、shell 工具和 CLI 项目指令注入。
+
+联网搜索选择**模型内置**时，本地模式使用对应 CLI 的原生搜索；选择 Tavily 或 Firecrawl 时则只使用 Open Builder 现有工具，并关闭原生搜索。若状态显示未安装、未登录、版本不支持或隔离失败，可使用**重新检测**、**选择程序**、**恢复自动检测**或复制界面提供的登录命令。Web 与移动端会明确阻断本地 CLI，并要求切换回 API。
+
 ### 配置说明
 
 点击界面右上角的设置按钮，填写以下信息：
@@ -190,11 +206,17 @@ MCP 服务与 Skills 可从对话工具栏管理；只有原生运行时报告�
 [src/lib/ai/generator.ts](src/lib/ai/generator.ts) 是整个项目的核心，实现了完整的 AI Tool Call 循环引擎：
 
 ```
-用户消息 → AI 规划 → 工具调用 → 执行工具 → 返回结果 → AI 继续/结束
-                                    ↓
-                              内存文件系统
-                                    ↓
-                           Sandpack 实时预览
+                         ┌─ API Backend → AI SDK
+用户消息 → Generator ───┤
+                         └─ Local CLI Backend → Tauri Agent Manager
+                                                  ↓
+                                      Loopback MCP 工具桥
+                                                  ↓
+                                      共享工具执行器与策略
+                                                  ↓
+                                         内存虚拟文件系统
+                                                  ↓
+                                         Sandpack 实时预览
 ```
 
 内置工具列表：

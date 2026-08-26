@@ -345,6 +345,7 @@ export default function App() {
             onSaveAssetSearch={handleSaveAssetSearchSettings}
             systemSettings={systemSettings}
             onSaveSystem={handleSaveSystemSettings}
+            runtimeChangeLocked={isGenerating}
           />
         </Suspense>
       )}

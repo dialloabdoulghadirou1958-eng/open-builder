@@ -35,6 +35,7 @@ describe("SettingsDialog", () => {
     expect(
       validateAISettingsDraft(
         {
+          ...aiDefaults,
           apiType: "openai-compatible",
           apiKey: "local-key",
           apiBaseUrl: "file:///tmp/model",
@@ -43,6 +44,12 @@ describe("SettingsDialog", () => {
         validationMessages,
       ),
     ).toEqual({ apiBaseUrl: "URL invalid", model: "model invalid" });
+    expect(
+      validateAISettingsDraft(
+        { ...aiDefaults, runtime: "localCli" },
+        validationMessages,
+      ),
+    ).toEqual({});
   });
 
   it("keeps edits transactional until a valid Save and passes axe checks", async () => {
@@ -94,6 +101,7 @@ describe("SettingsDialog", () => {
     expect(onSave).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(onSave).toHaveBeenCalledWith({
+      ...aiDefaults,
       apiType: "openai-compatible",
       apiKey: "test-key",
       apiBaseUrl: "https://api.example.com",
@@ -137,5 +145,33 @@ describe("SettingsDialog", () => {
     expect(close).toHaveClass("z-20", "size-8");
     await user.click(close);
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("requires the active turn to stop before changing runtimes", () => {
+    render(
+      <TooltipProvider>
+        <SettingsDialog
+          isOpen
+          onClose={vi.fn()}
+          settings={{ ...aiDefaults, runtime: "localCli" }}
+          onSave={vi.fn()}
+          webSearchSettings={webSearchDefaults}
+          onSaveWebSearch={vi.fn()}
+          assetSearchSettings={assetSearchDefaults}
+          onSaveAssetSearch={vi.fn()}
+          systemSettings={systemDefaults}
+          onSaveSystem={vi.fn()}
+          runtimeChangeLocked
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole("button", { name: "API" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Local CLI" })).toBeDisabled();
+    expect(
+      screen.getByText(
+        "Stop the active turn before switching runtimes or CLI agents.",
+      ),
+    ).toBeInTheDocument();
   });
 });

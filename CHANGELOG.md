@@ -8,10 +8,13 @@ Tagged versions use their Git tag date. Versions 1.4.0 through 1.7.0 were not ta
 
 ---
 
-## [v1.7.0]
+## [v1.8.0]
 
 ### Added
 
+- Added an explicit desktop-only Local CLI runtime with Codex App Server support, provider-specific resumable sessions, native model/auth probing, and no silent API fallback. The Claude stream-JSON adapter remains fail-closed until the CLI can prove pre-input isolation while retaining the Open Builder MCP bridge and subscription authentication.
+- Added a token-authenticated loopback Streamable HTTP MCP bridge so local agents reuse the same project tools, permission policy, virtual files, Plan Mode, Skills, MCP, attachments, Automatic QA, subagents, title generation, and context compression as API generation.
+- Added compact Local CLI settings with executable discovery and validated overrides, signed-in/readiness states, provider-reported model and effort choices, login repair actions, desktop capability gating, and English/Chinese disclosures.
 - Added MCP server management with JSON import, per-server and per-tool enablement, definition-drift review, remote Streamable HTTP and SSE transports, OAuth authorization-code and client-credentials flows, and desktop stdio support.
 - Added a central tool capability and authorization policy shared by schema exposure and execution, immutable per-run permission contexts, and a local redacted permission activity log.
 - Added Blob-backed attachment persistence and native PDF file parts for models that support PDF input.
@@ -21,9 +24,11 @@ Tagged versions use their Git tag date. Versions 1.4.0 through 1.7.0 were not ta
 
 ### Changed
 
+- Refactored generation behind a shared backend and tool-executor contract while preserving the existing API path; conversation storage now tracks independent Codex and Claude session references guarded by authoritative history and virtual-file fingerprints.
+- Hardened local-agent execution with fixed Rust-owned arguments, minimal child environments, isolated CLI configuration, loopback-only transport, per-run tokens and temp directories, process-tree cancellation, payload budgets, and desktop-only command registration.
 - Hardened project-file, secret, registry, proxy, redirect, streaming, MCP, and Skill-import boundaries with explicit size, time, origin, approval, and platform limits.
 - Improved session and Sandpack persistence, reset/clear lifecycle behavior, device-preview scaling, message virtualization, lazy loading, shared tooltips, focus behavior, and tool-result rendering.
-- Settings storage migrated to version 15 and disables desktop Skill script execution by default during upgrade.
+- Settings storage migrated to version 16, adds explicit API/local-CLI runtime preferences, and disables desktop Skill script execution by default during upgrade.
 - Pinned the current frontend toolchain to TypeScript 6 and synchronized version 1.7.0 across the package, Rust, Tauri, and in-app version contracts.
 - Phone layouts remain chat-first with inline preview, while desktop keeps the horizontal resizable chat-and-workspace split.
 

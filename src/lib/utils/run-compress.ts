@@ -6,12 +6,17 @@ import { useConversationStore } from "../../store/conversation";
 export async function runCompress(
   cfg: ProviderConfig,
   conv: Conversation,
+  generateTextOverride?: (
+    instructions: string,
+    prompt: string,
+  ) => Promise<string>,
 ): Promise<CompressResult | null> {
   const result = await compressContext(
     conv.messages,
     cfg,
     conv.compressedContext,
     conv.files,
+    generateTextOverride,
   );
   if (result) {
     useConversationStore

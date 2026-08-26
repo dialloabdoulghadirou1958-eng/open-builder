@@ -127,6 +127,10 @@ export async function compressContext(
   cfg: ProviderConfig,
   existingContext?: CompressedContext,
   files?: ProjectFiles,
+  generateTextOverride?: (
+    instructions: string,
+    prompt: string,
+  ) => Promise<string>,
 ): Promise<CompressResult | null> {
   const userIndices = messages.reduce<number[]>((acc, m, i) => {
     if (m.role === "user" && m.metadata?.origin !== "auto_qa") acc.push(i);
@@ -155,21 +159,26 @@ export async function compressContext(
       .join("\n");
   }
 
-  const [{ generateText }, { getProviderModel }] = await Promise.all([
-    import("ai"),
-    import("../ai/provider"),
-  ]);
-  const providerModel = getProviderModel(cfg);
-
-  const result = await generateText({
-    model: providerModel,
-    instructions:
-      "Summarize the following conversation concisely. Focus on: what the user requested, what was built/modified, key tool operations (files read/written, searches run, results), key decisions, and current project state. Be brief but preserve all information needed to continue.",
-    prompt: text,
-  });
+  const instructions =
+    "Summarize the following conversation concisely. Focus on: what the user requested, what was built/modified, key tool operations (files read/written, searches run, results), key decisions, and current project state. Be brief but preserve all information needed to continue.";
+  const generated = generateTextOverride
+    ? await generateTextOverride(instructions, text)
+    : await (async () => {
+        const [{ generateText }, { getProviderModel }] = await Promise.all([
+          import("ai"),
+          import("../ai/provider"),
+        ]);
+        return (
+          await generateText({
+            model: getProviderModel(cfg),
+            instructions,
+            prompt: text,
+          })
+        ).text;
+      })();
 
   const summary = normalizeCompressedSummary(
-    (result.text || "") + buildFileInventory(files),
+    (generated || "") + buildFileInventory(files),
   );
 
   return { summary, fromIndex };

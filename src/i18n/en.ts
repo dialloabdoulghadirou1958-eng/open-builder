@@ -60,13 +60,44 @@ export const en: typeof zh = {
       hint: "AI model name, e.g. gpt-5.3-codex, deepseek-chat",
       selectPlaceholder: "Select a model",
     },
+    runtime: {
+      label: "Runtime",
+      api: "API",
+      localCli: "Local CLI",
+      hint: "API mode uses in-app credentials; Local CLI reuses an installed, signed-in agent.",
+      stopFirst:
+        "Stop the active turn before switching runtimes or CLI agents.",
+    },
+    localCli: {
+      provider: "CLI agent",
+      scanning: "Detecting local CLI…",
+      ready: "Installed and signed in",
+      signedOut: "Installed, not signed in",
+      notFound: "CLI not found",
+      unavailable: "CLI unavailable",
+      rescan: "Rescan",
+      chooseExecutable: "Choose program",
+      useAutoDetect: "Use auto-detection",
+      copyLogin: "Copy login command",
+      probeMismatch:
+        "The CLI capability check returned data for a different agent. Rescan and try again.",
+      cliDefault: "Use CLI default",
+      modelHint:
+        "Leave blank to follow the CLI default. Available models come from the CLI itself.",
+      effort: "Reasoning effort",
+      cloudNotice:
+        "Local CLI does not mean a local model. Prompts, attachments, and tool results are normally sent to the Codex or Claude service and may consume subscription quota. Open Builder never reads or stores CLI credentials.",
+      desktopOnly: "Local CLI is desktop-only",
+      desktopOnlyDesc:
+        "Switch back to API or open these settings in an Open Builder desktop build with local-agent support.",
+    },
     webSearch: {
       desc: "After configuration, AI will be able to search and read web pages",
       engine: "Search Engine",
       disabled: "Disabled",
       builtin: "Model Built-in",
       builtinDesc:
-        "Uses the model provider's built-in search tool. No extra API key needed. Web reader uses Jina Reader.",
+        "Uses the model provider's built-in search tool. No extra API key is needed. API mode uses Jina Reader; Local CLI mode uses the selected CLI's native search and reader.",
     },
     tavilyKey: {
       hint: "Optional. Enables web search and web reading after configuration",

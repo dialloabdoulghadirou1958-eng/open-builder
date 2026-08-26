@@ -57,6 +57,7 @@ The Tauri desktop build (macOS / Windows / Linux) provides local runtime capabil
 - **Subagent Collaboration** — Built-in read-only subagents for code exploration, review, dependency advice, bug investigation, and UI critique
 - **Built-in Search** — Supports enabling the model's built-in search service
 - **Desktop API Proxy** — Tauri can forward approved HTTP/HTTPS provider requests that would otherwise be blocked by browser CORS; static Web deployments still depend on provider CORS support
+- **Desktop Local CLI Runtime** — Explicitly run the complete generation workflow through a signed-in Codex CLI while keeping API mode as the default; the Claude adapter remains fail-closed until its CLI exposes compatible pre-input isolation
 
 ### User Experience
 
@@ -164,6 +165,21 @@ pnpm tauri:android:dev
 pnpm tauri:android:build
 ```
 
+### Local CLI Runtime (Desktop)
+
+The desktop app can use an installed Codex CLI as a complete agent runtime. API mode remains the default and Open Builder never silently falls back between runtimes. The Claude adapter is included, but current Claude CLI releases are reported as **Unsupported** because they cannot prove isolation before receiving user content while also retaining both the Open Builder MCP bridge and subscription authentication.
+
+1. Install the official Codex CLI and sign in with `codex login`.
+2. Start the desktop app and open **Settings → Model → Runtime → Local CLI**.
+3. Select Codex. Open Builder scans `PATH` and common installation locations; **Choose program** can store a validated executable override in native app data. Claude remains visible for capability diagnostics but cannot start a turn until a compatible CLI protocol is available.
+4. Confirm that the status is **Installed and signed in**, then optionally select a model and reasoning effort reported by the CLI.
+
+The local CLI is not an offline model. Prompts, attachments, web-search activity, and tool results are normally sent to the selected provider and may consume account subscription or usage quota. Open Builder checks login status but does not read, copy, or persist CLI credentials.
+
+Projects remain in Open Builder's in-memory virtual file system. The CLI runs in an isolated empty directory and can interact with the project only through the per-run loopback MCP bridge. Attachment IDs are opaque; host file paths are not exposed. Provider configuration, hooks, unrelated MCP servers, shell tools, and CLI project-instruction injection are rejected or disabled before user content is sent.
+
+When Web Search is **Model Built-in**, local mode uses the selected CLI's native search. Tavily or Firecrawl selections instead use the existing Open Builder tools and keep native search disabled. If detection reports not installed, signed out, unsupported, or an isolation error, use **Rescan**, **Choose program**, **Use auto-detection**, or copy the displayed login command. Web and mobile builds show a blocking message and require switching back to API.
+
 ### Configuration
 
 Click the settings button in the top-right corner and fill in:
@@ -190,11 +206,17 @@ MCP servers and Skills are managed from the chat toolbar. Desktop-only options a
 [src/lib/ai/generator.ts](src/lib/ai/generator.ts) is the project's core, implementing the full AI Tool Call loop engine:
 
 ```
-User Message → AI Planning → Tool Call → Execute → Return Result → AI Continue/End
-                                  ↓
-                          In-Memory File System
-                                  ↓
-                         Sandpack Live Preview
+                         ┌─ API Backend → AI SDK
+User Message → Generator┤
+                         └─ Local CLI Backend → Tauri Agent Manager
+                                                  ↓
+                                      Loopback MCP Tool Bridge
+                                                  ↓
+                                   Shared Tool Executor and Policy
+                                                  ↓
+                                      In-Memory File System
+                                                  ↓
+                                       Sandpack Live Preview
 ```
 
 Built-in tools:

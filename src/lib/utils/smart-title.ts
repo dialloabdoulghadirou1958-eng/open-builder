@@ -6,6 +6,10 @@ import { getProviderModel } from "../ai/provider";
 export async function generateSmartTitle(
   messages: Message[],
   cfg: ProviderConfig,
+  generateTextOverride?: (
+    instructions: string,
+    prompt: string,
+  ) => Promise<string>,
 ): Promise<string | null> {
   const hasUser = messages.some(
     (m) => m.role === "user" && m.metadata?.origin !== "auto_qa",
@@ -31,19 +35,20 @@ export async function generateSmartTitle(
     .join("\n");
 
   try {
-    const providerModel = getProviderModel(cfg);
-
-    const result = await generateText({
-      model: providerModel,
-      instructions:
-        "Generate a concise title (4-12 words) for this development conversation. " +
-        "The title should describe the app or task being built. " +
-        "Use the same language as the user's message. " +
-        "Return ONLY the title text, no quotes, no explanation, no punctuation at the end.",
-      prompt: relevant,
-    });
-
-    const title = result.text?.trim() || "";
+    const instructions =
+      "Generate a concise title (4-12 words) for this development conversation. " +
+      "The title should describe the app or task being built. " +
+      "Use the same language as the user's message. " +
+      "Return ONLY the title text, no quotes, no explanation, no punctuation at the end.";
+    const title = generateTextOverride
+      ? (await generateTextOverride(instructions, relevant)).trim()
+      : (
+          await generateText({
+            model: getProviderModel(cfg),
+            instructions,
+            prompt: relevant,
+          })
+        ).text?.trim() || "";
 
     if (!title || title.length > 80) return null;
     return title;

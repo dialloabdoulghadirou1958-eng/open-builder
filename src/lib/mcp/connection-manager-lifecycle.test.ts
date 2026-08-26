@@ -58,6 +58,7 @@ vi.mock("./tauri-host", async (importOriginal) => {
       stdio: true,
       oauthLoopback: true,
       skillScripts: true,
+      localAgents: true,
     })),
     isTauriMcpHost: vi.fn(() => true),
     connectTauriStdio: host.connectStdio,

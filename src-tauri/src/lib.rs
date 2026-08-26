@@ -1,4 +1,10 @@
 #[cfg(desktop)]
+mod local_agent;
+#[cfg(desktop)]
+mod local_agent_bridge;
+#[cfg(desktop)]
+mod local_agent_protocol;
+#[cfg(desktop)]
 mod mcp_oauth;
 #[cfg(desktop)]
 mod mcp_remote;
@@ -26,6 +32,7 @@ struct McpPlatformCapabilities {
     stdio: bool,
     oauth_loopback: bool,
     skill_scripts: bool,
+    local_agents: bool,
 }
 
 #[tauri::command]
@@ -35,11 +42,14 @@ fn mcp_platform_capabilities() -> McpPlatformCapabilities {
         stdio: cfg!(desktop),
         oauth_loopback: cfg!(desktop),
         skill_scripts: cfg!(desktop),
+        local_agents: cfg!(desktop),
     }
 }
 
 #[cfg(desktop)]
 fn cleanup_mcp_state(app: &tauri::AppHandle) {
+    let local_agents = app.state::<local_agent::LocalAgentState>();
+    tauri::async_runtime::block_on(local_agents.shutdown_gracefully());
     app.state::<skills::SkillScriptState>().shutdown_now();
     app.state::<mcp_remote::McpRemoteState>().shutdown_now();
     app.state::<mcp_oauth::McpOAuthState>().shutdown_now();
@@ -61,6 +71,7 @@ pub fn run() {
         .manage(mcp_remote::McpRemoteState::default())
         .manage(mcp_oauth::McpOAuthState::default())
         .manage(skills::SkillScriptState::default())
+        .manage(local_agent::LocalAgentState::default())
         .invoke_handler(tauri::generate_handler![
             greet,
             mcp_platform_capabilities,
@@ -87,6 +98,13 @@ pub fn run() {
             mcp_remote::mcp_remote_disconnect,
             mcp_oauth::mcp_oauth_start_loopback,
             mcp_oauth::mcp_oauth_cancel_loopback,
+            local_agent::local_agent_probe,
+            local_agent::local_agent_choose_executable,
+            local_agent::local_agent_clear_executable,
+            local_agent::local_agent_start,
+            local_agent::local_agent_resolve_tool,
+            local_agent::local_agent_cancel,
+            local_agent::local_agent_cancel_all,
         ]);
 
     #[cfg(mobile)]

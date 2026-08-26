@@ -58,6 +58,7 @@ export interface ToolFeatures {
   builtinSearch: boolean;
   webSearch: boolean;
   assetSearch: boolean;
+  localAgent?: boolean;
 }
 
 /** Read/write bridge for tools that fetch or mutate project files asynchronously
@@ -150,9 +151,10 @@ export async function buildToolHandlers(
         approveRegistryOrigin: requestRegistryOriginApproval,
       })
     : null;
-  const screenshotToCodeHandler = guardedFilesBridge
-    ? createScreenshotToCodeHandler({ apiConfig, ...guardedFilesBridge })
-    : null;
+  const screenshotToCodeHandler =
+    guardedFilesBridge && !features.localAgent
+      ? createScreenshotToCodeHandler({ apiConfig, ...guardedFilesBridge })
+      : null;
   const applyDesignStyleHandler = guardedFilesBridge
     ? createApplyDesignStyleHandler(guardedFilesBridge)
     : null;
@@ -232,7 +234,7 @@ export async function buildToolHandlers(
     ...(filesBridge
       ? {
           ...INSTALL_COMPONENT_TOOL,
-          ...SCREENSHOT_TO_CODE_TOOL,
+          ...(features.localAgent ? {} : SCREENSHOT_TO_CODE_TOOL),
           ...APPLY_DESIGN_STYLE_TOOL,
           ...PROJECT_HEALTH_CHECK_TOOL,
         }

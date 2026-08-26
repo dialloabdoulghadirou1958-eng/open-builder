@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const localAgentSupportMocks = vi.hoisted(() => ({
+  query: vi.fn(),
+  reset: vi.fn(),
+}));
+
+vi.mock("../../lib/local-agent/tauri", () => ({
+  queryLocalAgentSupport: localAgentSupportMocks.query,
+  resetLocalAgentSupportCache: localAgentSupportMocks.reset,
+}));
+
 function createMemoryStorage() {
   const records = new Map<string, string>();
   const storage: Storage = {
@@ -28,6 +38,7 @@ describe("settings persistence", () => {
 
     const firstLoad = await import("./index");
     firstLoad.useSettingsStore.getState().setAI({
+      ...firstLoad.useSettingsStore.getState().ai,
       apiType: "openai-compatible",
       apiKey: "sk-local-persistence-test",
       apiBaseUrl: "https://api.example.com/v1",
@@ -54,5 +65,38 @@ describe("settings persistence", () => {
         "sk-local-persistence-test",
       );
     });
+  });
+
+  it("fails closed until desktop local-agent capability is confirmed", async () => {
+    const { storage } = createMemoryStorage();
+    vi.stubGlobal("localStorage", storage);
+    localAgentSupportMocks.query
+      .mockRejectedValueOnce(new Error("capability unavailable"))
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+
+    const { useSettingsStore } = await import("./index");
+    useSettingsStore.getState().setAI({
+      ...useSettingsStore.getState().ai,
+      runtime: "localCli",
+    });
+
+    expect(useSettingsStore.getState().isAIValid()).toBe(false);
+    await expect(
+      useSettingsStore.getState().refreshLocalAgentCapability(true),
+    ).resolves.toBe("error");
+    expect(useSettingsStore.getState().localAgentCapability).toBe("error");
+    expect(useSettingsStore.getState().isAIValid()).toBe(false);
+
+    await expect(
+      useSettingsStore.getState().refreshLocalAgentCapability(true),
+    ).resolves.toBe("supported");
+    expect(useSettingsStore.getState().isAIValid()).toBe(true);
+
+    await expect(
+      useSettingsStore.getState().refreshLocalAgentCapability(true),
+    ).resolves.toBe("unsupported");
+    expect(useSettingsStore.getState().isAIValid()).toBe(false);
+    expect(localAgentSupportMocks.reset).toHaveBeenCalledTimes(3);
   });
 });

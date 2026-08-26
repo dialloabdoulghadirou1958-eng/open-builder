@@ -1,7 +1,11 @@
 import { useRef, useCallback, useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { ToolSet } from "ai";
-import type { GenerateResult, WebAppGenerator } from "../lib/ai/generator";
+import type {
+  GenerateResult,
+  GenerationBackend,
+  GeneratorEvents,
+} from "../lib/ai/generator";
 import { useConversationStore } from "../store/conversation";
 import { useSettingsStore } from "../store/settings";
 import { useInteractiveStore } from "../store/interactive";
@@ -27,7 +31,11 @@ import {
   classifyGenerationError,
   formatGenerationErrorMessage,
 } from "../lib/ai/generation-error";
-import { isGenerationRunCurrent } from "../lib/ai/run-guard";
+import {
+  findPendingToolCall,
+  isGenerationRunCurrent,
+  isGeneratorConstructionCurrent,
+} from "../lib/ai/run-guard";
 import { getT } from "../i18n";
 import type { McpRuntimeBundle } from "../lib/mcp/runtime";
 import type { ExecutionMode, RuntimePlatform } from "../lib/ai/tools-schema";
@@ -51,6 +59,10 @@ import {
 } from "../lib/ai/conversation-context";
 
 interface GeneratorConfigSnapshot {
+  runtime: AISettings["runtime"];
+  localProvider: AISettings["localAgent"]["provider"];
+  localModel: string;
+  localEffort: string;
   apiType: AISettings["apiType"];
   apiKey: string;
   apiBaseUrl: string;
@@ -65,6 +77,44 @@ interface GeneratorConfigSnapshot {
   developerSkillScriptsEnabled: boolean;
 }
 
+function buildGeneratorConfigSnapshot(
+  ai: AISettings,
+  webSearch: WebSearchSettings,
+  assetSearch: AssetSearchSettings,
+  developerSkillScriptsEnabled: boolean,
+): GeneratorConfigSnapshot {
+  const localProvider = ai.localAgent.provider;
+  const localPreferences = ai.localAgent[localProvider];
+  return {
+    runtime: ai.runtime,
+    localProvider,
+    localModel: localPreferences.model,
+    localEffort: localPreferences.effort,
+    apiType: ai.apiType,
+    apiKey: ai.apiKey,
+    apiBaseUrl: ai.apiBaseUrl,
+    model: ai.model,
+    searchEngine: webSearch.engine,
+    tavilyKey: webSearch.tavilyApiKey,
+    firecrawlKey: webSearch.firecrawlApiKey,
+    assetEngine: assetSearch.engine,
+    pixabayKey: assetSearch.pixabayApiKey,
+    unsplashKey: assetSearch.unsplashApiKey,
+    toolPolicyVersion: TOOL_POLICY_VERSION,
+    developerSkillScriptsEnabled,
+  };
+}
+
+function currentGeneratorConfigSnapshot(): GeneratorConfigSnapshot {
+  const state = useSettingsStore.getState();
+  return buildGeneratorConfigSnapshot(
+    state.ai,
+    state.webSearch,
+    state.assetSearch,
+    state.system.developerSkillScriptsEnabled,
+  );
+}
+
 function sameGeneratorConfig(
   a: GeneratorConfigSnapshot | null,
   b: GeneratorConfigSnapshot,
@@ -72,6 +122,10 @@ function sameGeneratorConfig(
   if (!a) return false;
   return (
     a.apiType === b.apiType &&
+    a.runtime === b.runtime &&
+    a.localProvider === b.localProvider &&
+    a.localModel === b.localModel &&
+    a.localEffort === b.localEffort &&
     a.apiKey === b.apiKey &&
     a.apiBaseUrl === b.apiBaseUrl &&
     a.model === b.model &&
@@ -232,12 +286,13 @@ export function useGenerator({
   restartSandpack,
   setIsProjectInitialized,
 }: UseGeneratorOptions) {
-  const generatorRef = useRef<WebAppGenerator | null>(null);
+  const generatorRef = useRef<GenerationBackend | null>(null);
   const [runState, setRunState] = useState<GeneratorRunState>("idle");
   const [lastError, setLastError] = useState<StructuredGenerationError | null>(
     null,
   );
   const generatorConfigRef = useRef<GeneratorConfigSnapshot | null>(null);
+  const generatorConstructionEpochRef = useRef(0);
   const activeId = useConversationStore((s) => s.activeId);
   const prevActiveIdRef = useRef(activeId);
   const textBufferRef = useRef("");
@@ -277,6 +332,7 @@ export function useGenerator({
 
   useEffect(
     () => () => {
+      generatorConstructionEpochRef.current += 1;
       clearOutputBuffers();
       forcedSkillsPromptRef.current = "";
       trustedSkillsPromptRef.current = "";
@@ -287,6 +343,7 @@ export function useGenerator({
   );
 
   const invalidateGenerator = useCallback(() => {
+    generatorConstructionEpochRef.current += 1;
     generatorRef.current?.abort();
     generatorRef.current = null;
     generatorConfigRef.current = null;
@@ -302,6 +359,7 @@ export function useGenerator({
 
   useEffect(() => {
     if (prevActiveIdRef.current === activeId) return;
+    generatorConstructionEpochRef.current += 1;
     generatorRef.current?.abort();
     generatorRef.current = null;
     generatorConfigRef.current = null;
@@ -332,10 +390,31 @@ export function useGenerator({
     };
   }, [settings]);
 
+  const generateLocalUtilityText = useCallback(
+    async (instructions: string, prompt: string) => {
+      const provider = settings.localAgent.provider;
+      const preferences = settings.localAgent[provider];
+      const { runLocalUtilityText } =
+        await import("../lib/local-agent/generator");
+      return runLocalUtilityText(
+        {
+          provider,
+          model: preferences.model,
+          effort: preferences.effort,
+        },
+        instructions,
+        prompt,
+      );
+    },
+    [settings.localAgent],
+  );
+
   const { triggerSmartTitle, compressContext } = useTitleAndCompression({
     resolveConfig: resolveEffectiveConfig,
     setIsGenerating,
     setMessages,
+    generateTextOverride:
+      settings.runtime === "localCli" ? generateLocalUtilityText : undefined,
   });
 
   /** Flush all remaining thinking buffer content at once */
@@ -418,19 +497,35 @@ export function useGenerator({
   );
 
   const getGenerator = useCallback(async () => {
+    const isLocalRuntime = settings.runtime === "localCli";
+    const localProvider = settings.localAgent.provider;
+    const localPreferences = settings.localAgent[localProvider];
     const currentApiType = settings.apiType;
     const currentApiKey = settings.apiKey;
     const currentApiBaseUrl = settings.apiBaseUrl;
     const currentModel = settings.model;
 
-    if (!settings.apiKey || !settings.apiBaseUrl || !settings.model)
+    if (
+      !isLocalRuntime &&
+      (!settings.apiKey || !settings.apiBaseUrl || !settings.model)
+    )
       return null;
+    if (isLocalRuntime) {
+      const { supportsLocalAgents } = await import("../lib/local-agent/tauri");
+      if (!(await supportsLocalAgents())) {
+        throw new Error(
+          "Local CLI agents are available only in the desktop application. Switch the runtime back to API.",
+        );
+      }
+    }
 
-    const currentSearchEngine = webSearchSettings.engine;
-    const currentAssetEngine = assetSearchSettings.engine;
+    const currentActiveId = useConversationStore.getState().activeId;
+    if (!currentActiveId) return null;
 
-    // Invalidate on conversation switch
-    if (prevActiveIdRef.current !== activeId) {
+    // Invalidate on conversation switch, including a store update that arrived
+    // before React committed the matching render.
+    if (prevActiveIdRef.current !== currentActiveId) {
+      generatorConstructionEpochRef.current += 1;
       generatorRef.current?.abort();
       generatorRef.current = null;
       generatorConfigRef.current = null;
@@ -438,31 +533,23 @@ export function useGenerator({
       baseCustomToolSetRef.current = {};
       mcpRuntimeRef.current = null;
       clearOutputBuffers();
-      prevActiveIdRef.current = activeId;
+      prevActiveIdRef.current = currentActiveId;
       useInteractiveStore.getState().rejectAllPending("conversation switched");
       useSubagentStore.setState({ progress: {} });
     }
 
-    const nextConfig: GeneratorConfigSnapshot = {
-      apiType: currentApiType,
-      apiKey: currentApiKey,
-      apiBaseUrl: currentApiBaseUrl,
-      model: currentModel,
-      searchEngine: currentSearchEngine,
-      tavilyKey: webSearchSettings.tavilyApiKey,
-      firecrawlKey: webSearchSettings.firecrawlApiKey,
-      assetEngine: currentAssetEngine,
-      pixabayKey: assetSearchSettings.pixabayApiKey,
-      unsplashKey: assetSearchSettings.unsplashApiKey,
-      toolPolicyVersion: TOOL_POLICY_VERSION,
-      developerSkillScriptsEnabled:
-        useSettingsStore.getState().system.developerSkillScriptsEnabled,
-    };
+    const nextConfig = buildGeneratorConfigSnapshot(
+      settings,
+      webSearchSettings,
+      assetSearchSettings,
+      useSettingsStore.getState().system.developerSkillScriptsEnabled,
+    );
 
     if (
       generatorRef.current &&
       !sameGeneratorConfig(generatorConfigRef.current, nextConfig)
     ) {
+      generatorConstructionEpochRef.current += 1;
       generatorRef.current.abort();
       generatorRef.current = null;
       generatorConfigRef.current = null;
@@ -471,11 +558,14 @@ export function useGenerator({
     }
 
     if (!generatorRef.current) {
+      const constructionEpoch = ++generatorConstructionEpochRef.current;
       const runtime = await loadGeneratorRuntime();
-      const generatorConversationId = activeId;
-      const isBuiltinSearch = webSearchSettings.engine === "builtin";
+      const generatorConversationId = currentActiveId;
+      const isBuiltinSearch =
+        !isLocalRuntime && webSearchSettings.engine === "builtin";
       const webConfigured =
-        !isBuiltinSearch && useSettingsStore.getState().isWebSearchConfigured();
+        webSearchSettings.engine !== "builtin" &&
+        useSettingsStore.getState().isWebSearchConfigured();
       const assetConfigured = useSettingsStore
         .getState()
         .isAssetSearchConfigured();
@@ -490,6 +580,7 @@ export function useGenerator({
           builtinSearch: isBuiltinSearch,
           webSearch: webConfigured,
           assetSearch: assetConfigured,
+          localAgent: isLocalRuntime,
         },
         effectiveWebSearchSettings: webSearchSettings,
         effectiveAssetSearchSettings: assetSearchSettings,
@@ -572,7 +663,6 @@ export function useGenerator({
         },
       });
 
-      baseCustomToolSetRef.current = customToolSet;
       const combinedToolHandlerWithMcp: typeof combinedToolHandler = async (
         name,
         args,
@@ -600,6 +690,33 @@ export function useGenerator({
           generatorRef.current?.getSkillContext().snapshot() ?? null,
         getAdditionalToolNames: () =>
           mcpRuntimeRef.current?.subagentToolNames ?? new Set(),
+        createGenerator: isLocalRuntime
+          ? async (options, events) => {
+              const { createLocalAgentGenerator } =
+                await import("../lib/local-agent/generator");
+              return createLocalAgentGenerator(
+                {
+                  provider: localProvider,
+                  model: localPreferences.model,
+                  effort: localPreferences.effort,
+                  nativeSearch: false,
+                },
+                events,
+                options.initialFiles,
+                options.customTools,
+                options.customToolHandler,
+                {
+                  tools: options.tools,
+                  executionMode: options.executionMode,
+                  runtimePlatform: options.runtimePlatform,
+                  allowedMcpAliases: options.allowedMcpAliases,
+                  initialSkillContext: options.initialSkillContext,
+                  systemPrompt: options.systemPrompt,
+                  maxIterations: options.maxIterations,
+                },
+              );
+            }
+          : undefined,
       });
 
       const initialPlanMode =
@@ -611,406 +728,458 @@ export function useGenerator({
       });
 
       const initialFiles =
-        (activeId &&
-          useConversationStore.getState().conversations[activeId]?.files) ||
+        (generatorConversationId &&
+          useConversationStore.getState().conversations[generatorConversationId]
+            ?.files) ||
         {};
 
-      generatorRef.current = runtime.createOpenAIGenerator(
-        {
-          apiType: currentApiType,
-          apiKey: currentApiKey,
-          apiBaseUrl: currentApiBaseUrl,
-          model: currentModel,
-          stream: true,
-          providerToolNames,
-        },
-        {
-          onText: (delta) => {
-            if (!isCurrentGeneratorRun(generatorConversationId)) return;
-            setRunState("streaming");
-            flushThinkingBuffer();
-            textBufferRef.current += delta;
-            if (!typewriterTimerRef.current) {
-              const typeChar = (timestamp: number) => {
-                if (!isCurrentGeneratorRun(generatorConversationId)) {
-                  textBufferRef.current = "";
-                  typewriterTimerRef.current = null;
-                  return;
-                }
-                if (timestamp - lastCharTimeRef.current >= 20) {
-                  if (textBufferRef.current.length > 0) {
-                    const char = textBufferRef.current[0];
-                    textBufferRef.current = textBufferRef.current.slice(1);
-                    setMessages((prev) => {
-                      const last = prev[prev.length - 1];
-                      if (last?.role === "assistant") {
-                        return [
-                          ...prev.slice(0, -1),
-                          {
-                            ...last,
-                            content:
-                              ((typeof last.content === "string"
-                                ? last.content
-                                : "") || "") + char,
-                          },
-                        ];
-                      }
-                      return [...prev, { role: "assistant", content: char }];
-                    });
-                    lastCharTimeRef.current = timestamp;
-                  }
-                }
-                if (
-                  textBufferRef.current.length > 0 ||
-                  typewriterTimerRef.current
-                ) {
-                  typewriterTimerRef.current = requestAnimationFrame(typeChar);
-                } else {
-                  typewriterTimerRef.current = null;
-                }
-              };
-              typewriterTimerRef.current = requestAnimationFrame(typeChar);
-            }
-          },
-          onThinking: (delta) => {
-            if (!isCurrentGeneratorRun(generatorConversationId)) return;
-            setRunState("streaming");
-            thinkingBufferRef.current += delta;
-            if (!thinkingTimerRef.current) {
-              const typeThinking = (timestamp: number) => {
-                if (!isCurrentGeneratorRun(generatorConversationId)) {
-                  thinkingBufferRef.current = "";
-                  thinkingTimerRef.current = null;
-                  return;
-                }
-                if (timestamp - lastThinkingTimeRef.current >= 20) {
-                  if (thinkingBufferRef.current.length > 0) {
-                    const char = thinkingBufferRef.current[0];
-                    thinkingBufferRef.current =
-                      thinkingBufferRef.current.slice(1);
-                    setMessages((prev) => {
-                      const last = prev[prev.length - 1];
-                      if (last?.role === "assistant") {
-                        return [
-                          ...prev.slice(0, -1),
-                          { ...last, thinking: (last.thinking || "") + char },
-                        ];
-                      }
+      const generatorEvents = {
+        onText: (delta) => {
+          if (!isCurrentGeneratorRun(generatorConversationId)) return;
+          setRunState("streaming");
+          flushThinkingBuffer();
+          textBufferRef.current += delta;
+          if (!typewriterTimerRef.current) {
+            const typeChar = (timestamp: number) => {
+              if (!isCurrentGeneratorRun(generatorConversationId)) {
+                textBufferRef.current = "";
+                typewriterTimerRef.current = null;
+                return;
+              }
+              if (timestamp - lastCharTimeRef.current >= 20) {
+                if (textBufferRef.current.length > 0) {
+                  const char = textBufferRef.current[0];
+                  textBufferRef.current = textBufferRef.current.slice(1);
+                  setMessages((prev) => {
+                    const last = prev[prev.length - 1];
+                    if (last?.role === "assistant") {
                       return [
-                        ...prev,
-                        { role: "assistant", content: null, thinking: char },
+                        ...prev.slice(0, -1),
+                        {
+                          ...last,
+                          content:
+                            ((typeof last.content === "string"
+                              ? last.content
+                              : "") || "") + char,
+                        },
                       ];
-                    });
-                    lastThinkingTimeRef.current = timestamp;
-                  }
+                    }
+                    return [...prev, { role: "assistant", content: char }];
+                  });
+                  lastCharTimeRef.current = timestamp;
                 }
-                if (
-                  thinkingBufferRef.current.length > 0 ||
-                  thinkingTimerRef.current
-                ) {
-                  thinkingTimerRef.current =
-                    requestAnimationFrame(typeThinking);
-                } else {
-                  thinkingTimerRef.current = null;
+              }
+              if (
+                textBufferRef.current.length > 0 ||
+                typewriterTimerRef.current
+              ) {
+                typewriterTimerRef.current = requestAnimationFrame(typeChar);
+              } else {
+                typewriterTimerRef.current = null;
+              }
+            };
+            typewriterTimerRef.current = requestAnimationFrame(typeChar);
+          }
+        },
+        onThinking: (delta) => {
+          if (!isCurrentGeneratorRun(generatorConversationId)) return;
+          setRunState("streaming");
+          thinkingBufferRef.current += delta;
+          if (!thinkingTimerRef.current) {
+            const typeThinking = (timestamp: number) => {
+              if (!isCurrentGeneratorRun(generatorConversationId)) {
+                thinkingBufferRef.current = "";
+                thinkingTimerRef.current = null;
+                return;
+              }
+              if (timestamp - lastThinkingTimeRef.current >= 20) {
+                if (thinkingBufferRef.current.length > 0) {
+                  const char = thinkingBufferRef.current[0];
+                  thinkingBufferRef.current =
+                    thinkingBufferRef.current.slice(1);
+                  setMessages((prev) => {
+                    const last = prev[prev.length - 1];
+                    if (last?.role === "assistant") {
+                      return [
+                        ...prev.slice(0, -1),
+                        { ...last, thinking: (last.thinking || "") + char },
+                      ];
+                    }
+                    return [
+                      ...prev,
+                      { role: "assistant", content: null, thinking: char },
+                    ];
+                  });
+                  lastThinkingTimeRef.current = timestamp;
                 }
-              };
-              thinkingTimerRef.current = requestAnimationFrame(typeThinking);
-            }
-          },
-          onToolCall: (name, id) => {
-            if (!isCurrentGeneratorRun(generatorConversationId)) return;
-            setRunState(
-              name === "ask_user_question"
-                ? "waitingUser"
-                : name === "exit_plan_mode"
-                  ? "awaitingPlanApproval"
-                  : "executingTool",
-            );
-            flushThinkingBuffer();
-            if (typewriterTimerRef.current) {
-              cancelAnimationFrame(typewriterTimerRef.current);
-              typewriterTimerRef.current = null;
-            }
-            if (textBufferRef.current) {
-              const remainingText = textBufferRef.current;
-              textBufferRef.current = "";
-              setMessages((prev) => {
-                const last = prev[prev.length - 1];
-                if (last?.role === "assistant") {
-                  return [
-                    ...prev.slice(0, -1),
-                    {
-                      ...last,
-                      content:
-                        ((typeof last.content === "string"
-                          ? last.content
-                          : "") || "") + remainingText,
-                    },
-                  ];
-                }
-                return prev;
-              });
-            }
-
-            const actualId =
-              id || `call_${Math.random().toString(36).substring(2, 11)}`;
+              }
+              if (
+                thinkingBufferRef.current.length > 0 ||
+                thinkingTimerRef.current
+              ) {
+                thinkingTimerRef.current = requestAnimationFrame(typeThinking);
+              } else {
+                thinkingTimerRef.current = null;
+              }
+            };
+            thinkingTimerRef.current = requestAnimationFrame(typeThinking);
+          }
+        },
+        onToolCall: (name, id) => {
+          if (!isCurrentGeneratorRun(generatorConversationId)) return;
+          setRunState(
+            name === "ask_user_question"
+              ? "waitingUser"
+              : name === "exit_plan_mode"
+                ? "awaitingPlanApproval"
+                : "executingTool",
+          );
+          flushThinkingBuffer();
+          if (typewriterTimerRef.current) {
+            cancelAnimationFrame(typewriterTimerRef.current);
+            typewriterTimerRef.current = null;
+          }
+          if (textBufferRef.current) {
+            const remainingText = textBufferRef.current;
+            textBufferRef.current = "";
             setMessages((prev) => {
               const last = prev[prev.length - 1];
-              const newToolCall = {
-                id: actualId,
-                type: "function" as const,
-                function: { name, arguments: "" },
-              };
               if (last?.role === "assistant") {
-                if (last.tool_calls?.some((tc) => tc.id === actualId))
-                  return prev;
                 return [
                   ...prev.slice(0, -1),
                   {
                     ...last,
-                    tool_calls: [...(last.tool_calls || []), newToolCall],
+                    content:
+                      ((typeof last.content === "string" ? last.content : "") ||
+                        "") + remainingText,
                   },
                 ];
               }
-              return [
-                ...prev,
-                {
-                  role: "assistant" as const,
-                  content: null,
-                  tool_calls: [newToolCall],
-                },
-              ];
-            });
-          },
-          onToolResult: (_name, _args, result, _toolCallId, output) => {
-            if (!isCurrentGeneratorRun(generatorConversationId)) return;
-            const persistedArguments = serializeToolArgumentsForHistory(
-              _name,
-              _args,
-            );
-            const persistedResult = sanitizeToolResultForHistory(
-              _name,
-              _args,
-              result,
-            );
-            const persistedOutput = sanitizeToolExecutionOutputForHistory(
-              _name,
-              _args,
-              output,
-            );
-            setMessages((prev) => {
-              const msgs = [...prev];
-              for (let i = msgs.length - 1; i >= 0; i--) {
-                if (msgs[i].role === "assistant" && msgs[i].tool_calls) {
-                  const toolCallIndex = msgs[i].tool_calls!.findIndex(
-                    (tc) =>
-                      !msgs.some(
-                        (m) => m.role === "tool" && m.tool_call_id === tc.id,
-                      ),
-                  );
-                  if (toolCallIndex !== -1) {
-                    const toolCall = msgs[i].tool_calls![toolCallIndex];
-                    const updatedToolCalls = [...msgs[i].tool_calls!];
-                    updatedToolCalls[toolCallIndex] = {
-                      ...toolCall,
-                      function: {
-                        ...toolCall.function,
-                        arguments: persistedArguments,
-                      },
-                    };
-                    const updatedMsgs = [...msgs];
-                    updatedMsgs[i] = {
-                      ...msgs[i],
-                      tool_calls: updatedToolCalls,
-                    };
-                    return [
-                      ...updatedMsgs,
-                      {
-                        role: "tool",
-                        content: persistedResult,
-                        tool_call_id: toolCall.id,
-                        ...(persistedOutput
-                          ? { toolOutput: persistedOutput }
-                          : {}),
-                      },
-                    ];
-                  }
-                  break;
-                }
-              }
-              console.warn(
-                "Couldn't find matching tool call for result:",
-                _name,
-              );
               return prev;
             });
-          },
-          onFileChange: (newFiles) => {
-            if (!isCurrentGeneratorRun(generatorConversationId)) return;
-            setFiles(newFiles);
-          },
-          onTemplateChange: (tmpl, newFiles) => {
-            if (!isCurrentGeneratorRun(generatorConversationId)) return;
-            setTemplate(tmpl);
-            setFiles(newFiles);
-            setIsProjectInitialized(true);
-            restartSandpack();
-          },
-          onDependenciesChange: (newFiles) => {
-            if (!isCurrentGeneratorRun(generatorConversationId)) return;
-            setFiles(newFiles);
-            restartSandpack();
-          },
-          onComplete: () => {
-            if (!isCurrentGeneratorRun(generatorConversationId)) return;
-            setRunState("completed");
-            if (typewriterTimerRef.current) {
-              cancelAnimationFrame(typewriterTimerRef.current);
-              typewriterTimerRef.current = null;
-            }
-            flushThinkingBuffer();
-            if (textBufferRef.current) {
-              const remainingText = textBufferRef.current;
-              textBufferRef.current = "";
-              setMessages((prev) => {
-                const last = prev[prev.length - 1];
-                if (last?.role === "assistant") {
-                  return [
-                    ...prev.slice(0, -1),
-                    {
-                      ...last,
-                      content:
-                        ((typeof last.content === "string"
-                          ? last.content
-                          : "") || "") + remainingText,
-                    },
-                  ];
-                }
-                return prev;
-              });
-            }
-            createSnapshotForCurrentState();
+          }
 
-            triggerSmartTitle({
-              apiType: currentApiType,
-              apiBaseUrl: currentApiBaseUrl,
-              apiKey: currentApiKey,
-              model: currentModel,
-            });
-          },
-          onError: (error) => {
-            if (!isCurrentGeneratorRun(generatorConversationId)) return;
-            setLastError(classifyGenerationError(error));
-            setRunState("error");
-            console.error("Generation error:", error);
-          },
-          onRetry: (attempt, maxAttempts, error) => {
-            if (!isCurrentGeneratorRun(generatorConversationId)) return;
-            console.warn(
-              `Retrying API request (${attempt}/${maxAttempts}):`,
-              error.message,
-            );
+          const actualId =
+            id || `call_${Math.random().toString(36).substring(2, 11)}`;
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            const newToolCall = {
+              id: actualId,
+              type: "function" as const,
+              function: { name, arguments: "" },
+            };
+            if (last?.role === "assistant") {
+              if (last.tool_calls?.some((tc) => tc.id === actualId))
+                return prev;
+              return [
+                ...prev.slice(0, -1),
+                {
+                  ...last,
+                  tool_calls: [...(last.tool_calls || []), newToolCall],
+                },
+              ];
+            }
+            return [
+              ...prev,
+              {
+                role: "assistant" as const,
+                content: null,
+                tool_calls: [newToolCall],
+              },
+            ];
+          });
+        },
+        onToolResult: (_name, _args, result, _toolCallId, output) => {
+          if (!isCurrentGeneratorRun(generatorConversationId)) return;
+          const persistedArguments = serializeToolArgumentsForHistory(
+            _name,
+            _args,
+          );
+          const persistedResult = sanitizeToolResultForHistory(
+            _name,
+            _args,
+            result,
+          );
+          const persistedOutput = sanitizeToolExecutionOutputForHistory(
+            _name,
+            _args,
+            output,
+          );
+          setMessages((prev) => {
+            const msgs = [...prev];
+            const target = findPendingToolCall(msgs, _toolCallId);
+            if (target) {
+              const { messageIndex, toolCallIndex } = target;
+              const toolCall = msgs[messageIndex].tool_calls![toolCallIndex];
+              const updatedToolCalls = [...msgs[messageIndex].tool_calls!];
+              updatedToolCalls[toolCallIndex] = {
+                ...toolCall,
+                function: {
+                  ...toolCall.function,
+                  arguments: persistedArguments,
+                },
+              };
+              msgs[messageIndex] = {
+                ...msgs[messageIndex],
+                tool_calls: updatedToolCalls,
+              };
+              return [
+                ...msgs,
+                {
+                  role: "tool",
+                  content: persistedResult,
+                  tool_call_id: toolCall.id,
+                  ...(persistedOutput ? { toolOutput: persistedOutput } : {}),
+                },
+              ];
+            }
+            console.warn("Couldn't find matching tool call for result:", _name);
+            return prev;
+          });
+        },
+        onFileChange: (newFiles) => {
+          if (!isCurrentGeneratorRun(generatorConversationId)) return;
+          setFiles(newFiles);
+        },
+        onTemplateChange: (tmpl, newFiles) => {
+          if (!isCurrentGeneratorRun(generatorConversationId)) return;
+          setTemplate(tmpl);
+          setFiles(newFiles);
+          setIsProjectInitialized(true);
+          restartSandpack();
+        },
+        onDependenciesChange: (newFiles) => {
+          if (!isCurrentGeneratorRun(generatorConversationId)) return;
+          setFiles(newFiles);
+          restartSandpack();
+        },
+        onComplete: () => {
+          if (!isCurrentGeneratorRun(generatorConversationId)) return;
+          setRunState("completed");
+          if (typewriterTimerRef.current) {
+            cancelAnimationFrame(typewriterTimerRef.current);
+            typewriterTimerRef.current = null;
+          }
+          flushThinkingBuffer();
+          if (textBufferRef.current) {
+            const remainingText = textBufferRef.current;
+            textBufferRef.current = "";
             setMessages((prev) => {
               const last = prev[prev.length - 1];
               if (last?.role === "assistant") {
-                return prev.slice(0, -1);
+                return [
+                  ...prev.slice(0, -1),
+                  {
+                    ...last,
+                    content:
+                      ((typeof last.content === "string" ? last.content : "") ||
+                        "") + remainingText,
+                  },
+                ];
               }
               return prev;
             });
-          },
-          onCompact: async () => {
-            if (!isCurrentGeneratorRun(generatorConversationId)) return null;
-            const s = useConversationStore.getState();
-            const conv = generatorConversationId
-              ? s.conversations[generatorConversationId]
-              : null;
-            if (!conv) return null;
+          }
+          createSnapshotForCurrentState();
 
-            const result = await runtime.runCompress(
-              {
-                apiType: settings.apiType,
-                apiBaseUrl: settings.apiBaseUrl,
-                apiKey: settings.apiKey,
-                model: settings.model,
-              },
-              conv,
-            );
-            if (!isCurrentGeneratorRun(generatorConversationId)) return null;
-            if (!result) return null;
-            return getMessagesForAPI({ ...conv, compressedContext: result });
-          },
+          triggerSmartTitle({
+            apiType: currentApiType,
+            apiBaseUrl: currentApiBaseUrl,
+            apiKey: currentApiKey,
+            model: currentModel,
+          });
         },
-        initialFiles,
-        customToolSet,
-        combinedToolHandlerWithMcp,
-        {
-          tools: initialTools,
-          askUserQuestion: (toolCallId, questions) => {
-            if (!isCurrentGeneratorRun(generatorConversationId)) {
-              return Promise.reject(
-                new DOMException("conversation switched", "AbortError"),
-              );
-            }
-            return useInteractiveStore.getState().askQuestion({
-              toolCallId,
-              questions,
-            });
-          },
-          requestPlanApproval: (toolCallId, plan) => {
-            if (!isCurrentGeneratorRun(generatorConversationId)) {
-              return Promise.reject(
-                new DOMException("conversation switched", "AbortError"),
-              );
-            }
-            return useInteractiveStore.getState().askPlanApproval({
-              toolCallId,
-              plan,
-            });
-          },
-          onPlanApproved: async () => {
-            if (!isCurrentGeneratorRun(generatorConversationId)) return;
-            const { system, setSystem } = useSettingsStore.getState();
-            if (system.planModeEnabled) {
-              setSystem({ ...system, planModeEnabled: false });
-            }
-            generatorRef.current?.setReadOnlyMode(false);
-            generatorRef.current?.setExecutionMode("chat");
-            const mcpRuntime = await runtime.mcpManager.prepareRuntime();
-            if (!isCurrentGeneratorRun(generatorConversationId)) return;
-            mcpRuntimeRef.current = mcpRuntime;
-            const custom = {
-              ...baseCustomToolSetRef.current,
-              ...mcpRuntime.tools,
-            };
-            generatorRef.current?.setCustomToolSet(custom);
-            generatorRef.current?.setAllowedMcpAliases(
-              new Set(mcpRuntime.aliases.keys()),
-            );
-            generatorRef.current?.setUntrustedReferenceContext(
-              mcpRuntime.instructions,
-            );
-            generatorRef.current?.setSystemPromptSuffix(
-              runtime.buildMemoryPromptSection(
-                useMemoryStore.getState().getAll(),
-              ) + trustedSkillsPromptRef.current,
-            );
-            return runtime.buildToolSet({
-              custom,
-              planMode: false,
-              runtimePlatform,
-              allowedDynamicNames: new Set(mcpRuntime.aliases.keys()),
-            });
-          },
-          dispatchSubagent: async (...args) => {
-            if (!isCurrentGeneratorRun(generatorConversationId)) {
-              throw new DOMException("conversation switched", "AbortError");
-            }
-            return dispatchSubagent(...args);
-          },
-          runtimePlatform,
+        onError: (error) => {
+          if (!isCurrentGeneratorRun(generatorConversationId)) return;
+          setLastError(classifyGenerationError(error));
+          setRunState("error");
+          console.error("Generation error:", error);
         },
+        onRetry: (attempt, maxAttempts, error) => {
+          if (!isCurrentGeneratorRun(generatorConversationId)) return;
+          console.warn(
+            `Retrying API request (${attempt}/${maxAttempts}):`,
+            error.message,
+          );
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last?.role === "assistant") {
+              return prev.slice(0, -1);
+            }
+            return prev;
+          });
+        },
+        onCompact: async () => {
+          if (!isCurrentGeneratorRun(generatorConversationId)) return null;
+          const s = useConversationStore.getState();
+          const conv = generatorConversationId
+            ? s.conversations[generatorConversationId]
+            : null;
+          if (!conv) return null;
+
+          const result = await runtime.runCompress(
+            {
+              apiType: settings.apiType,
+              apiBaseUrl: settings.apiBaseUrl,
+              apiKey: settings.apiKey,
+              model: settings.model,
+            },
+            conv,
+            isLocalRuntime ? generateLocalUtilityText : undefined,
+          );
+          if (!isCurrentGeneratorRun(generatorConversationId)) return null;
+          if (!result) return null;
+          return getMessagesForAPI({ ...conv, compressedContext: result });
+        },
+      } satisfies GeneratorEvents;
+      const generatorExtras = {
+        tools: initialTools,
+        askUserQuestion: (toolCallId, questions) => {
+          if (!isCurrentGeneratorRun(generatorConversationId)) {
+            return Promise.reject(
+              new DOMException("conversation switched", "AbortError"),
+            );
+          }
+          return useInteractiveStore.getState().askQuestion({
+            toolCallId,
+            questions,
+          });
+        },
+        requestPlanApproval: (toolCallId, plan) => {
+          if (!isCurrentGeneratorRun(generatorConversationId)) {
+            return Promise.reject(
+              new DOMException("conversation switched", "AbortError"),
+            );
+          }
+          return useInteractiveStore.getState().askPlanApproval({
+            toolCallId,
+            plan,
+          });
+        },
+        onPlanApproved: async () => {
+          if (!isCurrentGeneratorRun(generatorConversationId)) return;
+          const { system, setSystem } = useSettingsStore.getState();
+          if (system.planModeEnabled) {
+            setSystem({ ...system, planModeEnabled: false });
+          }
+          generatorRef.current?.setReadOnlyMode(false);
+          generatorRef.current?.setExecutionMode("chat");
+          const mcpRuntime = await runtime.mcpManager.prepareRuntime();
+          if (!isCurrentGeneratorRun(generatorConversationId)) return;
+          mcpRuntimeRef.current = mcpRuntime;
+          const custom = {
+            ...baseCustomToolSetRef.current,
+            ...mcpRuntime.tools,
+          };
+          generatorRef.current?.setCustomToolSet(custom);
+          generatorRef.current?.setAllowedMcpAliases(
+            new Set(mcpRuntime.aliases.keys()),
+          );
+          generatorRef.current?.setUntrustedReferenceContext(
+            mcpRuntime.instructions,
+          );
+          generatorRef.current?.setSystemPromptSuffix(
+            runtime.buildMemoryPromptSection(
+              useMemoryStore.getState().getAll(),
+            ) + trustedSkillsPromptRef.current,
+          );
+          return runtime.buildToolSet({
+            custom,
+            planMode: false,
+            runtimePlatform,
+            allowedDynamicNames: new Set(mcpRuntime.aliases.keys()),
+          });
+        },
+        dispatchSubagent: async (...args) => {
+          if (!isCurrentGeneratorRun(generatorConversationId)) {
+            throw new DOMException("conversation switched", "AbortError");
+          }
+          return dispatchSubagent(...args);
+        },
+        runtimePlatform,
+      } satisfies Pick<
+        import("../lib/ai/generator").GeneratorOptions,
+        | "tools"
+        | "askUserQuestion"
+        | "requestPlanApproval"
+        | "onPlanApproved"
+        | "dispatchSubagent"
+        | "runtimePlatform"
+      >;
+
+      let candidate: GenerationBackend | null = null;
+      if (isLocalRuntime) {
+        if (!generatorConversationId) {
+          throw new Error("The active conversation is unavailable.");
+        }
+        const { createLocalAgentGenerator } =
+          await import("../lib/local-agent/generator");
+        candidate = createLocalAgentGenerator(
+          {
+            provider: localProvider,
+            model: localPreferences.model,
+            effort: localPreferences.effort,
+            nativeSearch: webSearchSettings.engine === "builtin",
+            conversationId: generatorConversationId,
+            getConversation: () =>
+              useConversationStore.getState().conversations[
+                generatorConversationId
+              ] ?? null,
+            saveSession: (session) => {
+              if (
+                generatorRef.current !== candidate ||
+                !isCurrentGeneratorRun(generatorConversationId)
+              ) {
+                return;
+              }
+              useConversationStore
+                .getState()
+                .setLocalAgentSessionForConversation(
+                  generatorConversationId,
+                  localProvider,
+                  session,
+                );
+            },
+          },
+          generatorEvents,
+          initialFiles,
+          customToolSet,
+          combinedToolHandlerWithMcp,
+          generatorExtras,
+        );
+      } else {
+        candidate = runtime.createOpenAIGenerator(
+          {
+            apiType: currentApiType,
+            apiKey: currentApiKey,
+            apiBaseUrl: currentApiBaseUrl,
+            model: currentModel,
+            stream: true,
+            providerToolNames,
+          },
+          generatorEvents,
+          initialFiles,
+          customToolSet,
+          combinedToolHandlerWithMcp,
+          generatorExtras,
+        );
+      }
+
+      const constructionIsCurrent = isGeneratorConstructionCurrent(
+        constructionEpoch,
+        generatorConstructionEpochRef.current,
+        generatorConversationId,
+        useConversationStore.getState().activeId,
+        runConversationIdRef.current,
+        sameGeneratorConfig(nextConfig, currentGeneratorConfigSnapshot()),
       );
+      if (!constructionIsCurrent) {
+        candidate.abort();
+        return null;
+      }
 
+      baseCustomToolSetRef.current = customToolSet;
+      generatorRef.current = candidate;
       generatorConfigRef.current = nextConfig;
     }
 
@@ -1027,13 +1196,14 @@ export function useGenerator({
     restartSandpack,
     flushThinkingBuffer,
     triggerSmartTitle,
+    generateLocalUtilityText,
   ]);
 
   // Apply state that can change between generations: tool set (plan mode toggle),
   // system prompt suffix (memory + plan mode addendum). Called at the start of every run.
   const applyDynamicGeneratorState = useCallback(
     async (
-      generator: WebAppGenerator,
+      generator: GenerationBackend,
       forcedSkillIds: readonly string[] = [],
       dynamicOptions: {
         includeMcp?: boolean;
@@ -1114,7 +1284,7 @@ export function useGenerator({
   );
 
   const runAutomaticQa = useCallback(
-    async (generator: WebAppGenerator, result: GenerateResult | null) => {
+    async (generator: GenerationBackend, result: GenerateResult | null) => {
       const runConversationId = runConversationIdRef.current;
       if (!isCurrentGeneratorRun(runConversationId)) return;
       const system = useSettingsStore.getState().system;

@@ -93,6 +93,7 @@ describe("TauriScriptExecutor", () => {
           stdio: true,
           oauthLoopback: true,
           skillScripts: true,
+          localAgents: true,
         };
       }
       if (command === "cancel_all_skill_scripts") return 2;
@@ -111,6 +112,7 @@ describe("TauriScriptExecutor", () => {
           stdio: false,
           oauthLoopback: false,
           skillScripts: false,
+          localAgents: false,
         };
       }
     });

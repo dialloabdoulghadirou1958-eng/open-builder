@@ -3,6 +3,7 @@ import { WebAppGenerator } from "../generator";
 import type {
   DispatchSubagentResult,
   GeneratorEvents,
+  GenerationBackend,
   GeneratorOptions,
   ProjectFiles,
 } from "../generator-types";
@@ -39,6 +40,10 @@ export interface RunSubagentOpts {
   parentForcedSkillsPrompt: string;
   parentSkillContext: SkillActiveContext | null;
   additionalToolNames: ReadonlySet<string>;
+  createGenerator?: (
+    options: GeneratorOptions,
+    events: GeneratorEvents,
+  ) => GenerationBackend | Promise<GenerationBackend>;
 }
 
 export interface CreateDispatcherOpts {
@@ -51,6 +56,7 @@ export interface CreateDispatcherOpts {
   getSkillContextSnapshot?: () => SkillActiveContext | null;
   /** Explicitly approved read-only external tools (currently MCP). */
   getAdditionalToolNames?: () => ReadonlySet<string>;
+  createGenerator?: RunSubagentOpts["createGenerator"];
 }
 
 type WritePolicy = "readonly" | "fullWrite";
@@ -214,7 +220,9 @@ export async function runSubagent(
     thinking: false,
   };
 
-  const inner = new WebAppGenerator(generatorOptions, events);
+  const inner = opts.createGenerator
+    ? await opts.createGenerator(generatorOptions, events)
+    : new WebAppGenerator(generatorOptions, events);
 
   const onAbort = () => inner.abort();
   opts.signal.addEventListener("abort", onAbort, { once: true });
@@ -307,5 +315,6 @@ export function createSubagentDispatcher(
       parentForcedSkillsPrompt: opts.getForcedSkillsPrompt(),
       parentSkillContext: opts.getSkillContextSnapshot?.() ?? null,
       additionalToolNames: opts.getAdditionalToolNames?.() ?? new Set(),
+      createGenerator: opts.createGenerator,
     });
 }

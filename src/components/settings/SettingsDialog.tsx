@@ -32,6 +32,7 @@ interface SettingsDialogProps {
   onSaveAssetSearch: (settings: AssetSearchSettings) => void;
   systemSettings: SystemSettings;
   onSaveSystem: (settings: SystemSettings) => void;
+  runtimeChangeLocked?: boolean;
 }
 
 export type ModelFieldErrors = Partial<
@@ -49,6 +50,7 @@ export function validateAISettingsDraft(
   },
 ): ModelFieldErrors {
   const errors: ModelFieldErrors = {};
+  if (settings.runtime === "localCli") return errors;
   if (!settings.apiKey.trim()) errors.apiKey = messages.apiKeyRequired;
 
   const rawUrl = settings.apiBaseUrl.trim();
@@ -84,6 +86,7 @@ export function SettingsDialog({
   onSaveAssetSearch,
   systemSettings,
   onSaveSystem,
+  runtimeChangeLocked = false,
 }: SettingsDialogProps) {
   const t = useT();
 
@@ -177,6 +180,7 @@ export function SettingsDialog({
               formData={formData}
               setFormData={setFormData}
               errors={showValidation ? modelErrors : {}}
+              runtimeChangeLocked={runtimeChangeLocked}
             />
           </TabsContent>
 

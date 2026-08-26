@@ -24,6 +24,18 @@ const settingsSystem = readFileSync(
   new URL("../src/store/settings/system.ts", import.meta.url),
   "utf8",
 );
+const localAgent = readFileSync(
+  new URL("../src-tauri/src/local_agent.rs", import.meta.url),
+  "utf8",
+);
+const localAgentProtocol = readFileSync(
+  new URL("../src-tauri/src/local_agent_protocol.rs", import.meta.url),
+  "utf8",
+);
+const localAgentBridge = readFileSync(
+  new URL("../src-tauri/src/local_agent_bridge.rs", import.meta.url),
+  "utf8",
+);
 
 const failures = [];
 
@@ -52,10 +64,89 @@ const mobileHandler = tauriLib.match(
 if (!mobileHandler) {
   failures.push("A dedicated mobile invoke handler must be present.");
 } else if (
-  /skills::|mcp_stdio::|mcp_remote::|mcp_oauth::/.test(mobileHandler)
+  /skills::|mcp_stdio::|mcp_remote::|mcp_oauth::|local_agent::/.test(
+    mobileHandler,
+  )
 ) {
   failures.push(
     "Mobile invoke handler must not expose Skill scripts or desktop MCP commands.",
+  );
+}
+
+if (
+  !tauriLib.includes("local_agent::LocalAgentState::default()") ||
+  !tauriLib.includes("local_agent::local_agent_start")
+) {
+  failures.push("Desktop local-agent state and commands must be registered.");
+}
+
+if (
+  !localAgentBridge.includes("std::net::Ipv4Addr::LOCALHOST") ||
+  !localAgentBridge.includes('strip_prefix("Bearer ")') ||
+  !localAgentBridge.includes("MAX_REQUEST_BYTES") ||
+  !localAgentBridge.includes("MAX_RESULT_BYTES")
+) {
+  failures.push(
+    "Local-agent MCP must bind loopback, require bearer auth, and enforce payload budgets.",
+  );
+}
+
+if (
+  !localAgentProtocol.includes("command.env_clear()") ||
+  !localAgentProtocol.includes("features.shell_tool=false") ||
+  !localAgentProtocol.includes("features.hooks=false") ||
+  !localAgentProtocol.includes("agents.enabled=false") ||
+  !localAgentProtocol.includes('"--strict-mcp-config"') ||
+  !localAgentProtocol.includes('"--setting-sources"') ||
+  !localAgentProtocol.includes('"--no-chrome"') ||
+  !localAgentProtocol.includes('"--strict-config"') ||
+  !localAgentProtocol.includes('model_provider=\\"openai\\"') ||
+  !localAgentProtocol.includes("validate_codex_effective_config") ||
+  !localAgentProtocol.includes("validate_claude_init") ||
+  !localAgentProtocol.includes("HANDSHAKE_TIMEOUT") ||
+  !localAgentProtocol.includes("MAX_PROTOCOL_OUTPUT_BYTES") ||
+  !localAgentProtocol.includes("MAX_PROTOCOL_EVENTS") ||
+  !localAgentProtocol.includes("127.0.0.1,localhost,::1") ||
+  !localAgentProtocol.includes("ProcessGroup::leader()") ||
+  !localAgentProtocol.includes("JobObject")
+) {
+  failures.push(
+    "Local-agent processes must use a minimal environment, disabled native execution, and process-tree containment.",
+  );
+}
+
+if (
+  !localAgent.includes("shutdown_gracefully") ||
+  !localAgent.includes("local_agent_cancel_all") ||
+  !localAgent.includes(
+    "native search is not allowed in isolated execution modes",
+  ) ||
+  !localAgentProtocol.includes("SHUTDOWN_TIMEOUT") ||
+  !localAgentBridge.includes("cancel_pending")
+) {
+  failures.push(
+    "Local-agent cancellation must reject pending tools and clean up process trees with a bounded grace period.",
+  );
+}
+
+const startRequest = localAgent.match(
+  /pub struct LocalAgentStartRequest \{([\s\S]*?)\n\}/,
+)?.[1];
+if (
+  !startRequest ||
+  /\b(command|args|cwd|executable|environment)\s*:/.test(startRequest)
+) {
+  failures.push(
+    "The local-agent start request must not accept executable, argv, cwd, or environment input from the webview.",
+  );
+}
+
+if (
+  !localAgent.includes('format!("{}.exe", provider.command_name())') ||
+  !localAgent.includes("valid_executable_name")
+) {
+  failures.push(
+    "Windows local-agent launchers must be restricted to provider-native .exe files.",
   );
 }
 

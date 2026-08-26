@@ -12,6 +12,7 @@ export interface McpPlatformCapabilities {
   stdio: boolean;
   oauthLoopback: boolean;
   skillScripts: boolean;
+  localAgents: boolean;
 }
 
 interface RemoteEventPayload {
@@ -48,6 +49,7 @@ export async function getMcpPlatformCapabilities(): Promise<McpPlatformCapabilit
       stdio: false,
       oauthLoopback: false,
       skillScripts: false,
+      localAgents: false,
     };
   }
   return invoke<McpPlatformCapabilities>("mcp_platform_capabilities");

@@ -1,3 +1,4 @@
+import { asSchema } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { approveMcpDiscovery } from "./fingerprint";
 import { buildMcpRuntimeBundle } from "./runtime";
@@ -40,7 +41,12 @@ async function approvedServer() {
         {
           name: "read_record",
           description: "Read one record",
-          inputSchema: { type: "object" },
+          inputSchema: {
+            type: "object",
+            properties: { id: { type: "integer" } },
+            required: ["id"],
+            additionalProperties: false,
+          },
           annotations: { readOnlyHint: true },
         },
         {
@@ -64,7 +70,7 @@ describe("MCP runtime tool filtering", () => {
   it("exposes approved tools while granting plan and subagent access only to approved read-only tools", async () => {
     const server = await approvedServer();
     const callTool = vi.fn(async () => ({ text: "ok" }));
-    const bundle = buildMcpRuntimeBundle({
+    const bundle = await buildMcpRuntimeBundle({
       globalEnabled: true,
       servers: { workspace: server },
       runtime: {
@@ -94,6 +100,15 @@ describe("MCP runtime tool filtering", () => {
     expect(bundle.instructions).toContain("Prefer the narrowest query.");
 
     const readAlias = [...bundle.planModeToolNames][0];
+    const runtimeSchema = asSchema(bundle.tools[readAlias].inputSchema);
+    expect(runtimeSchema.validate?.({ id: "1" })).toMatchObject({
+      success: false,
+    });
+    const validInput = { id: 1 };
+    expect(runtimeSchema.validate?.(validInput)).toEqual({
+      success: true,
+      value: validInput,
+    });
     await expect(
       bundle.handler(
         readAlias,
@@ -134,7 +149,7 @@ describe("MCP runtime tool filtering", () => {
   it("treats elevated grants from an older tool policy as unapproved", async () => {
     const server = await approvedServer();
     server.tools.read_record.elevatedPermissionsPolicyVersion = "stale-policy";
-    const bundle = buildMcpRuntimeBundle({
+    const bundle = await buildMcpRuntimeBundle({
       globalEnabled: true,
       servers: { workspace: server },
       runtime: {
@@ -160,7 +175,7 @@ describe("MCP runtime tool filtering", () => {
 
   it("removes an entire drifted server instead of exposing stale tools", async () => {
     const server = await approvedServer();
-    const bundle = buildMcpRuntimeBundle({
+    const bundle = await buildMcpRuntimeBundle({
       globalEnabled: true,
       servers: { workspace: server },
       runtime: {
@@ -181,5 +196,41 @@ describe("MCP runtime tool filtering", () => {
     });
     expect(bundle.tools).toEqual({});
     expect(bundle.instructions).toBe("");
+  });
+
+  it("omits tools whose approved input schema cannot be enforced", async () => {
+    const server = await approvedServer();
+    server.tools.read_record.inputSchema = {
+      type: "object",
+      properties: {
+        id: { $ref: "https://schemas.example.com/id.json" },
+      },
+    };
+    const bundle = await buildMcpRuntimeBundle({
+      globalEnabled: true,
+      servers: { workspace: server },
+      runtime: {
+        workspace: {
+          status: "ready",
+          drift: {
+            status: "clean",
+            added: [],
+            removed: [],
+            changed: [],
+            instructionsChanged: false,
+            currentFingerprint: server.definitionFingerprint!,
+          },
+          updatedAt: 3,
+        },
+      },
+      caller: { callTool: vi.fn() },
+    });
+
+    expect(
+      [...bundle.aliases.values()].some(
+        (target) => target.toolName === "read_record",
+      ),
+    ).toBe(false);
+    expect(bundle.warnings.join("\n")).toMatch(/schema is unsupported/i);
   });
 });

@@ -10,6 +10,7 @@ interface CapsuleGroupProps {
   value: string;
   onChange: (value: string) => void;
   options: CapsuleGroupOption[];
+  disabled?: boolean;
 }
 
 export function CapsuleGroup({
@@ -17,6 +18,7 @@ export function CapsuleGroup({
   value,
   onChange,
   options,
+  disabled = false,
 }: CapsuleGroupProps) {
   return (
     <div
@@ -31,9 +33,11 @@ export function CapsuleGroup({
             key={option.value}
             type="button"
             aria-pressed={isSelected}
+            disabled={disabled}
             onClick={() => onChange(option.value)}
             className={cn(
               "inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center whitespace-nowrap rounded-md px-2 py-1 text-sm font-medium transition-[color,background-color,border-color,box-shadow,opacity,transform]",
+              "disabled:cursor-not-allowed disabled:opacity-50",
               isSelected
                 ? "bg-background text-foreground shadow-sm dark:border-input dark:bg-input/30"
                 : "text-foreground/60 hover:text-foreground dark:text-muted-foreground dark:hover:text-foreground",

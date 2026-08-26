@@ -1,10 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import {
-  type AISlice,
-  aiDefaults,
-  createAISlice,
-} from "./ai";
+import { type AISlice, aiDefaults, createAISlice } from "./ai";
 import {
   type WebSearchSlice,
   webSearchDefaults,
@@ -15,14 +11,18 @@ import {
   assetSearchDefaults,
   createAssetSearchSlice,
 } from "./asset-search";
-import {
-  type SystemSlice,
-  systemDefaults,
-  createSystemSlice,
-} from "./system";
+import { type SystemSlice, systemDefaults, createSystemSlice } from "./system";
 import { SETTINGS_VERSION, migrateSettings } from "./migrations";
 
-export type { AISettings, ModelCache } from "./ai";
+export type {
+  AISettings,
+  GenerationRuntime,
+  LocalAgentCapabilityStatus,
+  LocalAgentProvider,
+  LocalAgentProviderSettings,
+  LocalAgentSettings,
+  ModelCache,
+} from "./ai";
 export type { WebSearchSettings } from "./web-search";
 export type { AssetSearchSettings } from "./asset-search";
 export type { Language, Theme, SystemSettings } from "./system";
