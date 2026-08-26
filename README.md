@@ -295,9 +295,23 @@ pnpm build
 # Output to dist/ directory
 ```
 
+### Docker / GitHub Container Registry
+
+The lightweight container image serves the Web build with an unprivileged Nginx Alpine runtime:
+
+```bash
+docker run --rm -p 8080:8080 ghcr.io/amery2010/open-builder:latest
+```
+
+Open `http://localhost:8080`. The image supports `linux/amd64` and `linux/arm64`. It intentionally contains no provider credentials, API proxy, stdio MCP, Local CLI, or Skill script runtime; browser-facing provider and search endpoints must allow the deployed origin through CORS.
+
+Pushing a semantic version tag such as `v1.8.0` runs the frontend quality gates and a container smoke test before publishing `1.8.0`, `1.8`, `1`, and `latest` tags to `ghcr.io/amery2010/open-builder`. Pre-release tags publish only their full pre-release version. GitHub initializes a new container package as private, so a repository owner must change its visibility to public once after the first successful publish.
+
+See [.github/workflows/release.yml](.github/workflows/release.yml).
+
 ### GitHub Pages
 
-GitHub Actions builds and deploys Pages when `main` is updated (or when the workflow is started manually). The workflow sets Vite's base path to the repository subpath, including the static MCP OAuth callback entry. A `v*` tag creates a separate draft desktop release after all quality gates pass; it does not deploy Pages.
+GitHub Actions builds and deploys Pages when `main` is updated (or when the workflow is started manually). The workflow sets Vite's base path to the repository subpath, including the static MCP OAuth callback entry. A `v*` tag creates a draft desktop release and publishes the container image after their respective quality gates pass; it does not deploy Pages.
 
 See [.github/workflows/deploy.yml](.github/workflows/deploy.yml).
 

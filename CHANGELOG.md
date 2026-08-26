@@ -12,6 +12,7 @@ Tagged versions use their Git tag date. Versions 1.4.0 through 1.7.0 were not ta
 
 ### Added
 
+- Added a lightweight, non-root Nginx Alpine Web image and `v*`-tagged GHCR publishing for `linux/amd64` and `linux/arm64`, gated by frontend checks and container smoke tests.
 - Added an explicit desktop-only Local CLI runtime with Codex App Server support, provider-specific resumable sessions, native model/auth probing, and no silent API fallback. The Claude stream-JSON adapter remains fail-closed until the CLI can prove pre-input isolation while retaining the Open Builder MCP bridge and subscription authentication.
 - Added a token-authenticated loopback Streamable HTTP MCP bridge so local agents reuse the same project tools, permission policy, virtual files, Plan Mode, Skills, MCP, attachments, Automatic QA, subagents, title generation, and context compression as API generation.
 - Added compact Local CLI settings with executable discovery and validated overrides, signed-in/readiness states, provider-reported model and effort choices, login repair actions, desktop capability gating, and English/Chinese disclosures.

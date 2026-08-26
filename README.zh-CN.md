@@ -295,9 +295,23 @@ pnpm build
 # 产物输出到 dist/ 目录
 ```
 
+### Docker / GitHub Container Registry
+
+轻量容器镜像使用非 root 的 Nginx Alpine 运行时提供 Web 构建产物：
+
+```bash
+docker run --rm -p 8080:8080 ghcr.io/amery2010/open-builder:latest
+```
+
+打开 `http://localhost:8080`。镜像支持 `linux/amd64` 和 `linux/arm64`，且不会包含服务商凭据、API 代理、stdio MCP、本地 CLI 或 Skill 脚本运行时；浏览器直接访问的模型和搜索服务仍须通过 CORS 允许当前部署来源。
+
+推送 `v1.8.0` 这样的语义化版本标签后，GitHub Actions 会先执行完整前端门禁和容器冒烟检查，再向 `ghcr.io/amery2010/open-builder` 发布 `1.8.0`、`1.8`、`1` 与 `latest` 标签。预发布版本只发布完整的预发布标签。GitHub 首次创建容器包时默认设为私有，因此仓库所有者需要在首次成功发布后将可见性一次性调整为公开。
+
+详见 [.github/workflows/release.yml](.github/workflows/release.yml)。
+
 ### 部署到 GitHub Pages
 
-GitHub Actions 会在 `main` 更新或手动触发时构建并部署 Pages。工作流会自动设置 Vite 仓库子路径，并包含静态 MCP OAuth 回调入口。`v*` tag 只会在全部质量门禁通过后创建一个桌面版 draft release，不会部署 Pages。
+GitHub Actions 会在 `main` 更新或手动触发时构建并部署 Pages。工作流会自动设置 Vite 仓库子路径，并包含静态 MCP OAuth 回调入口。`v*` tag 会在各自质量门禁通过后创建桌面版 draft release 并发布容器镜像，但不会部署 Pages。
 
 详见 [.github/workflows/deploy.yml](.github/workflows/deploy.yml)。
 
