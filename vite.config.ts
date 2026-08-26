@@ -38,6 +38,9 @@ export default defineConfig(() => {
     build: {
       rolldownOptions: {
         output: {
+          // Required while recursive dependency capture is disabled below;
+          // otherwise lazy Markdown chunks can form invalid cycles.
+          strictExecutionOrder: true,
           codeSplitting: {
             minSize: 20_000,
             maxSize: 480_000,
@@ -114,6 +117,7 @@ export default defineConfig(() => {
     test: {
       environment: "node",
       setupFiles: ["./src/test/setup.ts"],
+      execArgv: ["--no-experimental-webstorage"],
     },
     envPrefix: ["VITE_", "TAURI_ENV_*"],
   };

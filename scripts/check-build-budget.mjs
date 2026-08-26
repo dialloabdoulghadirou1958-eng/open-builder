@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
+import { JSDOM } from "jsdom";
 
 const dist = new URL("../dist/", import.meta.url);
 const assets = new URL("assets/", dist);
@@ -21,11 +22,24 @@ if (!entryMatch) {
   );
 }
 
-const entryName = entryMatch?.[1].split("/").pop();
+let entryName = entryMatch?.[1].split("/").pop();
 const files = readdirSync(assets);
-const entryBytes = entryName
+let entryBytes = entryName
   ? statSync(new URL(entryName, assets)).size
   : Number.POSITIVE_INFINITY;
+
+// `strictExecutionOrder` can emit a tiny facade that initializes the actual
+// application entry. Keep the budget tied to the implementation chunk.
+if (entryName && entryBytes < 1024) {
+  const entrySource = readFileSync(new URL(entryName, assets), "utf8");
+  const localImports = [
+    ...entrySource.matchAll(/from["']\.\/([^"']+\.js)["']/g),
+  ].map((match) => match[1]);
+  if (localImports.length === 1 && files.includes(localImports[0])) {
+    entryName = localImports[0];
+    entryBytes = statSync(new URL(entryName, assets)).size;
+  }
+}
 const reduction = 1 - entryBytes / AUDIT_BASELINE_ENTRY_BYTES;
 
 if (entryBytes > MAX_ENTRY_BYTES) {
@@ -85,6 +99,61 @@ for (const prefix of [
 ]) {
   if (!files.some((file) => file.startsWith(prefix) && file.endsWith(".js"))) {
     failures.push(`Expected a lazy ${prefix} chunk in the production build.`);
+  }
+}
+
+const markdownChunk = files.find(
+  (file) => file.startsWith("MarkdownContent-") && file.endsWith(".js"),
+);
+if (markdownChunk) {
+  const dom = new JSDOM(
+    '<!doctype html><html><head></head><body><div id="root"></div></body></html>',
+    { url: "http://localhost" },
+  );
+  dom.window.matchMedia = () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+  });
+  for (const key of [
+    "window",
+    "document",
+    "localStorage",
+    "sessionStorage",
+    "HTMLElement",
+    "Element",
+    "Node",
+    "MutationObserver",
+    "CustomEvent",
+    "Event",
+    "URL",
+    "Blob",
+    "FileReader",
+    "DOMParser",
+  ]) {
+    Object.defineProperty(globalThis, key, {
+      configurable: true,
+      value: dom.window[key],
+    });
+  }
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: dom.window.navigator,
+  });
+  globalThis.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
+  globalThis.requestAnimationFrame = (callback) => setTimeout(callback, 0);
+
+  try {
+    // Catch circular-chunk failures that only appear in the production graph.
+    await import(new URL(markdownChunk, assets));
+  } catch (error) {
+    failures.push(
+      `Production Markdown chunk failed to initialize: ${error instanceof Error ? error.message : String(error)}.`,
+    );
+  } finally {
+    dom.window.close();
   }
 }
 
