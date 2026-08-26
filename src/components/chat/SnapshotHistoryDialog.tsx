@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TooltipIconButton } from "@/components/ui/tooltip-icon-button";
 import { Input } from "@/components/ui/input";
 import { useSnapshotStore } from "../../store/snapshot";
 import { findPrecedingUserLabel } from "../../lib/utils/message-navigation";
@@ -137,9 +138,7 @@ export function SnapshotHistoryDialog({
       <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col p-0 gap-0 overflow-hidden">
         <DialogHeader className="px-5 pt-5 pb-3 border-b">
           <DialogTitle>{t.snapshots.title}</DialogTitle>
-          {notice && (
-            <p className="text-xs text-muted-foreground">{notice}</p>
-          )}
+          {notice && <p className="text-xs text-muted-foreground">{notice}</p>}
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto">
@@ -174,26 +173,24 @@ export function SnapshotHistoryDialog({
                             className="h-8 text-sm"
                             autoFocus
                           />
-                          <Button
+                          <TooltipIconButton
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
                             onClick={commitEdit}
-                            aria-label={t.snapshots.saveName}
-                            title={t.snapshots.saveName}
+                            label={t.snapshots.saveName}
                           >
                             <Check size={15} />
-                          </Button>
-                          <Button
+                          </TooltipIconButton>
+                          <TooltipIconButton
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
                             onClick={cancelEdit}
-                            aria-label={t.snapshots.cancelName}
-                            title={t.snapshots.cancelName}
+                            label={t.snapshots.cancelName}
                           >
                             <X size={15} />
-                          </Button>
+                          </TooltipIconButton>
                         </div>
                       ) : (
                         <div className="flex items-center gap-2 min-w-0">
@@ -224,66 +221,60 @@ export function SnapshotHistoryDialog({
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
-                      <Button
+                      <TooltipIconButton
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
                         onClick={() => onShowDiff(snapshot.messageId)}
-                        aria-label={t.snapshots.viewDiff}
-                        title={t.snapshots.viewDiff}
+                        label={t.snapshots.viewDiff}
                       >
                         <Eye size={15} />
-                      </Button>
-                      <Button
+                      </TooltipIconButton>
+                      <TooltipIconButton
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
                         onClick={() => void handleCopyPatch(snapshot)}
-                        aria-label={t.snapshots.copyPatch}
-                        title={t.snapshots.copyPatch}
+                        label={t.snapshots.copyPatch}
                       >
                         <Copy size={15} />
-                      </Button>
-                      <Button
+                      </TooltipIconButton>
+                      <TooltipIconButton
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
                         onClick={() => handleDownloadPatch(snapshot, label)}
-                        aria-label={t.snapshots.downloadPatch}
-                        title={t.snapshots.downloadPatch}
+                        label={t.snapshots.downloadPatch}
                       >
                         <Download size={15} />
-                      </Button>
-                      <Button
+                      </TooltipIconButton>
+                      <TooltipIconButton
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
                         onClick={() => onRollback(snapshot.messageId)}
-                        aria-label={t.snapshots.restore}
-                        title={t.snapshots.restore}
+                        label={t.snapshots.restore}
                       >
                         <Undo2 size={15} />
-                      </Button>
-                      <Button
+                      </TooltipIconButton>
+                      <TooltipIconButton
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
                         onClick={() => startEdit(snapshot)}
-                        aria-label={t.snapshots.rename}
-                        title={t.snapshots.rename}
+                        label={t.snapshots.rename}
                       >
                         <Pencil size={15} />
-                      </Button>
-                      <Button
+                      </TooltipIconButton>
+                      <TooltipIconButton
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-destructive hover:text-destructive"
                         onClick={() => handleDelete(snapshot.id)}
-                        aria-label={t.snapshots.delete}
-                        title={t.snapshots.delete}
+                        label={t.snapshots.delete}
                       >
                         <Trash2 size={15} />
-                      </Button>
+                      </TooltipIconButton>
                     </div>
                   </div>
                 );

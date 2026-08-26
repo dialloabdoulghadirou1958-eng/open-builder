@@ -15,19 +15,23 @@ import {
   Archive,
   Activity,
 } from "lucide-react";
-import { MarkdownContent } from "./MarkdownContent";
 import { ToolCallCard } from "./ToolCallCard";
 import { PlanApprovalCard } from "./PlanApprovalCard";
 import { AskUserQuestionCard } from "./AskUserQuestionCard";
 import { SubagentCallCard } from "./SubagentCallCard";
 import { useT } from "../../i18n";
-import type { AskUserQuestion } from "../../store/interactive";
+import {
+  useInteractiveStore,
+  type AskUserQuestion,
+} from "../../store/interactive";
 import type {
   MergedMessage,
   TextBlock,
   ImageBlock,
   FileBlock,
 } from "../../types";
+import { getAttachmentBlob } from "../../lib/attachments/store";
+import { LazyMarkdownContent } from "./LazyMarkdownContent";
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -53,6 +57,32 @@ interface MessageBubbleProps {
   onHealthCheck?: () => void;
 }
 
+function StoredAttachmentImage({ block }: { block: ImageBlock }) {
+  const [url, setUrl] = useState(block.url ?? "");
+  useEffect(() => {
+    if (!block.attachmentId) return;
+    let active = true;
+    let objectUrl = "";
+    void getAttachmentBlob(block.attachmentId).then((blob) => {
+      if (!active || !blob) return;
+      objectUrl = URL.createObjectURL(blob);
+      setUrl(objectUrl);
+    });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [block.attachmentId]);
+  if (!url) return null;
+  return (
+    <img
+      src={url}
+      alt={block.name ?? ""}
+      className="max-w-48 max-h-48 rounded-lg object-cover"
+    />
+  );
+}
+
 export const MessageBubble = memo(function MessageBubble({
   message,
   isGenerating = false,
@@ -66,6 +96,7 @@ export const MessageBubble = memo(function MessageBubble({
   onHealthCheck,
 }: MessageBubbleProps) {
   const t = useT();
+  const pendingInteractions = useInteractiveStore((state) => state.pending);
   if (message.role === "user") {
     const textBlocks = message.blocks.filter(
       (b): b is TextBlock => b.type === "text",
@@ -77,18 +108,34 @@ export const MessageBubble = memo(function MessageBubble({
       (b): b is FileBlock => b.type === "file",
     );
 
+    if (message.origin === "auto_qa") {
+      return (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+        >
+          <Activity size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <div>
+            <p className="font-medium text-foreground">
+              {t.chat.autoQaActivity}
+            </p>
+            {textBlocks.length > 0 && (
+              <p className="mt-0.5 line-clamp-2">
+                {textBlocks.map((block) => block.content).join(" ")}
+              </p>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex justify-end">
         <div className="bg-secondary px-4 py-2.5 rounded-2xl rounded-tr-sm max-w-[80%]">
           {imageBlocks.length > 0 && (
             <div className="flex gap-2 flex-wrap mb-2">
               {imageBlocks.map((img) => (
-                <img
-                  key={img.id}
-                  src={img.url}
-                  alt=""
-                  className="max-w-48 max-h-48 rounded-lg object-cover"
-                />
+                <StoredAttachmentImage key={img.id} block={img} />
               ))}
             </div>
           )}
@@ -120,7 +167,7 @@ export const MessageBubble = memo(function MessageBubble({
             </div>
           )}
           {textBlocks.length > 0 && (
-            <MarkdownContent
+            <LazyMarkdownContent
               content={textBlocks.map((b) => b.content).join("\n\n")}
               variant="user"
             />
@@ -135,9 +182,7 @@ export const MessageBubble = memo(function MessageBubble({
   // with messages persisted before the flag existed.
   const isError =
     message.isError ??
-    message.blocks.some(
-      (b) => b.type === "text" && b.content.startsWith("⚠️"),
-    );
+    message.blocks.some((b) => b.type === "text" && b.content.startsWith("⚠️"));
 
   const assistantText = message.blocks
     .filter((b): b is TextBlock => b.type === "text")
@@ -160,11 +205,28 @@ export const MessageBubble = memo(function MessageBubble({
         if (block.type === "text") {
           return (
             <div key={block.id} className="text-sm text-foreground">
-              <MarkdownContent content={block.content} variant="assistant" />
+              <LazyMarkdownContent
+                content={block.content}
+                variant="assistant"
+              />
             </div>
           );
         }
         if (block.type === "tool") {
+          const pending = pendingInteractions.find(
+            (item) =>
+              item.toolCallId === block.toolCallId && item.kind === "question",
+          );
+          if (pending?.kind === "question") {
+            return (
+              <AskUserQuestionCard
+                key={block.id}
+                toolCallId={block.toolCallId}
+                questions={pending.questions}
+                result={block.result}
+              />
+            );
+          }
           if (block.toolName === "exit_plan_mode") {
             return (
               <PlanApprovalCard
@@ -380,7 +442,7 @@ function ThinkingBlockCard({
       </button>
       {expanded && (
         <div className="thought px-3 py-2 text-xs text-muted-foreground max-h-60 overflow-y-auto">
-          <MarkdownContent content={content} variant="assistant" />
+          <LazyMarkdownContent content={content} variant="assistant" />
         </div>
       )}
     </div>

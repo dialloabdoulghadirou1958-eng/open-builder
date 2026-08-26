@@ -1,13 +1,7 @@
 import { useState } from "react";
-import {
-  ChevronRight,
-  Trash2,
-  BookOpen,
-  Play,
-  Loader2,
-} from "lucide-react";
+import { ChevronRight, Trash2, BookOpen, Play, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { TooltipIconButton } from "@/components/ui/tooltip-icon-button";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import type { SkillEntry } from "../../lib/skills/types";
@@ -138,18 +132,17 @@ export function SkillCard({
             </div>
           )}
         </button>
-        <Button
+        <TooltipIconButton
           type="button"
           size="icon"
           variant="ghost"
           className="w-7 h-7 text-muted-foreground hover:text-destructive disabled:opacity-30"
-          aria-label={isBuiltin ? t.skills.builtinCantDelete : t.skills.delete}
-          title={isBuiltin ? t.skills.builtinCantDelete : t.skills.delete}
+          label={isBuiltin ? t.skills.builtinCantDelete : t.skills.delete}
           disabled={isBuiltin}
           onClick={() => onDelete(skill.id)}
         >
           <Trash2 size={14} />
-        </Button>
+        </TooltipIconButton>
       </div>
       {expanded && (
         <div className="border-t border-border/60 px-3 py-2 bg-muted/30 text-xs space-y-2">
@@ -164,7 +157,11 @@ export function SkillCard({
           {skill.tags && skill.tags.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {skill.tags.map((tag) => (
-                <Badge key={tag} variant="outline" className="text-[10px] h-4 px-1.5">
+                <Badge
+                  key={tag}
+                  variant="outline"
+                  className="text-[10px] h-4 px-1.5"
+                >
                   {tag}
                 </Badge>
               ))}
@@ -177,7 +174,9 @@ export function SkillCard({
                 <span className="text-muted-foreground">
                   {t.skills.references}:{" "}
                 </span>
-                <span className="font-mono">{details.references.join(", ")}</span>
+                <span className="font-mono">
+                  {details.references.join(", ")}
+                </span>
               </div>
             </div>
           )}

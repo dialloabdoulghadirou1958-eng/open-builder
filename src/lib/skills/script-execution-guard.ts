@@ -14,7 +14,10 @@ function textBytes(value: string): number {
   return value.length;
 }
 
-function truncateText(value: string, maxChars: number): {
+function truncateText(
+  value: string,
+  maxChars: number,
+): {
   text: string;
   truncated: boolean;
 } {
@@ -23,7 +26,12 @@ function truncateText(value: string, maxChars: number): {
 }
 
 export function validateScriptExecuteParams(params: ScriptExecuteParams): void {
-  if (textBytes(params.scriptContent) > SCRIPT_EXECUTION_LIMITS.maxScriptBytes) {
+  if (!params.runId.trim() || !params.callId.trim()) {
+    throw new Error("run and call ids are required");
+  }
+  if (
+    textBytes(params.scriptContent) > SCRIPT_EXECUTION_LIMITS.maxScriptBytes
+  ) {
     throw new Error(
       `script exceeds ${SCRIPT_EXECUTION_LIMITS.maxScriptBytes} bytes`,
     );

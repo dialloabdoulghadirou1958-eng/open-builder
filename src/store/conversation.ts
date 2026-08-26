@@ -3,12 +3,36 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import localforage from "localforage";
 import { useSnapshotStore } from "./snapshot";
 import { runMigrations, type MigrationStep } from "./utils/migrate";
-import type { Conversation, CompressedContext, Message, ProjectFiles } from "../types";
+import type {
+  Conversation,
+  CompressedContext,
+  Message,
+  ProjectFiles,
+} from "../types";
 import { validateProjectFiles } from "../lib/utils/project-files";
+import { deleteAttachmentsForMessages } from "../lib/attachments/store";
 import { normalizeCompressedSummary } from "../lib/utils/compress-context";
 
 const CONVERSATION_STORE_VERSION = 1;
 const conversationMigrations: MigrationStep[] = [];
+const DEFAULT_PROJECT_TEMPLATE = "vite-react-ts";
+
+function normalizeStoredCompressedContext(
+  context: CompressedContext | undefined,
+): CompressedContext | undefined {
+  if (
+    !context ||
+    typeof context.summary !== "string" ||
+    !Number.isFinite(context.fromIndex)
+  ) {
+    return undefined;
+  }
+  return {
+    ...context,
+    fromIndex: Math.max(0, Math.floor(context.fromIndex)),
+    summary: normalizeCompressedSummary(context.summary),
+  };
+}
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -52,8 +76,12 @@ interface ConversationState {
   forkConversation: () => string;
   setMessages: (updater: Updater<Message[]>) => void;
   setFiles: (updater: Updater<ProjectFiles>) => void;
+  setFilesForConversation: (id: string, updater: Updater<ProjectFiles>) => void;
+  setActiveFile: (path: string) => void;
   setTemplate: (updater: Updater<string>) => void;
   setIsProjectInitialized: (updater: Updater<boolean>) => void;
+  clearContext: () => void;
+  resetProject: () => void;
   setCompressedContext: (ctx: CompressedContext) => void;
   setCompressedContextForConversation: (
     id: string,
@@ -82,7 +110,7 @@ export const useConversationStore = create<ConversationState>()(
           title: DEFAULT_TITLE,
           messages: [],
           files: {},
-          template: "vite-react-ts",
+          template: DEFAULT_PROJECT_TEMPLATE,
           isProjectInitialized: false,
           createdAt: Date.now(),
           updatedAt: Date.now(),
@@ -107,6 +135,9 @@ export const useConversationStore = create<ConversationState>()(
           title: conversation.title || DEFAULT_TITLE,
           messages: [...conversation.messages],
           files: { ...conversation.files },
+          compressedContext: normalizeStoredCompressedContext(
+            conversation.compressedContext,
+          ),
           createdAt: conversation.createdAt || now,
           updatedAt: now,
         };
@@ -126,17 +157,28 @@ export const useConversationStore = create<ConversationState>()(
           title: src ? src.title : DEFAULT_TITLE,
           messages: src ? [...src.messages] : [],
           files: src ? { ...src.files } : {},
-          template: src?.template ?? "vite-react-ts",
+          activeFile: src?.activeFile,
+          template: src?.template ?? DEFAULT_PROJECT_TEMPLATE,
           isProjectInitialized: src?.isProjectInitialized ?? false,
-          compressedContext: src?.compressedContext,
+          compressedContext: normalizeStoredCompressedContext(
+            src?.compressedContext,
+          ),
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
-        set({ conversations: { ...s.conversations, [id]: conv }, activeId: id });
+        set({
+          conversations: { ...s.conversations, [id]: conv },
+          activeId: id,
+        });
         return id;
       },
 
       deleteConversation: (id) => {
+        const current = get();
+        const deletedMessages = current.conversations[id]?.messages ?? [];
+        const retainedMessages = Object.values(current.conversations)
+          .filter((conversation) => conversation.id !== id)
+          .flatMap((conversation) => conversation.messages);
         useSnapshotStore.getState().deleteSnapshotsForConversation(id);
         set((s) => {
           const { [id]: _, ...rest } = s.conversations;
@@ -148,6 +190,12 @@ export const useConversationStore = create<ConversationState>()(
             nextActiveId = remaining[0]?.id ?? null;
           }
           return { conversations: rest, activeId: nextActiveId };
+        });
+        void deleteAttachmentsForMessages(
+          deletedMessages,
+          retainedMessages,
+        ).catch((error) => {
+          console.warn("Failed to release conversation attachments:", error);
         });
       },
 
@@ -174,21 +222,92 @@ export const useConversationStore = create<ConversationState>()(
       },
 
       setFiles: (updater) => {
+        const activeId = get().activeId;
+        if (activeId) get().setFilesForConversation(activeId, updater);
+      },
+
+      setFilesForConversation: (id, updater) => {
         set((s) => {
-          if (!s.activeId || !s.conversations[s.activeId]) return s;
-          const conv = s.conversations[s.activeId];
+          if (!s.conversations[id]) return s;
+          const conv = s.conversations[id];
           const files = applyUpdater(updater, conv.files);
           const validation = validateProjectFiles(files);
           if (!validation.ok) {
-            console.warn("[conversation] Rejected project files:", validation.error);
+            console.warn(
+              "[conversation] Rejected project files:",
+              validation.error,
+            );
             return s;
           }
           return {
             conversations: {
               ...s.conversations,
-              [s.activeId]: {
+              [id]: {
                 ...conv,
                 files,
+                activeFile:
+                  conv.activeFile && conv.activeFile in files
+                    ? conv.activeFile
+                    : Object.keys(files)[0],
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        });
+      },
+
+      setActiveFile: (path) => {
+        const activeId = get().activeId;
+        const conv = activeId ? get().conversations[activeId] : undefined;
+        if (!activeId || !conv || !(path in conv.files)) return;
+        set((state) => ({
+          conversations: {
+            ...state.conversations,
+            [activeId]: {
+              ...conv,
+              activeFile: path,
+              updatedAt: Date.now(),
+            },
+          },
+        }));
+      },
+
+      clearContext: () => {
+        set((s) => {
+          if (!s.activeId || !s.conversations[s.activeId]) return s;
+          const conv = s.conversations[s.activeId];
+          return {
+            conversations: {
+              ...s.conversations,
+              [s.activeId]: {
+                ...conv,
+                messages: [],
+                compressedContext: undefined,
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        });
+      },
+
+      resetProject: () => {
+        const activeId = get().activeId;
+        if (!activeId || !get().conversations[activeId]) return;
+        useSnapshotStore.getState().deleteSnapshotsForConversation(activeId);
+        set((s) => {
+          const conv = s.conversations[activeId];
+          if (!conv) return s;
+          return {
+            conversations: {
+              ...s.conversations,
+              [activeId]: {
+                ...conv,
+                messages: [],
+                files: {},
+                template: DEFAULT_PROJECT_TEMPLATE,
+                isProjectInitialized: false,
+                compressedContext: undefined,
+                activeFile: undefined,
                 updatedAt: Date.now(),
               },
             },
@@ -242,11 +361,7 @@ export const useConversationStore = create<ConversationState>()(
         set((s) => {
           if (!s.conversations[id]) return s;
           const conv = s.conversations[id];
-          const normalizedContext = {
-            ...ctx,
-            fromIndex: Math.max(0, Math.floor(ctx.fromIndex)),
-            summary: normalizeCompressedSummary(ctx.summary),
-          };
+          const normalizedContext = normalizeStoredCompressedContext(ctx);
           return {
             conversations: {
               ...s.conversations,
@@ -278,7 +393,12 @@ export const useConversationStore = create<ConversationState>()(
           return {
             conversations: {
               ...s.conversations,
-              [id]: { ...s.conversations[id], pinned: true, archived: false, updatedAt: Date.now() },
+              [id]: {
+                ...s.conversations[id],
+                pinned: true,
+                archived: false,
+                updatedAt: Date.now(),
+              },
             },
           };
         });
@@ -290,7 +410,11 @@ export const useConversationStore = create<ConversationState>()(
           return {
             conversations: {
               ...s.conversations,
-              [id]: { ...s.conversations[id], pinned: false, updatedAt: Date.now() },
+              [id]: {
+                ...s.conversations[id],
+                pinned: false,
+                updatedAt: Date.now(),
+              },
             },
           };
         });
@@ -302,7 +426,12 @@ export const useConversationStore = create<ConversationState>()(
           return {
             conversations: {
               ...s.conversations,
-              [id]: { ...s.conversations[id], archived: true, pinned: false, updatedAt: Date.now() },
+              [id]: {
+                ...s.conversations[id],
+                archived: true,
+                pinned: false,
+                updatedAt: Date.now(),
+              },
             },
           };
         });
@@ -314,7 +443,11 @@ export const useConversationStore = create<ConversationState>()(
           return {
             conversations: {
               ...s.conversations,
-              [id]: { ...s.conversations[id], archived: false, updatedAt: Date.now() },
+              [id]: {
+                ...s.conversations[id],
+                archived: false,
+                updatedAt: Date.now(),
+              },
             },
           };
         });
@@ -343,6 +476,18 @@ export const useConversationStore = create<ConversationState>()(
           for (const id of Object.keys(convs)) {
             if (convs[id].title === "新应用" || convs[id].title === "New App") {
               convs[id] = { ...convs[id], title: DEFAULT_TITLE };
+              changed = true;
+            }
+            const compressedContext = normalizeStoredCompressedContext(
+              convs[id].compressedContext,
+            );
+            if (
+              compressedContext?.summary !==
+                convs[id].compressedContext?.summary ||
+              compressedContext?.fromIndex !==
+                convs[id].compressedContext?.fromIndex
+            ) {
+              convs[id] = { ...convs[id], compressedContext };
               changed = true;
             }
           }

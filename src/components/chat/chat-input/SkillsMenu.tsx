@@ -55,7 +55,6 @@ export function SkillsMenu({
           size="sm"
           variant="ghost"
           className="h-7 min-w-7 gap-1 px-1.5 text-muted-foreground hover:text-foreground"
-          title={t.skills.forceForNext}
           aria-label={t.skills.forceForNext}
         >
           {initializing ? (

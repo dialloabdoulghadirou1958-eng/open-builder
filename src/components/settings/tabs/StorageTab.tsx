@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Archive, Database, History, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -26,6 +26,27 @@ export function StorageTab() {
   const skills = useSkillsStore((s) => s.skills);
   const templates = useProjectTemplateStore((s) => s.templates);
   const [notice, setNotice] = useState<string | null>(null);
+  const [extraDomains, setExtraDomains] = useState({
+    mcp: { bytes: 0, items: 0 },
+    attachments: { bytes: 0, items: 0 },
+  });
+
+  useEffect(() => {
+    let active = true;
+    void import("../../../lib/storage/registry")
+      .then(({ estimateStorageDomains }) => estimateStorageDomains())
+      .then((estimates) => {
+        if (active) {
+          setExtraDomains({
+            mcp: estimates.mcp,
+            attachments: estimates.attachments,
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [conversations, memories, skills, snapshots, templates]);
 
   const report = useMemo(
     () =>
@@ -101,6 +122,16 @@ export function StorageTab() {
       value: report.templates.count,
       detail: formatBytes(report.templates.bytes),
     },
+    {
+      label: t.settings.storage.mcp,
+      value: extraDomains.mcp.items,
+      detail: formatBytes(extraDomains.mcp.bytes),
+    },
+    {
+      label: t.settings.storage.attachments,
+      value: extraDomains.attachments.items,
+      detail: formatBytes(extraDomains.attachments.bytes),
+    },
   ];
 
   return (
@@ -115,7 +146,11 @@ export function StorageTab() {
             {t.settings.storage.total}
           </p>
           <span className="font-mono text-xs font-medium">
-            {formatBytes(report.totalBytes)}
+            {formatBytes(
+              report.totalBytes +
+                extraDomains.mcp.bytes +
+                extraDomains.attachments.bytes,
+            )}
           </span>
         </div>
 

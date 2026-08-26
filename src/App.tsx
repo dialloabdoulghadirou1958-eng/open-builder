@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef } from "react";
 import { ExternalLink, Globe2 } from "lucide-react";
 import {
   ResizableHandle,
@@ -7,7 +7,6 @@ import {
 } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
 import { ChatInterface } from "./components/ChatInterface";
-import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { CommandPalette } from "./components/command-palette/CommandPalette";
 import { useAppState } from "./hooks/useAppState";
 import { useGenerator } from "./hooks/useGenerator";
@@ -23,6 +22,11 @@ const CodeViewer = lazy(() =>
     default: module.CodeViewer,
   })),
 );
+const SettingsDialog = lazy(() =>
+  import("./components/settings/SettingsDialog").then((module) => ({
+    default: module.SettingsDialog,
+  })),
+);
 
 export default function App() {
   const t = useT();
@@ -31,8 +35,59 @@ export default function App() {
   const conversations = useConversationStore((s) => s.conversations);
   const createConversation = useConversationStore((s) => s.createConversation);
   const switchConversation = useConversationStore((s) => s.switchConversation);
+  const setFilesForConversation = useConversationStore(
+    (s) => s.setFilesForConversation,
+  );
   const isMobile = useIsMobile();
   useTheme();
+
+  useEffect(() => {
+    const loadMcpRuntime = () => import("./lib/mcp/connection-manager");
+    const isMcpCallback =
+      window.location.pathname
+        .replace(/\/$/, "")
+        .endsWith("/mcp/oauth/callback") ||
+      new URLSearchParams(window.location.search).get(
+        "open_builder_mcp_oauth_callback",
+      ) === "1";
+    if (isMcpCallback) {
+      void loadMcpRuntime()
+        .then((runtime) => runtime.handleMcpOAuthCallbackFromLocation())
+        .catch((error) => {
+          console.error("MCP OAuth callback failed:", error);
+        });
+    }
+    const closeMcp = () => {
+      void loadMcpRuntime().then((runtime) =>
+        runtime.getMcpConnectionManager().closeAll(),
+      );
+    };
+    const handleMcpOAuthMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data as { type?: string; serverId?: string } | null;
+      if (
+        data?.type !== "open-builder:mcp-oauth-complete" ||
+        typeof data.serverId !== "string"
+      ) {
+        return;
+      }
+      void import("./store/mcp")
+        .then(({ useMcpStore }) => useMcpStore.persist.rehydrate())
+        .then(async () => {
+          const runtime = await loadMcpRuntime();
+          return runtime
+            .getMcpConnectionManager()
+            .reconnectServer(data.serverId!);
+        });
+    };
+    window.addEventListener("beforeunload", closeMcp);
+    window.addEventListener("message", handleMcpOAuthMessage);
+    return () => {
+      window.removeEventListener("beforeunload", closeMcp);
+      window.removeEventListener("message", handleMcpOAuthMessage);
+      closeMcp();
+    };
+  }, []);
 
   const didInitConversation = useRef(false);
   useEffect(() => {
@@ -47,7 +102,13 @@ export default function App() {
         createConversation();
       }
     }
-  }, [hasHydrated, activeId, conversations, switchConversation, createConversation]);
+  }, [
+    hasHydrated,
+    activeId,
+    conversations,
+    switchConversation,
+    createConversation,
+  ]);
 
   const {
     files,
@@ -89,6 +150,7 @@ export default function App() {
     compressContext,
     review,
     healthCheck,
+    invalidateGenerator,
   } = useGenerator({
     settings,
     webSearchSettings,
@@ -100,6 +162,20 @@ export default function App() {
     restartSandpack,
     setIsProjectInitialized,
   });
+
+  const handleCodeFileChange = useCallback(
+    (conversationId: string, path: string, content: string) => {
+      if (useConversationStore.getState().activeId === conversationId) {
+        updateFiles(path, content);
+        return;
+      }
+      setFilesForConversation(conversationId, (previous) => ({
+        ...previous,
+        [path]: content,
+      }));
+    },
+    [setFilesForConversation, updateFiles],
+  );
 
   useEffect(() => {
     restartSandpack();
@@ -160,6 +236,7 @@ export default function App() {
           onContinue={continueTask}
           onReview={review}
           onHealthCheck={healthCheck}
+          onProjectReset={invalidateGenerator}
         />
       </ResizablePanel>
 
@@ -179,10 +256,11 @@ export default function App() {
                 }
               >
                 <CodeViewer
+                  conversationId={activeId!}
                   files={files}
                   currentFile={currentFile}
                   onFileSelect={setCurrentFile}
-                  onFileChange={updateFiles}
+                  onFileChange={handleCodeFileChange}
                   onRenameFile={renameFile}
                   onDeleteFile={deleteFile}
                   onMoveFile={moveFile}
@@ -264,18 +342,22 @@ export default function App() {
 
       <CommandPalette actions={paletteActions} />
 
-      <SettingsDialog
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        settings={settings}
-        onSave={handleSaveSettings}
-        webSearchSettings={webSearchSettings}
-        onSaveWebSearch={handleSaveWebSearchSettings}
-        assetSearchSettings={assetSearchSettings}
-        onSaveAssetSearch={handleSaveAssetSearchSettings}
-        systemSettings={systemSettings}
-        onSaveSystem={handleSaveSystemSettings}
-      />
+      {isSettingsOpen && (
+        <Suspense fallback={null}>
+          <SettingsDialog
+            isOpen
+            onClose={() => setIsSettingsOpen(false)}
+            settings={settings}
+            onSave={handleSaveSettings}
+            webSearchSettings={webSearchSettings}
+            onSaveWebSearch={handleSaveWebSearchSettings}
+            assetSearchSettings={assetSearchSettings}
+            onSaveAssetSearch={handleSaveAssetSearchSettings}
+            systemSettings={systemSettings}
+            onSaveSystem={handleSaveSystemSettings}
+          />
+        </Suspense>
+      )}
     </ResizablePanelGroup>
   );
 }

@@ -14,8 +14,7 @@ import { MessageBubble } from "./chat/MessageBubble";
 import { GeneratingIndicator } from "./chat/GeneratingIndicator";
 import { SettingsWarning } from "./chat/SettingsWarning";
 import { SessionList } from "./chat/SessionList";
-import { DiffModal } from "./chat/DiffModal";
-import { SnapshotHistoryDialog } from "./chat/SnapshotHistoryDialog";
+import { ResetProjectConfirmDialog } from "./chat/ResetProjectConfirmDialog";
 import {
   RollbackHint,
   RollbackConfirmDialog,
@@ -29,6 +28,11 @@ import {
 } from "../lib/utils/message-navigation";
 import { useConversationStore } from "../store/conversation";
 import { useSnapshotStore } from "../store/snapshot";
+import { discardPendingSandpackFileChanges } from "./code-viewer/sandpack-file-changes";
+import {
+  deleteAttachment,
+  deleteAttachmentsForMessages,
+} from "../lib/attachments/store";
 import { useT } from "../i18n";
 import type {
   Message,
@@ -36,11 +40,20 @@ import type {
   ProjectSnapshot,
   Attachment,
 } from "../types";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 const EMPTY_SNAPSHOTS: ProjectSnapshot[] = [];
 const MobilePreview = lazy(() =>
   import("./chat/MobilePreview").then((module) => ({
     default: module.MobilePreview,
+  })),
+);
+const DiffModal = lazy(() =>
+  import("./chat/DiffModal").then((module) => ({ default: module.DiffModal })),
+);
+const SnapshotHistoryDialog = lazy(() =>
+  import("./chat/SnapshotHistoryDialog").then((module) => ({
+    default: module.SnapshotHistoryDialog,
   })),
 );
 
@@ -65,6 +78,7 @@ interface ChatInterfaceProps {
   onContinue: () => Promise<void>;
   onReview: () => Promise<void>;
   onHealthCheck: () => Promise<void>;
+  onProjectReset?: () => void;
 }
 
 export function ChatInterface({
@@ -84,6 +98,7 @@ export function ChatInterface({
   onContinue,
   onReview,
   onHealthCheck,
+  onProjectReset,
 }: ChatInterfaceProps) {
   const t = useT();
   const [input, setInput] = useState("");
@@ -92,8 +107,19 @@ export function ChatInterface({
   const [showSessionList, setShowSessionList] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesViewportRef = useRef<HTMLDivElement>(null);
+  const virtualListRef = useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = useRef(true);
   const mergedMessages = useMergedMessages(messages);
+  const shouldVirtualizeMessages = mergedMessages.length > 40;
+  const virtualScrollMargin = virtualListRef.current?.offsetTop ?? 0;
+  const messageVirtualizer = useVirtualizer({
+    count: shouldVirtualizeMessages ? mergedMessages.length : 0,
+    getScrollElement: () => messagesViewportRef.current,
+    estimateSize: () => 160,
+    getItemKey: (index) => mergedMessages[index]?.id ?? index,
+    overscan: 6,
+    scrollMargin: virtualScrollMargin,
+  });
   const isMobile = useIsMobile();
 
   const activeId = useConversationStore((s) => s.activeId);
@@ -114,6 +140,7 @@ export function ChatInterface({
   );
   const [diffMessageId, setDiffMessageId] = useState<string | null>(null);
   const [showSnapshotHistory, setShowSnapshotHistory] = useState(false);
+  const [showResetProjectConfirm, setShowResetProjectConfirm] = useState(false);
 
   const {
     rollbackConfirmId,
@@ -130,7 +157,7 @@ export function ChatInterface({
   });
 
   const handleSlashCommand = useCallback(
-    (cmd: string) => {
+    async (cmd: string) => {
       setInput("");
       switch (cmd) {
         case "new":
@@ -140,8 +167,35 @@ export function ChatInterface({
           useConversationStore.getState().forkConversation();
           break;
         case "clear":
-          useConversationStore.getState().setMessages([]);
-          onSetFiles({});
+          try {
+            const state = useConversationStore.getState();
+            const retainedMessages = Object.values(state.conversations)
+              .filter((conversation) => conversation.id !== state.activeId)
+              .flatMap((conversation) => conversation.messages);
+            await Promise.all([
+              deleteAttachmentsForMessages(messages, retainedMessages),
+              ...attachments.map((attachment) =>
+                deleteAttachment(attachment.id),
+              ),
+            ]);
+          } catch (error) {
+            console.warn(
+              "Failed to delete one or more cleared attachments:",
+              error,
+            );
+          }
+          for (const attachment of attachments) {
+            if (attachment.previewUrl)
+              URL.revokeObjectURL(attachment.previewUrl);
+          }
+          useConversationStore.getState().clearContext();
+          setAttachments([]);
+          setForcedSkillIds([]);
+          setRollbackConfirmId(null);
+          setRollbackInfo(null);
+          break;
+        case "reset":
+          setShowResetProjectConfirm(true);
           break;
         case "compact":
           onCompressContext();
@@ -166,9 +220,49 @@ export function ChatInterface({
       onReview,
       onRetry,
       onContinue,
-      onSetFiles,
+      attachments,
+      messages,
+      setRollbackConfirmId,
+      setRollbackInfo,
     ],
   );
+
+  const handleResetProject = useCallback(async () => {
+    if (activeId) {
+      discardPendingSandpackFileChanges(activeId);
+    }
+    try {
+      const state = useConversationStore.getState();
+      const retainedMessages = Object.values(state.conversations)
+        .filter((conversation) => conversation.id !== state.activeId)
+        .flatMap((conversation) => conversation.messages);
+      await Promise.all([
+        deleteAttachmentsForMessages(messages, retainedMessages),
+        ...attachments.map((attachment) => deleteAttachment(attachment.id)),
+      ]);
+    } catch (error) {
+      console.warn("Failed to delete one or more reset attachments:", error);
+    }
+    for (const attachment of attachments) {
+      if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+    }
+    useConversationStore.getState().resetProject();
+    setAttachments([]);
+    setForcedSkillIds([]);
+    setRollbackConfirmId(null);
+    setRollbackInfo(null);
+    setDiffMessageId(null);
+    setShowSnapshotHistory(false);
+    setShowResetProjectConfirm(false);
+    onProjectReset?.();
+  }, [
+    activeId,
+    attachments,
+    messages,
+    onProjectReset,
+    setRollbackConfirmId,
+    setRollbackInfo,
+  ]);
 
   const lastAssistantId = useMemo(() => {
     for (let i = mergedMessages.length - 1; i >= 0; i--) {
@@ -246,6 +340,46 @@ export function ChatInterface({
     });
   };
 
+  const renderMergedMessage = (
+    msg: (typeof mergedMessages)[number],
+    index: number,
+  ) => {
+    const messageIndex = getMergedMessageStartIndex(msg.id);
+    const previousIndex =
+      index > 0
+        ? getMergedMessageStartIndex(mergedMessages[index - 1].id)
+        : null;
+    const showDivider =
+      compressFromIndex >= 0 &&
+      messageIndex !== null &&
+      messageIndex >= compressFromIndex &&
+      (previousIndex === null || previousIndex < compressFromIndex);
+    const isLast = msg.id === lastAssistantId;
+    return (
+      <div>
+        <MessageBubble
+          message={msg}
+          isGenerating={isLast && isGenerating}
+          isLastAssistant={isLast}
+          snapshotExists={snapshotMessageIds.has(msg.id)}
+          onShowDiff={handleShowDiff}
+          onRollback={handleRollbackConfirm}
+          onRetry={onRetry}
+          onOpenSettings={onOpenSettings}
+          onCompressContext={onCompressContext}
+          onHealthCheck={onHealthCheck}
+        />
+        {showDivider && (
+          <div className="flex items-center gap-3 my-4 text-xs text-muted-foreground">
+            <div className="flex-1 border-t" />
+            <span>{t.compress.divider}</span>
+            <div className="flex-1 border-t" />
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="relative flex flex-col h-full bg-background">
       <ChatHeader
@@ -284,50 +418,40 @@ export function ChatInterface({
           <EmptyState onSelectSuggestion={setInput} />
         )}
 
-        {mergedMessages.map((msg, mi) => {
-          const idx = getMergedMessageStartIndex(msg.id);
-          const prevIdx =
-            mi > 0
-              ? getMergedMessageStartIndex(mergedMessages[mi - 1].id)
-              : null;
-          const showDivider =
-            compressFromIndex >= 0 &&
-            idx !== null &&
-            idx >= compressFromIndex &&
-            (prevIdx === null || prevIdx < compressFromIndex);
-          const isLast = msg.id === lastAssistantId;
-          return (
-            <div key={msg.id}>
-              <MessageBubble
-                message={msg}
-                isGenerating={isLast && isGenerating}
-                isLastAssistant={isLast}
-                snapshotExists={snapshotMessageIds.has(msg.id)}
-                onShowDiff={handleShowDiff}
-                onRollback={handleRollbackConfirm}
-                onRetry={onRetry}
-                onOpenSettings={onOpenSettings}
-                onCompressContext={onCompressContext}
-                onHealthCheck={onHealthCheck}
-              />
-              {showDivider && (
-                <div className="flex items-center gap-3 my-4 text-xs text-muted-foreground">
-                  <div className="flex-1 border-t" />
-                  <span>{t.compress.divider}</span>
-                  <div className="flex-1 border-t" />
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {shouldVirtualizeMessages ? (
+          <div
+            ref={virtualListRef}
+            className="relative w-full"
+            style={{ height: messageVirtualizer.getTotalSize() }}
+          >
+            {messageVirtualizer.getVirtualItems().map((virtualRow) => (
+              <div
+                key={virtualRow.key}
+                data-index={virtualRow.index}
+                ref={messageVirtualizer.measureElement}
+                className="absolute left-0 top-0 w-full pb-4"
+                style={{
+                  transform: `translateY(${virtualRow.start - virtualScrollMargin}px)`,
+                }}
+              >
+                {renderMergedMessage(
+                  mergedMessages[virtualRow.index],
+                  virtualRow.index,
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          mergedMessages.map((message, index) => (
+            <div key={message.id}>{renderMergedMessage(message, index)}</div>
+          ))
+        )}
 
         {isMobile && isProjectInitialized && !isGenerating && (
           <Suspense
             fallback={
               <div className="flex min-h-40 items-center justify-center rounded-lg border bg-muted/30">
-                <p className="text-sm text-muted-foreground">
-                  {t.app.loading}
-                </p>
+                <p className="text-sm text-muted-foreground">{t.app.loading}</p>
               </div>
             }
           >
@@ -386,27 +510,38 @@ export function ChatInterface({
       />
 
       {diffMessageId && activeId && (
-        <DiffModal
-          conversationId={activeId}
-          messageId={diffMessageId}
-          onClose={() => setDiffMessageId(null)}
-        />
+        <Suspense fallback={null}>
+          <DiffModal
+            conversationId={activeId}
+            messageId={diffMessageId}
+            onClose={() => setDiffMessageId(null)}
+          />
+        </Suspense>
       )}
 
       {showSnapshotHistory && activeId && (
-        <SnapshotHistoryDialog
-          conversationId={activeId}
-          messages={messages}
-          onClose={() => setShowSnapshotHistory(false)}
-          onShowDiff={handleShowDiffFromHistory}
-          onRollback={handleRollbackFromHistory}
-        />
+        <Suspense fallback={null}>
+          <SnapshotHistoryDialog
+            conversationId={activeId}
+            messages={messages}
+            onClose={() => setShowSnapshotHistory(false)}
+            onShowDiff={handleShowDiffFromHistory}
+            onRollback={handleRollbackFromHistory}
+          />
+        </Suspense>
       )}
 
       {rollbackConfirmId && (
         <RollbackConfirmDialog
           onCancel={() => setRollbackConfirmId(null)}
           onConfirm={() => handleRollback(rollbackConfirmId)}
+        />
+      )}
+
+      {showResetProjectConfirm && (
+        <ResetProjectConfirmDialog
+          onCancel={() => setShowResetProjectConfirm(false)}
+          onConfirm={handleResetProject}
         />
       )}
     </div>

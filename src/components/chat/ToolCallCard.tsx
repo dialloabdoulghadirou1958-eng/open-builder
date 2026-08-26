@@ -1,5 +1,12 @@
 import { useState, memo } from "react";
-import { ChevronRight, Wrench, Check, X, AlertTriangle } from "lucide-react";
+import {
+  ChevronRight,
+  Wrench,
+  Check,
+  X,
+  AlertTriangle,
+  ExternalLink,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { FileTreeView } from "./FileTreeView";
@@ -87,7 +94,9 @@ export function parseNpmDetailResult(result: string): {
   return { success: d.success, name: d.data?.name, error: d.error };
 }
 
-export function countWebReaderUrls(result: string): { url: string; ok: boolean }[] {
+export function countWebReaderUrls(
+  result: string,
+): { url: string; ok: boolean }[] {
   const d = parseToolJson(result);
   if (!d) return [];
   return (d.pages ?? [])
@@ -118,21 +127,26 @@ export const ToolCallCard = memo(function ToolCallCard({
   path,
   paths,
   result,
+  toolOutput,
 }: ToolCallCardProps) {
   const t = useT();
   const [expanded, setExpanded] = useState(false);
   const displayResult = result ? truncateToolCardText(result) : result;
   const isSuccess = result?.startsWith("OK") ?? false;
-  const isError = result?.startsWith("Error") ?? false;
+  const isError = toolOutput?.isError ?? result?.startsWith("Error") ?? false;
 
   const searchResultCount =
     toolName === "web_search" && result ? countSearchResults(result).count : 0;
   const imageResultCount =
     toolName === "image_search" && result ? countImageResults(result).count : 0;
   const npmSearchCount =
-    toolName === "search_npm_packages" && result ? parseNpmSearchResult(result).count : 0;
+    toolName === "search_npm_packages" && result
+      ? parseNpmSearchResult(result).count
+      : 0;
   const npmDetailName =
-    toolName === "get_npm_package_detail" && result ? parseNpmDetailResult(result).name : "";
+    toolName === "get_npm_package_detail" && result
+      ? parseNpmDetailResult(result).name
+      : "";
   const readerUrls =
     toolName === "web_reader" && result ? countWebReaderUrls(result) : [];
   const consoleIssues =
@@ -171,7 +185,10 @@ export const ToolCallCard = memo(function ToolCallCard({
             {npmSearchCount} {t.tool.packages}
           </Badge>
         ) : toolName === "get_npm_package_detail" && result && npmDetailName ? (
-          <Badge variant="secondary" className="text-xs font-mono h-5 max-w-35 truncate">
+          <Badge
+            variant="secondary"
+            className="text-xs font-mono h-5 max-w-35 truncate"
+          >
             {npmDetailName}
           </Badge>
         ) : toolName === "web_reader" && result ? (
@@ -182,7 +199,9 @@ export const ToolCallCard = memo(function ToolCallCard({
           consoleErrorCount > 0 ? (
             <Badge variant="destructive" className="text-xs font-mono h-5">
               {consoleErrorCount} {t.tool.errors}
-              {consoleWarnCount > 0 ? ` · ${consoleWarnCount} ${t.tool.warnings}` : ""}
+              {consoleWarnCount > 0
+                ? ` · ${consoleWarnCount} ${t.tool.warnings}`
+                : ""}
             </Badge>
           ) : consoleWarnCount > 0 ? (
             <Badge
@@ -234,9 +253,14 @@ export const ToolCallCard = memo(function ToolCallCard({
         />
       </button>
 
-      {expanded && result && (
+      {expanded && (result || toolOutput) && (
         <div className="px-3 py-2 border-t border-border/60 bg-muted/20">
-          {toolName === "list_files" ? (
+          {toolOutput?.source?.kind === "mcp" ? (
+            <RichToolResult
+              output={toolOutput}
+              fallback={displayResult ?? ""}
+            />
+          ) : toolName === "list_files" ? (
             <FileTreeView content={displayResult ?? ""} />
           ) : toolName === "read_files" ? (
             <FileTreeView content={(paths || []).join("\n")} />
@@ -319,3 +343,154 @@ export const ToolCallCard = memo(function ToolCallCard({
     </div>
   );
 });
+
+function dataUrl(data: string, mimeType: string): string {
+  return data.startsWith("data:") ? data : `data:${mimeType};base64,${data}`;
+}
+
+export function safeExternalResourceUrl(uri: string): string | null {
+  try {
+    const url = new URL(uri);
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function RichToolResult({
+  output,
+  fallback,
+}: {
+  output: NonNullable<ToolBlock["toolOutput"]>;
+  fallback: string;
+}) {
+  const content = output.content ?? [];
+  const hasVisibleContent = content.length > 0;
+  let structured = "";
+  if (output.structuredContent !== undefined) {
+    try {
+      structured = truncateToolCardText(
+        JSON.stringify(output.structuredContent, null, 2),
+      );
+    } catch {
+      structured = "[Structured content could not be displayed]";
+    }
+  }
+
+  return (
+    <div className="space-y-2.5">
+      {content.map((part, index) => {
+        const key = `${part.type}-${index}`;
+        switch (part.type) {
+          case "text":
+            return (
+              <pre
+                key={key}
+                className="text-xs font-mono whitespace-pre-wrap text-muted-foreground leading-relaxed"
+              >
+                {truncateToolCardText(part.text)}
+              </pre>
+            );
+          case "image":
+            return (
+              <img
+                key={key}
+                src={dataUrl(part.data, part.mimeType)}
+                alt="MCP tool result"
+                className="max-h-72 max-w-full rounded-md border border-border/60 object-contain"
+              />
+            );
+          case "audio":
+            return (
+              <audio
+                key={key}
+                controls
+                preload="none"
+                src={dataUrl(part.data, part.mimeType)}
+                className="h-9 max-w-full"
+              />
+            );
+          case "resource_link":
+            return safeExternalResourceUrl(part.uri) ? (
+              <a
+                key={key}
+                href={safeExternalResourceUrl(part.uri)!}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="flex items-start gap-2 rounded-md border border-border/60 px-2.5 py-2 text-xs text-foreground hover:bg-muted/50"
+              >
+                <ExternalLink size={13} className="mt-0.5 shrink-0" />
+                <span className="min-w-0">
+                  <span className="block font-medium truncate">
+                    {part.title || part.name}
+                  </span>
+                  <span className="block text-muted-foreground truncate">
+                    {part.uri}
+                  </span>
+                </span>
+              </a>
+            ) : (
+              <div
+                key={key}
+                className="flex items-start gap-2 rounded-md border border-border/60 px-2.5 py-2 text-xs text-foreground"
+              >
+                <ExternalLink
+                  size={13}
+                  className="mt-0.5 shrink-0 text-muted-foreground"
+                />
+                <span className="min-w-0">
+                  <span className="block font-medium truncate">
+                    {part.title || part.name}
+                  </span>
+                  <span className="block text-muted-foreground truncate">
+                    {part.uri}
+                  </span>
+                </span>
+              </div>
+            );
+          case "resource":
+            return (
+              <div
+                key={key}
+                className="rounded-md border border-border/60 p-2.5"
+              >
+                <p className="mb-1 truncate text-[11px] font-medium text-foreground">
+                  {part.uri}
+                </p>
+                <pre className="text-xs font-mono whitespace-pre-wrap text-muted-foreground leading-relaxed">
+                  {part.text
+                    ? truncateToolCardText(part.text)
+                    : part.blob
+                      ? `[Embedded ${part.mimeType || "binary"} resource]`
+                      : "[Empty embedded resource]"}
+                </pre>
+              </div>
+            );
+          case "placeholder":
+            return (
+              <p key={key} className="text-xs text-muted-foreground italic">
+                [{part.label}: {part.reason}]
+              </p>
+            );
+        }
+      })}
+      {structured && (
+        <details className="rounded-md border border-border/60 px-2.5 py-2">
+          <summary className="cursor-pointer text-xs font-medium text-foreground">
+            Structured content
+          </summary>
+          <pre className="mt-2 text-xs font-mono whitespace-pre-wrap text-muted-foreground leading-relaxed">
+            {structured}
+          </pre>
+        </details>
+      )}
+      {!hasVisibleContent && !structured && (
+        <pre className="text-xs font-mono whitespace-pre-wrap text-muted-foreground leading-relaxed">
+          {fallback}
+        </pre>
+      )}
+    </div>
+  );
+}

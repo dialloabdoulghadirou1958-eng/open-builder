@@ -4,6 +4,7 @@ import {
   countWebReaderUrls,
   parseConsoleIssues,
   parseNpmSearchResult,
+  safeExternalResourceUrl,
   TOOL_CARD_LIMITS,
 } from "./ToolCallCard";
 
@@ -52,5 +53,14 @@ describe("ToolCallCard result guards", () => {
     expect(
       countSearchResults(JSON.stringify({ ok: true, results: [{}, {}] })),
     ).toEqual({ ok: true, count: 2, error: undefined });
+  });
+
+  it("allows only http(s) MCP resource links", () => {
+    expect(safeExternalResourceUrl("https://example.com/result")).toBe(
+      "https://example.com/result",
+    );
+    expect(safeExternalResourceUrl("javascript:alert(1)")).toBeNull();
+    expect(safeExternalResourceUrl("file:///tmp/secret")).toBeNull();
+    expect(safeExternalResourceUrl("mcp://resource/1")).toBeNull();
   });
 });

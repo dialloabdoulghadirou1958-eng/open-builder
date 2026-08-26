@@ -1,7 +1,7 @@
 // ============================================================================
 //  proxy.ts
 //  Global fetch & XMLHttpRequest interceptor for Tauri custom protocol proxy.
-//  Rewrites external HTTP(S) requests to proxy://{host}/{path} so that the
+//  Rewrites external HTTP(S) requests to an explicit proxy-http(s) protocol so
 //  Rust backend can forward them via reqwest, bypassing CORS restrictions.
 //
 //  Streaming requests (SSE) are routed through the Tauri invoke + Events
@@ -11,7 +11,7 @@
 import { createSseResponse } from "./sse-bridge";
 import { invoke } from "@tauri-apps/api/core";
 
-const PROXY_SCHEME = "proxy";
+const PROXY_SCHEMES = new Set(["proxy-http:", "proxy-https:"]);
 const SETTINGS_STORAGE_KEY = "open-builder-settings";
 const MAX_PROXY_ALLOWED_HOSTS = 64;
 const MAX_PROXY_HOST_CHARS = 253;
@@ -24,6 +24,7 @@ let proxyEnabled = false;
 let proxyAllowedHosts: string[] = [];
 let proxyLog: ProxyLogEntry[] = [];
 let installed = false;
+let proxyPolicySync: Promise<void> = Promise.resolve();
 
 export interface ProxyLogEntry {
   timestamp: number;
@@ -39,8 +40,11 @@ export interface ProxyLogEntry {
  * Dynamically enable or disable the proxy at runtime.
  * Called by the settings panel when the user toggles the switch.
  */
-export function setProxyEnabled(enabled: boolean) {
-  proxyEnabled = enabled;
+export async function revokeNativeProxyPolicy(): Promise<void> {
+  proxyEnabled = false;
+  proxyAllowedHosts = [];
+  if (!isTauri()) return;
+  await enqueueProxyPolicyWrite({ enabled: false, allowed_hosts: [] });
 }
 
 export function parseProxyAllowedHosts(value: string): string[] {
@@ -54,7 +58,11 @@ export function parseProxyAllowedHosts(value: string): string[] {
   return Array.from(out);
 }
 
-export function setProxyAllowedHosts(hosts: string[] | string) {
+export function applyProxyPolicy(
+  enabled: boolean,
+  hosts: string[] | string,
+): void {
+  proxyEnabled = enabled;
   proxyAllowedHosts = Array.isArray(hosts)
     ? hosts
         .map(normalizeProxyHostRule)
@@ -64,32 +72,48 @@ export function setProxyAllowedHosts(hosts: string[] | string) {
   syncProxyPolicy();
 }
 
-export function isHostAllowed(hostname: string, allowedHosts: string[]): boolean {
-  const host = normalizeHostName(hostname);
-  if (!host) return false;
-  if (allowedHosts.length === 0) return isLoopbackHost(host);
-  return allowedHosts.some((rawAllowed) => {
-    const allowed = normalizeProxyHostRule(rawAllowed);
-    if (!allowed) return false;
-    if (allowed === host) return true;
-    if (allowed.startsWith("*.")) {
-      const suffix = allowed.slice(1);
-      return host.endsWith(suffix) && host.length > suffix.length;
-    }
-    return false;
-	  });
+function effectivePort(url: URL): string {
+  return url.port || (url.protocol === "https:" ? "443" : "80");
 }
 
-function isLoopbackHost(hostname: string): boolean {
-  const host = normalizeHostName(hostname);
-  if (!host) return false;
-  if (host === "localhost" || host === "::1") return true;
-  const octets = host.split(".");
-  if (octets.length !== 4 || octets[0] !== "127") return false;
-  return octets.every((part) => {
-    if (!/^\d{1,3}$/.test(part)) return false;
-    const value = Number(part);
-    return value >= 0 && value <= 255;
+export function isProxyUrlAllowed(
+  rawUrl: string,
+  allowedOrigins: string[],
+): boolean {
+  let target: URL;
+  try {
+    target = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (target.protocol !== "http:" && target.protocol !== "https:") return false;
+  const targetHost = normalizeHostName(target.hostname);
+  if (!targetHost || allowedOrigins.length === 0) return false;
+
+  return allowedOrigins.some((rawAllowed) => {
+    const allowed = normalizeProxyHostRule(rawAllowed);
+    if (!allowed) return false;
+    const wildcard = allowed.match(/^(https?):\/\/\*\.([^/:?#]+)(?::(\d+))?$/);
+    if (wildcard) {
+      const [, scheme, suffix, configuredPort] = wildcard;
+      const port = configuredPort || (scheme === "https" ? "443" : "80");
+      return (
+        target.protocol === `${scheme}:` &&
+        effectivePort(target) === port &&
+        targetHost.endsWith(`.${suffix}`) &&
+        targetHost.length > suffix.length + 1
+      );
+    }
+    try {
+      const approved = new URL(allowed);
+      return (
+        target.protocol === approved.protocol &&
+        targetHost === normalizeHostName(approved.hostname) &&
+        effectivePort(target) === effectivePort(approved)
+      );
+    } catch {
+      return false;
+    }
   });
 }
 
@@ -97,51 +121,77 @@ function addHostFromUrl(out: Set<string>, rawUrl: unknown): void {
   if (typeof rawUrl !== "string" || !rawUrl) return;
   try {
     const parsed = new URL(rawUrl);
-    const host = normalizeProxyHostRule(parsed.hostname);
-    if (host) out.add(host);
+    const origin = normalizeProxyHostRule(parsed.origin);
+    if (origin) out.add(origin);
   } catch {
     // Ignore incomplete settings while the user is typing.
   }
 }
 
 function normalizeHostName(hostname: string): string | null {
-  const host = hostname.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  const host = hostname
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
   if (!host || host.length > MAX_PROXY_HOST_CHARS) return null;
   return host;
 }
 
 export function normalizeProxyHostRule(input: string): string | null {
-  let raw = input.trim().toLowerCase();
-  if (!raw) return null;
+  const raw = input.trim().toLowerCase();
+  if (!raw || raw.length > MAX_PROXY_HOST_CHARS + 24) return null;
+
+  const wildcard = raw.match(
+    /^(?:(https?):\/\/)?\*\.([^/:?#]+)(?::(\d+))?\/?$/,
+  );
+  if (wildcard) {
+    const scheme = wildcard[1] ?? "https";
+    const suffix = wildcard[2];
+    const port = wildcard[3];
+    if (
+      !HOSTNAME_RE.test(suffix) ||
+      (port !== undefined && Number(port) > 65_535)
+    ) {
+      return null;
+    }
+    const defaultPort = scheme === "https" ? "443" : "80";
+    return `${scheme}://*.${suffix}${port && port !== defaultPort ? `:${port}` : ""}`;
+  }
+
+  let candidate = raw;
+  if (!/^https?:\/\//.test(candidate)) {
+    const bracketed = candidate.match(/^\[([^\]]+)](?::(\d+))?$/);
+    const hostWithPort = candidate.match(/^([^:]+):(\d+)$/);
+    const host = bracketed?.[1] ?? hostWithPort?.[1] ?? candidate;
+    const loopback =
+      host === "localhost" ||
+      host === "::1" ||
+      /^127(?:\.\d{1,3}){3}$/.test(host);
+    candidate = `${loopback ? "http" : "https"}://${candidate}`;
+  }
 
   try {
-    if (/^https?:\/\//i.test(raw)) {
-      raw = new URL(raw).hostname;
-    } else if (/^[a-z0-9.-]+:\d+$/i.test(raw)) {
-      raw = new URL(`http://${raw}`).hostname;
+    const parsed = new URL(candidate);
+    if (
+      !["http:", "https:"].includes(parsed.protocol) ||
+      parsed.username ||
+      parsed.password
+    ) {
+      return null;
     }
+    const host = normalizeHostName(parsed.hostname);
+    if (!host) return null;
+    if (
+      host !== "localhost" &&
+      !HOSTNAME_RE.test(host) &&
+      !host.includes(":")
+    ) {
+      return null;
+    }
+    return parsed.origin.toLowerCase();
   } catch {
     return null;
   }
-
-  raw = raw.replace(/^\[|\]$/g, "");
-  if (!raw || raw.length > MAX_PROXY_HOST_CHARS) return null;
-
-  if (raw.startsWith("*.")) {
-    const suffix = raw.slice(2);
-    return HOSTNAME_RE.test(suffix) ? `*.${suffix}` : null;
-  }
-
-  if (raw === "localhost" || HOSTNAME_RE.test(raw)) return raw;
-  if (raw.includes(":")) {
-    try {
-      const parsed = new URL(`http://[${raw}]`);
-      return parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-    } catch {
-      return null;
-    }
-  }
-  return null;
 }
 
 function readConfiguredApiHosts(): string[] {
@@ -163,12 +213,24 @@ function effectiveAllowedHosts(): string[] {
 
 function syncProxyPolicy(): void {
   if (!isTauri()) return;
-  void invoke("set_proxy_policy", {
-    policy: { allowed_hosts: effectiveAllowedHosts() },
-  })
-    .catch((err) => {
-      console.warn("[proxy] Failed to sync proxy policy:", err);
-    });
+  void enqueueProxyPolicyWrite({
+    enabled: proxyEnabled,
+    allowed_hosts: proxyEnabled ? effectiveAllowedHosts() : [],
+  });
+}
+
+function enqueueProxyPolicyWrite(policy: {
+  enabled: boolean;
+  allowed_hosts: string[];
+}): Promise<void> {
+  const operation = proxyPolicySync
+    .catch(() => {})
+    .then(() => invoke("set_proxy_policy", { policy }))
+    .then(() => {});
+  proxyPolicySync = operation.catch((err) => {
+    console.warn("[proxy] Failed to sync proxy policy:", err);
+  });
+  return operation;
 }
 
 export function getProxyLog(): ProxyLogEntry[] {
@@ -190,9 +252,7 @@ export function isProxyEnabled(): boolean {
  * Detect whether running inside a Tauri WebView.
  */
 export function isTauri(): boolean {
-  return (
-    typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
-  );
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 /**
@@ -207,10 +267,8 @@ export function installProxy(): void {
     return;
   }
 
-	  // Read initial setting from localStorage
-	  proxyEnabled = readProxySetting();
-	  setProxyAllowedHosts(readProxyAllowedHosts());
-	  syncProxyPolicy();
+  // Read the saved policy atomically so enabling never reuses a stale allowlist.
+  applyProxyPolicy(readProxySetting(), readProxyAllowedHosts());
 
   hijackFetch();
   hijackXHR();
@@ -228,7 +286,11 @@ function shouldProxy(url: string): boolean {
   if (!proxyEnabled) return false;
 
   // Already proxied
-  if (url.startsWith(`${PROXY_SCHEME}://`)) return false;
+  try {
+    if (PROXY_SCHEMES.has(new URL(url).protocol)) return false;
+  } catch {
+    // Relative URLs are resolved below.
+  }
 
   // Skip non-HTTP(S) protocols
   if (url.startsWith("data:") || url.startsWith("blob:")) return false;
@@ -237,12 +299,13 @@ function shouldProxy(url: string): boolean {
     const parsed = new URL(url, window.location.href);
 
     // Only proxy http and https
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+      return false;
 
     // Don't proxy same-origin requests (dev server, tauri app, etc.)
     if (parsed.origin === window.location.origin) return false;
 
-	    if (!isHostAllowed(parsed.hostname, effectiveAllowedHosts())) return false;
+    if (!isProxyUrlAllowed(parsed.href, effectiveAllowedHosts())) return false;
 
     return true;
   } catch {
@@ -256,7 +319,10 @@ function recordProxyRequest(
   rawUrl: string,
 ): void {
   try {
-    const parsed = new URL(rawUrl, window.location.href);
+    const parsed = new URL(
+      rawUrl,
+      typeof window === "undefined" ? "http://localhost" : window.location.href,
+    );
     proxyLog = [
       ...proxyLog.slice(-99),
       {
@@ -264,7 +330,7 @@ function recordProxyRequest(
         kind,
         method,
         host: parsed.host,
-        path: parsed.pathname,
+        path: parsed.pathname === "/" ? "/" : "/…",
       },
     ];
   } catch {
@@ -272,20 +338,32 @@ function recordProxyRequest(
   }
 }
 
+export function redactProxyTargetForLog(rawUrl: string): string {
+  try {
+    const parsed = new URL(
+      rawUrl,
+      typeof window === "undefined" ? "http://localhost" : window.location.href,
+    );
+    return `${parsed.origin}${parsed.pathname === "/" ? "/" : "/…"}`;
+  } catch {
+    return "invalid target";
+  }
+}
+
 /**
- * Rewrite an external URL to the proxy:// scheme.
+ * Rewrite an external URL while preserving its original HTTP(S) scheme.
  *
  * https://api.openai.com/v1/chat/completions?stream=true
- *   → proxy://api.openai.com/v1/chat/completions?stream=true
+ *   → proxy-https://api.openai.com/v1/chat/completions?stream=true
  *
  * http://localhost:11434/v1/chat/completions
- *   → proxy://localhost:11434/v1/chat/completions
- *
- * The Rust side infers HTTP vs HTTPS based on the host (IP → HTTP, domain → HTTPS).
+ *   → proxy-http://localhost:11434/v1/chat/completions
  */
-function toProxyUrl(originalUrl: string): string {
+export function toProxyUrl(originalUrl: string): string {
   const parsed = new URL(originalUrl);
-  return `${PROXY_SCHEME}://${parsed.host}${parsed.pathname}${parsed.search}`;
+  const proxyScheme =
+    parsed.protocol === "https:" ? "proxy-https" : "proxy-http";
+  return `${proxyScheme}://${parsed.host}${parsed.pathname}${parsed.search}`;
 }
 
 /**
@@ -381,17 +459,16 @@ function hijackFetch(): void {
 
     // Streaming requests → SSE bridge (Tauri invoke + Events)
     if (isStreamingRequest(rawUrl, init)) {
-      console.debug(`[proxy] SSE stream: ${rawUrl}`);
-      recordProxyRequest(
-        "sse",
-        init?.method ?? (input instanceof Request ? input.method : "POST"),
-        rawUrl,
+      const method =
+        init?.method ?? (input instanceof Request ? input.method : "POST");
+      console.debug(
+        `[proxy] ${method} ${redactProxyTargetForLog(rawUrl)} [sse]`,
       );
+      recordProxyRequest("sse", method, rawUrl);
       return createSseResponse({
         url: rawUrl,
         method:
-          init?.method ??
-          (input instanceof Request ? input.method : "POST"),
+          init?.method ?? (input instanceof Request ? input.method : "POST"),
         headers: extractHeaders(init),
         body: typeof init?.body === "string" ? init.body : undefined,
         signal: init?.signal ?? undefined,
@@ -400,12 +477,12 @@ function hijackFetch(): void {
 
     // Non-streaming requests → proxy:// custom protocol
     const proxiedUrl = toProxyUrl(rawUrl);
-    console.debug(`[proxy] fetch: ${rawUrl} → ${proxiedUrl}`);
-    recordProxyRequest(
-      "fetch",
-      init?.method ?? (input instanceof Request ? input.method : "GET"),
-      rawUrl,
+    const method =
+      init?.method ?? (input instanceof Request ? input.method : "GET");
+    console.debug(
+      `[proxy] ${method} ${redactProxyTargetForLog(rawUrl)} [fetch]`,
     );
+    recordProxyRequest("fetch", method, rawUrl);
 
     // Preserve Request properties (method, headers, body, signal, etc.)
     if (input instanceof Request) {
@@ -433,7 +510,9 @@ function hijackXHR(): void {
 
     if (shouldProxy(rawUrl)) {
       const proxiedUrl = toProxyUrl(rawUrl);
-      console.debug(`[proxy] XHR: ${rawUrl} → ${proxiedUrl}`);
+      console.debug(
+        `[proxy] ${method} ${redactProxyTargetForLog(rawUrl)} [xhr]`,
+      );
       recordProxyRequest("xhr", method, rawUrl);
       return originalOpen.call(
         this,

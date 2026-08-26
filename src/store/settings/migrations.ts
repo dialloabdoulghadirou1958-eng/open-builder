@@ -1,4 +1,4 @@
-export const SETTINGS_VERSION = 14;
+export const SETTINGS_VERSION = 15;
 
 export function migrateSettings(persisted: unknown, version: number): unknown {
   const state = persisted as Record<string, any>;
@@ -81,6 +81,10 @@ export function migrateSettings(persisted: unknown, version: number): unknown {
       delete state.assetSearch.pixabayApiUrl;
       delete state.assetSearch.unsplashApiUrl;
     }
+  }
+  if (version < 15) {
+    if (!state.system) state.system = {};
+    state.system.developerSkillScriptsEnabled = false;
   }
   return state;
 }

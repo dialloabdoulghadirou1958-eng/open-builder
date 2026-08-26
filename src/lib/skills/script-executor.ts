@@ -8,6 +8,10 @@ export interface ScriptResult {
 
 export interface ScriptExecuteParams {
   skillId: string;
+  skillName: string;
+  skillSource: "builtin" | "imported";
+  runId: string;
+  callId: string;
   scriptPath: string;
   scriptContent: string;
   args: string[];

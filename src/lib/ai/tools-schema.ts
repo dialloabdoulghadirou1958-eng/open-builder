@@ -4,7 +4,10 @@
 // ============================================================================
 
 import { tool } from "ai";
+import type { ToolSet } from "ai";
 import { z } from "zod";
+
+export { TOOL_POLICY_VERSION } from "./tool-policy-version";
 
 /**
  * 内置工具定义（Zod 格式）
@@ -123,7 +126,9 @@ export const BUILTIN_TOOLS = {
       "to follow up with patch_file to fix imports. Path-alias imports (e.g. '@/foo') are NOT updated yet. " +
       "Use this instead of write_file + delete_file when changing a file's location.",
     inputSchema: z.object({
-      old_path: z.string().describe("Current file path relative to project root"),
+      old_path: z
+        .string()
+        .describe("Current file path relative to project root"),
       new_path: z.string().describe("New file path relative to project root"),
     }),
   }),
@@ -161,7 +166,9 @@ export const BUILTIN_TOOLS = {
           z.object({
             target: z
               .enum(["env", "example"])
-              .describe('"env" writes to .env; "example" writes to .env.example'),
+              .describe(
+                '"env" writes to .env; "example" writes to .env.example',
+              ),
             action: z.enum(["set", "unset"]),
             key: z
               .string()
@@ -275,6 +282,45 @@ export const BUILTIN_TOOLS = {
   }),
 };
 
+export type RuntimePlatform = "web" | "desktop" | "mobile";
+export type ExecutionMode = "chat" | "plan" | "auto_qa" | "subagent";
+export type ToolSource =
+  "builtin" | "project" | "network" | "mcp" | "skill" | "registry";
+export type ToolEffect =
+  | "read_project"
+  | "write_project"
+  | "read_runtime"
+  | "write_runtime"
+  | "network"
+  | "process"
+  | "conversation";
+export type ToolApproval = "none" | "session" | "per_call";
+
+/**
+ * The single policy record used by both tool presentation and execution.
+ * Dynamic MCP entries are evaluated by the MCP runtime, but must still be
+ * present in the current run's immutable alias allowlist.
+ */
+export interface ToolCapability {
+  readonly name: string;
+  readonly source: ToolSource;
+  readonly effects: readonly ToolEffect[];
+  readonly platforms: readonly RuntimePlatform[];
+  readonly modes: readonly ExecutionMode[];
+  readonly approval: ToolApproval;
+}
+
+export interface ToolRunContext {
+  readonly runId: string;
+  readonly mode: ExecutionMode;
+  readonly platform: RuntimePlatform;
+  readonly allowedMcpAliases: ReadonlySet<string>;
+  readonly activeSkillIds: ReadonlySet<string>;
+  readonly approvedSkillScriptHashes: ReadonlySet<string>;
+  readonly policyVersion: string;
+}
+
+/** Compatibility projection for older callers while they migrate. */
 export interface ToolPolicy {
   readonly name: string;
   readonly access: "read" | "write";
@@ -310,6 +356,8 @@ export const READONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
   "exit_plan_mode",
   "dispatch_subagent",
   "web_search",
+  "web_search_preview",
+  "google_search",
   "web_reader",
   "image_search",
   "search_npm_packages",
@@ -320,33 +368,158 @@ export const READONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
   "project_health_check",
 ]);
 
-export const TOOL_POLICIES: Record<string, ToolPolicy> = Object.fromEntries(
-  [...WRITE_TOOL_NAMES].map((name) => [
+const ALL_PLATFORMS = ["web", "desktop", "mobile"] as const;
+const ALL_READ_MODES = ["chat", "plan", "auto_qa", "subagent"] as const;
+const CHAT_ONLY = ["chat"] as const;
+const CHAT_AND_PLAN = ["chat", "plan"] as const;
+
+function capability(
+  name: string,
+  source: ToolSource,
+  effects: readonly ToolEffect[],
+  modes: readonly ExecutionMode[],
+  options: {
+    platforms?: readonly RuntimePlatform[];
+    approval?: ToolApproval;
+  } = {},
+): ToolCapability {
+  return Object.freeze({
     name,
+    source,
+    effects,
+    modes,
+    platforms: options.platforms ?? ALL_PLATFORMS,
+    approval: options.approval ?? "none",
+  });
+}
+
+const STATIC_CAPABILITIES: ToolCapability[] = [
+  capability("init_project", "project", ["write_project"], CHAT_ONLY),
+  capability("manage_dependencies", "project", ["write_project"], CHAT_ONLY),
+  capability("list_files", "project", ["read_project"], ALL_READ_MODES),
+  capability("read_files", "project", ["read_project"], ALL_READ_MODES),
+  capability("write_file", "project", ["write_project"], ["chat", "auto_qa"]),
+  capability("patch_file", "project", ["write_project"], ["chat", "auto_qa"]),
+  capability("search_in_files", "project", ["read_project"], ALL_READ_MODES),
+  capability("delete_file", "project", ["write_project"], CHAT_ONLY),
+  capability("rename_file", "project", ["write_project"], CHAT_ONLY),
+  capability("move_file", "project", ["write_project"], CHAT_ONLY),
+  capability("read_env_schema", "project", ["read_project"], CHAT_AND_PLAN),
+  capability("manage_env", "project", ["write_project"], CHAT_ONLY),
+  capability("get_console_logs", "builtin", ["read_runtime"], CHAT_ONLY),
+  capability("compact_context", "builtin", ["conversation"], CHAT_AND_PLAN),
+  capability("ask_user_question", "builtin", ["conversation"], CHAT_AND_PLAN),
+  capability("exit_plan_mode", "builtin", ["conversation"], ["plan"]),
+  capability("dispatch_subagent", "builtin", ["conversation"], CHAT_AND_PLAN),
+  capability("web_search", "network", ["network"], CHAT_AND_PLAN),
+  capability("web_search_preview", "network", ["network"], CHAT_AND_PLAN),
+  capability("google_search", "network", ["network"], CHAT_AND_PLAN),
+  capability("web_reader", "network", ["network"], CHAT_AND_PLAN),
+  capability("image_search", "network", ["network"], CHAT_ONLY),
+  capability("search_npm_packages", "network", ["network"], CHAT_AND_PLAN),
+  capability("get_npm_package_detail", "network", ["network"], CHAT_AND_PLAN),
+  capability("list_skills", "skill", ["read_runtime"], CHAT_AND_PLAN),
+  capability("read_skill", "skill", ["read_runtime"], CHAT_AND_PLAN),
+  capability(
+    "execute_skill_script",
+    "skill",
+    ["process", "read_runtime"],
+    CHAT_ONLY,
+    { platforms: ["desktop"], approval: "per_call" },
+  ),
+  capability("memory", "builtin", ["read_runtime"], CHAT_ONLY),
+  capability(
+    "project_health_check",
+    "project",
+    ["read_project", "read_runtime"],
+    ALL_READ_MODES,
+  ),
+  capability(
+    "install_component",
+    "registry",
+    ["network", "write_project"],
+    CHAT_ONLY,
+  ),
+  capability(
+    "screenshot_to_code",
+    "network",
+    ["network", "write_project"],
+    CHAT_ONLY,
+  ),
+  capability(
+    "apply_design_style",
+    "registry",
+    ["network", "write_project"],
+    CHAT_ONLY,
+  ),
+];
+
+export const TOOL_CAPABILITY_REGISTRY: Readonly<
+  Record<string, ToolCapability>
+> = Object.freeze(
+  Object.fromEntries(STATIC_CAPABILITIES.map((entry) => [entry.name, entry])),
+);
+
+export function getToolCapability(name: string): ToolCapability | undefined {
+  return TOOL_CAPABILITY_REGISTRY[name];
+}
+
+export function isToolAllowedInMode(
+  name: string,
+  mode: ExecutionMode,
+  platform: RuntimePlatform = "web",
+): boolean {
+  const entry = getToolCapability(name);
+  return !!entry?.modes.includes(mode) && entry.platforms.includes(platform);
+}
+
+/**
+ * Project the complete tool schema for one immutable generator run.
+ * Unknown dynamic tools are included only when their MCP alias was copied into
+ * this run's allowlist; registered tools must satisfy both mode and platform.
+ */
+export function buildToolSetForRun({
+  custom,
+  mode,
+  platform,
+  allowedDynamicNames = new Set(),
+}: {
+  custom: ToolSet;
+  mode: ExecutionMode;
+  platform: RuntimePlatform;
+  allowedDynamicNames?: ReadonlySet<string>;
+}): ToolSet {
+  const isAllowed = (name: string) =>
+    isToolAllowedInMode(name, mode, platform) ||
+    (!getToolCapability(name) && allowedDynamicNames.has(name));
+
+  return Object.fromEntries(
+    Object.entries({ ...BUILTIN_TOOLS, ...custom }).filter(([name]) =>
+      isAllowed(name),
+    ),
+  );
+}
+
+export const TOOL_POLICIES: Record<string, ToolPolicy> = Object.fromEntries(
+  Object.values(TOOL_CAPABILITY_REGISTRY).map((entry) => [
+    entry.name,
     {
-      name,
-      access: "write",
-      planModeVisible: false,
-      subagentVisible: false,
+      name: entry.name,
+      access: entry.effects.some((effect) => effect.startsWith("write_"))
+        ? "write"
+        : "read",
+      planModeVisible: entry.modes.includes("plan"),
+      subagentVisible: entry.modes.includes("subagent"),
     } satisfies ToolPolicy,
   ]),
 );
-
-for (const name of READONLY_TOOL_NAMES) {
-  TOOL_POLICIES[name] = {
-    name,
-    access: "read",
-    planModeVisible: true,
-    subagentVisible: true,
-  };
-}
 
 export function isWriteToolName(name: string): boolean {
   return WRITE_TOOL_NAMES.has(name);
 }
 
 export function isPlanModeToolVisible(name: string): boolean {
-  return !isWriteToolName(name);
+  return TOOL_CAPABILITY_REGISTRY[name]?.modes.includes("plan") ?? false;
 }
 
 // Backward-compatible alias while callers migrate to WRITE_TOOL_NAMES.

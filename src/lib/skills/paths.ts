@@ -3,6 +3,7 @@ export const MAX_FILE_BYTES = 2 * 1024 * 1024;
 export const SKILL_IMPORT_LIMITS = {
   maxArchiveBytes: 16 * 1024 * 1024,
   maxArchiveEntries: 4096,
+  maxCompressionRatio: 200,
   maxFileBytes: MAX_FILE_BYTES,
   maxSkillMdBytes: 256 * 1024,
   maxTotalBytes: 8 * 1024 * 1024,
@@ -23,7 +24,12 @@ export const SKILL_IMPORT_LIMITS = {
 const ALLOWED_RELPATH_RE = /^[a-zA-Z0-9._/-]+$/;
 
 export function assertSafePath(path: string): string {
-  if (!path || path.includes("..") || path.startsWith("/") || path.includes("\\")) {
+  if (
+    !path ||
+    path.includes("..") ||
+    path.startsWith("/") ||
+    path.includes("\\")
+  ) {
     throw new Error(`Unsafe path: "${path}"`);
   }
   if (path.length > SKILL_IMPORT_LIMITS.maxPathChars) {

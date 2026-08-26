@@ -2,7 +2,7 @@ import { useMemo, useState, memo } from "react";
 import { ChevronRight, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { MarkdownContent } from "./MarkdownContent";
+import { LazyMarkdownContent } from "./LazyMarkdownContent";
 import { ToolCallCard } from "./ToolCallCard";
 import { useT } from "../../i18n";
 import { truncate } from "../../lib/utils/truncate";
@@ -34,7 +34,11 @@ function parsePersisted(result: string): SubagentCardData | null {
   if (!result) return null;
   try {
     const data = JSON.parse(result) as SubagentToolResult;
-    if (typeof data !== "object" || !data || typeof data.subagent !== "string") {
+    if (
+      typeof data !== "object" ||
+      !data ||
+      typeof data.subagent !== "string"
+    ) {
       return null;
     }
     return {
@@ -45,7 +49,9 @@ function parsePersisted(result: string): SubagentCardData | null {
         data.text ?? "",
         SUBAGENT_LIMITS.maxLiveTextChars,
       ),
-      events: Array.isArray(data.events) ? limitSubagentEvents(data.events) : [],
+      events: Array.isArray(data.events)
+        ? limitSubagentEvents(data.events)
+        : [],
       durationMs: data.durationMs,
       error:
         data.error == null
@@ -122,15 +128,16 @@ export const SubagentCallCard = memo(function SubagentCallCard({
         text: live.text,
         events: live.events,
         durationMs:
-          live.finishedAt != null ? live.finishedAt - live.startedAt : undefined,
+          live.finishedAt != null
+            ? live.finishedAt - live.startedAt
+            : undefined,
         error: live.error,
       };
     }
     if (persisted) return persisted;
     const fallbackName =
       typeof rawArgs?.subagent === "string" ? rawArgs.subagent : "subagent";
-    const fallbackTask =
-      typeof rawArgs?.task === "string" ? rawArgs.task : "";
+    const fallbackTask = typeof rawArgs?.task === "string" ? rawArgs.task : "";
     return {
       subagent: fallbackName,
       task: fallbackTask,
@@ -148,10 +155,7 @@ export const SubagentCallCard = memo(function SubagentCallCard({
   const taskSummary = truncate(data.task, 80);
   const durationLabel =
     data.durationMs != null
-      ? t.subagent.duration.replace(
-          "{n}",
-          (data.durationMs / 1000).toFixed(1),
-        )
+      ? t.subagent.duration.replace("{n}", (data.durationMs / 1000).toFixed(1))
       : "";
 
   return (
@@ -204,7 +208,7 @@ export const SubagentCallCard = memo(function SubagentCallCard({
               {t.subagent.output}
             </p>
             {data.text ? (
-              <MarkdownContent content={data.text} variant="assistant" />
+              <LazyMarkdownContent content={data.text} variant="assistant" />
             ) : data.status === "running" ? (
               <p className="text-xs text-muted-foreground italic">
                 {t.subagent.running}…

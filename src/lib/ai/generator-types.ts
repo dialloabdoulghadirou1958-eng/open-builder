@@ -1,10 +1,19 @@
-import type { ToolSet } from "ai";
+import type { ToolResultPart, ToolSet } from "ai";
 import type {
   AskUserQuestion,
   AskUserAnswers,
   PlanDecision,
 } from "../../types/api";
 import type { ApiType } from "./provider";
+import type {
+  ExecutionMode,
+  RuntimePlatform,
+  ToolRunContext,
+} from "./tools-schema";
+import type {
+  SkillActiveContext,
+  SkillActiveContextController,
+} from "../skills/active-context";
 
 export type {
   AskUserQuestion,
@@ -19,7 +28,82 @@ export type ProjectFiles = Record<string, string>;
 /** OpenAI multimodal content block */
 export type ContentPart =
   | { type: "text"; text: string }
-  | { type: "image_url"; image_url: { url: string } };
+  | { type: "image_url"; image_url: { url: string } }
+  | {
+      type: "file";
+      file: { data: string; mediaType: string; filename: string };
+    };
+
+export interface AttachmentRef {
+  id: string;
+  type: "file" | "image";
+  name: string;
+  mimeType: string;
+  size: number;
+}
+
+export interface ResolvedAttachment extends AttachmentRef {
+  content: string;
+}
+
+export interface MessageMetadata {
+  origin?: "auto_qa";
+  attachments?: AttachmentRef[];
+}
+
+/** Rich, persistable tool-result blocks. MCP is the first consumer, but the
+ * shape intentionally lives at the generator boundary so built-in tools can
+ * adopt it without introducing a second execution pipeline. */
+export type ToolExecutionContent =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string }
+  | { type: "audio"; data: string; mimeType: string }
+  | {
+      type: "resource";
+      uri: string;
+      mimeType?: string;
+      text?: string;
+      blob?: string;
+    }
+  | {
+      type: "resource_link";
+      uri: string;
+      name: string;
+      title?: string;
+      description?: string;
+      mimeType?: string;
+      size?: number;
+    }
+  | { type: "placeholder"; label: string; reason: string };
+
+export interface McpToolExecutionIdentity {
+  kind: "mcp";
+  serverId: string;
+  serverName: string;
+  toolName: string;
+  toolTitle?: string;
+  alias: string;
+}
+
+/** Unified output returned by custom tools. `text` is the deterministic
+ * fallback and remains the compatibility surface for existing providers. */
+export interface ToolExecutionOutput {
+  text: string;
+  isError?: boolean;
+  structuredContent?: unknown;
+  content?: ToolExecutionContent[];
+  source?: McpToolExecutionIdentity;
+  /** AI SDK representation used when the active provider accepts rich tool
+   * results. It is derived locally and is safe to recreate after hydration. */
+  modelOutput?: ToolResultPart["output"];
+}
+
+export interface ToolExecutionContext {
+  signal: AbortSignal;
+  toolCallId: string;
+  run: ToolRunContext;
+  skillContext: SkillActiveContextController;
+}
 
 /** Internal message format */
 export interface Message {
@@ -39,6 +123,10 @@ export interface Message {
   /** Skills explicitly attached to this user request. Persisted so retry can
    *  rebuild the same mandatory system context. */
   forcedSkillIds?: string[];
+  /** Rich result snapshot for tool messages. `content` remains a plain-text
+   * compatibility fallback for old conversations and providers. */
+  toolOutput?: ToolExecutionOutput;
+  metadata?: MessageMetadata;
 }
 
 /** Tool call (OpenAI function calling format) */
@@ -123,7 +211,15 @@ export interface GeneratorOptions {
   /** Full tool set — when provided, used as-is without merging with BUILTIN_TOOLS.
    *  Caller decides which built-ins to include (useful for plan-mode filtering). */
   tools?: ToolSet;
-  customToolHandler?: (name: string, args: unknown) => string | Promise<string>;
+  customToolHandler?: (
+    name: string,
+    args: unknown,
+    context?: ToolExecutionContext,
+  ) => string | ToolExecutionOutput | Promise<string | ToolExecutionOutput>;
+  executionMode?: ExecutionMode;
+  runtimePlatform?: RuntimePlatform;
+  allowedMcpAliases?: ReadonlySet<string>;
+  initialSkillContext?: SkillActiveContext | null;
   thinking?: boolean;
   thinkingBudget?: number;
   /** Max auto-retry attempts for failed API requests (default 3) */
@@ -142,7 +238,7 @@ export interface GeneratorOptions {
   ) => Promise<PlanDecision>;
   /** Called once the user approves a plan via exit_plan_mode. If a new ToolSet is returned,
    *  the generator swaps to it on the next iteration (so write tools become available). */
-  onPlanApproved?: () => ToolSet | void;
+  onPlanApproved?: () => ToolSet | void | Promise<ToolSet | void>;
   /** Run a subagent delegation request. Returns the serialized SubagentToolResult JSON
    *  that will be fed back to the parent agent as a normal tool result.
    *  Multiple calls in one turn may be invoked in parallel — implementations must be safe
@@ -176,6 +272,7 @@ export interface GeneratorEvents {
     args: unknown,
     result: string,
     toolCallId: string,
+    output?: ToolExecutionOutput,
   ) => void;
   onFileChange?: (files: ProjectFiles, changes: FileChange[]) => void;
   onTemplateChange?: (template: string, files: ProjectFiles) => void;

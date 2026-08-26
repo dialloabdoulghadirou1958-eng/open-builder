@@ -1,7 +1,7 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -36,115 +36,84 @@ export default defineConfig(() => {
       },
     },
     build: {
-      rollupOptions: {
+      rolldownOptions: {
         output: {
-          manualChunks(id) {
-            if (!id.includes("node_modules")) return;
-            if (
-              id.includes("@codesandbox/sandpack-react") ||
-              id.includes("@codesandbox+sandpack-react") ||
-              id.includes("react-devtools-inline") ||
-              id.includes("@react-hook") ||
-              id.includes("@stitches")
-            ) {
-              return "vendor-sandpack-react";
-            }
-            if (
-              id.includes("@codesandbox/") ||
-              id.includes("@codesandbox+") ||
-              id.includes("mime-db") ||
-              id.includes("mime-types") ||
-              id.includes("cuid") ||
-              id.includes("anser") ||
-              id.includes("clean-set") ||
-              id.includes("dequal") ||
-              id.includes("escape-carriage") ||
-              id.includes("lz-string")
-            ) {
-              return "vendor-sandpack-runtime";
-            }
-            if (
-              id.includes("@codemirror") ||
-              id.includes("@lezer") ||
-              id.includes("codemirror")
-            ) {
-              return "vendor-editor";
-            }
-            if (
-              id.includes("/react/") ||
-              id.includes("/react-dom/") ||
-              id.includes("/scheduler/")
-            ) {
-              return "vendor-react";
-            }
-            if (id.includes("radix-ui") || id.includes("@radix-ui")) {
-              return "vendor-radix";
-            }
-            if (id.includes("lucide-react")) {
-              return "vendor-icons";
-            }
-            if (
-              id.includes("react-markdown") ||
-              id.includes("remark-") ||
-              id.includes("rehype-") ||
-              id.includes("highlight.js") ||
-              id.includes("micromark") ||
-              id.includes("unified") ||
-              id.includes("mdast") ||
-              id.includes("hast") ||
-              id.includes("unist") ||
-              id.includes("vfile")
-            ) {
-              return "vendor-markdown";
-            }
-            if (
-              id.includes("@ai-sdk/openai-compatible") ||
-              id.includes("@ai-sdk+openai-compatible")
-            ) {
-              return "vendor-ai-openai-compatible";
-            }
-            if (
-              id.includes("@ai-sdk/anthropic") ||
-              id.includes("@ai-sdk+anthropic")
-            ) {
-              return "vendor-ai-anthropic";
-            }
-            if (
-              id.includes("@ai-sdk/google") ||
-              id.includes("@ai-sdk+google")
-            ) {
-              return "vendor-ai-google";
-            }
-            if (
-              id.includes("@ai-sdk/openai") ||
-              id.includes("@ai-sdk+openai")
-            ) {
-              return "vendor-ai-openai";
-            }
-            if (
-              id.includes("@ai-sdk") ||
-              id.includes("/ai/") ||
-              id.includes("/zod/")
-            ) {
-              return "vendor-ai";
-            }
-            if (
-              id.includes("zustand") ||
-              id.includes("localforage") ||
-              id.includes("file-saver") ||
-              id.includes("jszip") ||
-              id.includes("diff") ||
-              id.includes("js-yaml") ||
-              id.includes("react-resizable-panels") ||
-              id.includes("class-variance-authority") ||
-              id.includes("tailwind-merge") ||
-              id.includes("clsx")
-            ) {
-              return "vendor-utils";
-            }
+          codeSplitting: {
+            minSize: 20_000,
+            maxSize: 480_000,
+            includeDependenciesRecursively: false,
+            groups: [
+              {
+                name: "vendor-editor",
+                test: /node_modules[\\/](?:@codemirror|@lezer|codemirror)/,
+                priority: 30,
+              },
+              {
+                name: "vendor-sandpack",
+                test: /node_modules[\\/](?:@codesandbox|react-devtools-inline|@stitches)/,
+                priority: 25,
+              },
+              {
+                name: "vendor-ai-openai",
+                test: /node_modules[\\/]@ai-sdk[\\/]openai/,
+                priority: 25,
+              },
+              {
+                name: "vendor-ai-anthropic",
+                test: /node_modules[\\/]@ai-sdk[\\/]anthropic/,
+                priority: 25,
+              },
+              {
+                name: "vendor-ai-google",
+                test: /node_modules[\\/]@ai-sdk[\\/]google/,
+                priority: 25,
+              },
+              {
+                name: "vendor-ai-compatible",
+                test: /node_modules[\\/]@ai-sdk[\\/]openai-compatible/,
+                priority: 25,
+              },
+              {
+                name: "vendor-ai-core",
+                test: /node_modules[\\/](?:ai|@ai-sdk[\\/])/,
+                priority: 20,
+              },
+              {
+                name: "vendor-markdown",
+                test: /node_modules[\\/](?:react-markdown|remark-|rehype-|highlight\.js|micromark|unified|mdast|hast|unist|vfile)/,
+                priority: 20,
+              },
+              {
+                name: "vendor-react",
+                test: /node_modules[\\/](?:react|react-dom|scheduler)[\\/]/,
+                priority: 20,
+              },
+              {
+                name: "vendor-radix",
+                test: /node_modules[\\/](?:radix-ui|@radix-ui)/,
+                priority: 15,
+              },
+              {
+                name: "vendor-icons",
+                test: /node_modules[\\/]lucide-react/,
+                priority: 15,
+              },
+              {
+                name: "vendor-shared",
+                test: /node_modules/,
+                minShareCount: 2,
+                minSize: 30_000,
+                maxSize: 480_000,
+                priority: 1,
+              },
+            ],
           },
         },
       },
+    },
+    test: {
+      environment: "node",
+      setupFiles: ["./src/test/setup.ts"],
     },
     envPrefix: ["VITE_", "TAURI_ENV_*"],
   };

@@ -7,7 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { TooltipIconButton } from "@/components/ui/tooltip-icon-button";
 import { useSnapshotStore } from "../../store/snapshot";
 import { cn } from "@/lib/utils";
 import { useT } from "../../i18n";
@@ -24,7 +24,11 @@ interface ChangedFile {
   type: "A" | "M" | "D";
 }
 
-export function DiffModal({ conversationId, messageId, onClose }: DiffModalProps) {
+export function DiffModal({
+  conversationId,
+  messageId,
+  onClose,
+}: DiffModalProps) {
   const t = useT();
   const snapshots = useSnapshotStore((s) => s.snapshots[conversationId] ?? []);
   const snapshot = snapshots.find((s) => s.messageId === messageId);
@@ -115,28 +119,26 @@ export function DiffModal({ conversationId, messageId, onClose }: DiffModalProps
               ))}
             </div>
             <div className="flex items-center gap-1">
-              <Button
+              <TooltipIconButton
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7"
                 onClick={() => navigate(-1)}
                 disabled={changeCount === 0}
-                aria-label={t.diff.previous}
-                title={t.diff.previous}
+                label={t.diff.previous}
               >
                 <ChevronUp className="w-4 h-4" />
-              </Button>
-              <Button
+              </TooltipIconButton>
+              <TooltipIconButton
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7"
                 onClick={() => navigate(1)}
                 disabled={changeCount === 0}
-                aria-label={t.diff.next}
-                title={t.diff.next}
+                label={t.diff.next}
               >
                 <ChevronDown className="w-4 h-4" />
-              </Button>
+              </TooltipIconButton>
               {changeCount > 0 && (
                 <span className="text-[11px] text-muted-foreground tabular-nums w-12 text-right">
                   {t.diff.changeCount

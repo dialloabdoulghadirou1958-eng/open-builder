@@ -2,6 +2,8 @@ import { SandpackProvider, SandpackPreview } from "@codesandbox/sandpack-react";
 import type { SandpackPredefinedTemplate } from "@codesandbox/sandpack-react";
 import { useTheme } from "../../hooks/useTheme";
 import type { ProjectFiles } from "../../types";
+import { useMemo } from "react";
+import { projectFilesForPreview } from "../../lib/utils/project-file-policy";
 
 interface MobilePreviewProps {
   files: ProjectFiles;
@@ -15,12 +17,15 @@ export function MobilePreview({
   sandpackKey,
 }: MobilePreviewProps) {
   const isDark = useTheme();
-  const sandpackFiles = Object.fromEntries(
-    Object.entries(files).map(([path, content]) => [
-      path.startsWith("/") ? path : `/${path}`,
-      { code: content },
-    ]),
-  );
+  const sandpackFiles = useMemo(() => {
+    const previewFiles = projectFilesForPreview(files);
+    return Object.fromEntries(
+      Object.entries(previewFiles).map(([path, content]) => [
+        path.startsWith("/") ? path : `/${path}`,
+        { code: content },
+      ]),
+    );
+  }, [files]);
 
   return (
     <div className="editor border rounded-lg min-h-160 overflow-hidden bg-background">

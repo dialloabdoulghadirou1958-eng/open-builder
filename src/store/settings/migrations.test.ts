@@ -25,12 +25,14 @@ describe("migrateSettings", () => {
         reverseProxy: boolean;
         planModeEnabled: boolean;
         autoQaEnabled: boolean;
+        developerSkillScriptsEnabled: boolean;
       };
     };
 
     expect(migrated.system.reverseProxy).toBe(false);
     expect(migrated.system.planModeEnabled).toBe(false);
     expect(migrated.system.autoQaEnabled).toBe(false);
+    expect(migrated.system.developerSkillScriptsEnabled).toBe(false);
   });
 
   it("removes legacy server settings without changing local providers", () => {

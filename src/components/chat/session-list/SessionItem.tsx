@@ -92,10 +92,7 @@ export const SessionItem = memo(function SessionItem({
   const confirmDelete = () => {
     if (
       window.confirm(
-        formatDeleteConfirmation(
-          t.sessions.deleteConfirm,
-          displayTitle(conv),
-        ),
+        formatDeleteConfirmation(t.sessions.deleteConfirm, displayTitle(conv)),
       )
     ) {
       onDelete(conv.id);
@@ -105,7 +102,7 @@ export const SessionItem = memo(function SessionItem({
   return (
     <div
       className={cn(
-        "flex items-center h-14 gap-2 px-3 hover:bg-muted/50 group",
+        "group flex h-14 items-center gap-2 px-3 hover:bg-muted/50 focus-within:bg-muted/50",
         isActive && "bg-muted",
       )}
     >
@@ -173,10 +170,10 @@ export const SessionItem = memo(function SessionItem({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="h-6 w-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
                 aria-label={t.sessions.actionsMenu}
               >
-                <EllipsisVertical size={14} />
+                <EllipsisVertical size={14} aria-hidden="true" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">

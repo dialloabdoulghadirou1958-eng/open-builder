@@ -13,8 +13,14 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { Copy, Check } from "lucide-react";
 import lightCss from "highlight.js/styles/github.min.css?raw";
 import darkCss from "highlight.js/styles/github-dark.min.css?raw";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useTheme } from "../../hooks/useTheme";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+import { useT } from "../../i18n";
 
 const HLJS_STYLE_ID = "hljs-theme";
 const MAX_MARKDOWN_DATA_IMAGE_BYTES = 1024 * 1024;
@@ -123,7 +129,9 @@ function CodeBlockHeader({
   lang: string;
   preRef: React.RefObject<HTMLPreElement | null>;
 }) {
+  const t = useT();
   const [copied, copy] = useCopyToClipboard();
+  const copyLabel = copied ? t.message.copied : t.message.copy;
 
   const handleCopy = useCallback(() => {
     void copy(preRef.current?.textContent ?? "");
@@ -134,22 +142,33 @@ function CodeBlockHeader({
       <span className="text-[11px] text-muted-foreground font-mono select-none">
         {(lang || "code").toUpperCase()}
       </span>
-      <button
-        type="button"
-        onClick={handleCopy}
-        className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-      >
-        <span className="relative w-3.5 h-3.5">
-          <Copy
-            size={14}
-            className={`absolute inset-0 transition-[opacity,transform,color,background-color,border-color] duration-200 ${copied ? "opacity-0 scale-50" : "opacity-100 scale-100"}`}
-          />
-          <Check
-            size={14}
-            className={`absolute inset-0 transition-[opacity,transform,color,background-color,border-color] duration-200 ${copied ? "opacity-100 scale-100 text-green-500" : "opacity-0 scale-50"}`}
-          />
+      <div className="flex items-center">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={handleCopy}
+              aria-label={copyLabel}
+              className="flex cursor-pointer items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <span className="relative h-3.5 w-3.5" aria-hidden="true">
+                <Copy
+                  size={14}
+                  className={`absolute inset-0 transition-[opacity,transform,color,background-color,border-color] duration-200 ${copied ? "opacity-0 scale-50" : "opacity-100 scale-100"}`}
+                />
+                <Check
+                  size={14}
+                  className={`absolute inset-0 transition-[opacity,transform,color,background-color,border-color] duration-200 ${copied ? "opacity-100 scale-100 text-green-500" : "opacity-0 scale-50"}`}
+                />
+              </span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{copyLabel}</TooltipContent>
+        </Tooltip>
+        <span className="sr-only" role="status" aria-live="polite">
+          {copied ? t.message.copied : ""}
         </span>
-      </button>
+      </div>
     </div>
   );
 }

@@ -7,6 +7,10 @@ import {
 
 const baseParams = {
   skillId: "skill-1",
+  skillName: "Demo",
+  skillSource: "imported" as const,
+  runId: "run-1",
+  callId: "call-1",
   scriptPath: "hello.js",
   scriptContent: "console.log('ok')",
   args: [],

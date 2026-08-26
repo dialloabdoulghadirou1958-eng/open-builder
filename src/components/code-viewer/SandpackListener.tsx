@@ -1,12 +1,17 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useSandpack, useSandpackConsole } from "@codesandbox/sandpack-react";
 import { useSandpackStore, type ConsoleLogData } from "@/store/sandpack";
+import { createSandpackFileChangeScheduler } from "./sandpack-file-changes";
 
 interface SandpackListenerProps {
-  onFileChange: (path: string, content: string) => void;
+  conversationId: string;
+  onFileChange: (conversationId: string, path: string, content: string) => void;
 }
 
-export function SandpackListener({ onFileChange }: SandpackListenerProps) {
+export function SandpackListener({
+  conversationId,
+  onFileChange,
+}: SandpackListenerProps) {
   const { sandpack } = useSandpack();
   const { files, activeFile } = sandpack;
   const code = files[activeFile]?.code;
@@ -15,22 +20,38 @@ export function SandpackListener({ onFileChange }: SandpackListenerProps) {
     showSyntaxError: true,
   });
   const setConsoleLogs = useSandpackStore((s) => s.setConsoleLogs);
+  const schedulerRef = useRef<
+    ReturnType<typeof createSandpackFileChangeScheduler> | undefined
+  >(undefined);
+  schedulerRef.current ??= createSandpackFileChangeScheduler();
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (code && activeFile) {
-        const normalizedPath = activeFile.startsWith("/")
-          ? activeFile.slice(1)
-          : activeFile;
-        onFileChange(normalizedPath, code);
-      }
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [code, activeFile, onFileChange]);
+    if (!activeFile || code === undefined) {
+      schedulerRef.current?.flush();
+      return;
+    }
+    const normalizedPath = activeFile.startsWith("/")
+      ? activeFile.slice(1)
+      : activeFile;
+    schedulerRef.current?.schedule({
+      conversationId,
+      path: normalizedPath,
+      content: code,
+      commit: onFileChange,
+    });
+  }, [code, activeFile, conversationId, onFileChange]);
+
+  useEffect(
+    () => () => {
+      schedulerRef.current?.dispose();
+      schedulerRef.current = undefined;
+    },
+    [],
+  );
 
   useEffect(() => {
     setConsoleLogs(logs as ConsoleLogData[]);
-  }, [logs]);
+  }, [logs, setConsoleLogs]);
 
   return null;
 }

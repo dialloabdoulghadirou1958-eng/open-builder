@@ -1,12 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  FileCode2,
-  Library,
-  Play,
-  Save,
-  Tag,
-  Trash2,
-} from "lucide-react";
+import { FileCode2, Library, Play, Save, Tag, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TooltipIconButton } from "@/components/ui/tooltip-icon-button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { formatBytes } from "../../lib/utils/storage-governance";
@@ -33,7 +27,9 @@ interface ProjectTemplateDialogProps {
   sourceTitle: string;
   templates: ProjectTemplate[];
   onClose: () => void;
-  onSaveCurrent: (input: ProjectTemplateSaveInput) => { ok: true } | { ok: false; error: string };
+  onSaveCurrent: (
+    input: ProjectTemplateSaveInput,
+  ) => { ok: true } | { ok: false; error: string };
   onCreateFromTemplate: (templateId: string) => void;
   onDeleteTemplate: (templateId: string) => void;
 }
@@ -183,7 +179,9 @@ export function ProjectTemplateDialog({
                             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                               <span>{formatBytes(stats.totalBytes)}</span>
                               <span>
-                                {new Date(template.updatedAt).toLocaleDateString()}
+                                {new Date(
+                                  template.updatedAt,
+                                ).toLocaleDateString()}
                               </span>
                             </div>
                             {template.tags.length > 0 && (
@@ -202,28 +200,26 @@ export function ProjectTemplateDialog({
                             )}
                           </div>
                           <div className="flex shrink-0 items-center gap-1">
-                            <Button
+                            <TooltipIconButton
                               type="button"
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8"
-                              aria-label={t.sessions.templates.create}
-                              title={t.sessions.templates.create}
+                              label={t.sessions.templates.create}
                               onClick={() => onCreateFromTemplate(template.id)}
                             >
                               <Play size={15} />
-                            </Button>
-                            <Button
+                            </TooltipIconButton>
+                            <TooltipIconButton
                               type="button"
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 text-destructive hover:text-destructive"
-                              aria-label={t.sessions.templates.delete}
-                              title={t.sessions.templates.delete}
+                              label={t.sessions.templates.delete}
                               onClick={() => handleDelete(template.id)}
                             >
                               <Trash2 size={15} />
-                            </Button>
+                            </TooltipIconButton>
                           </div>
                         </div>
                       </div>

@@ -2,11 +2,17 @@ import { tool } from "ai";
 import { z } from "zod";
 import type { ProjectFiles, FileChange } from "../ai/generator-types";
 import { basename } from "./file-refs";
+import { normalizeProjectPath, validateProjectFileContent } from "./fs-tools";
 import {
-  normalizeProjectPath,
-  validateProjectFileContent,
-} from "./fs-tools";
-import { fetchWithTimeout, safeErrorMessage } from "./network-guard";
+  fetchWithTimeout,
+  readResponseTextWithLimit,
+  safeErrorMessage,
+} from "./network-guard";
+import {
+  isAuthorityFilePath,
+  isSensitiveProjectPath,
+} from "../utils/project-file-policy";
+import type { ToolExecutionContext } from "../ai/generator-types";
 
 const DEFAULT_REGISTRY_BASE = "https://ui.shadcn.com/r";
 const DEFAULT_STYLE = "styles/new-york";
@@ -14,6 +20,8 @@ const INSTALL_COMPONENT_LIMITS = {
   maxRegistryItems: 50,
   maxFiles: 120,
   maxComponentNameChars: 100,
+  maxRegistryItemBytes: 2 * 1024 * 1024,
+  maxRegistryAggregateBytes: 8 * 1024 * 1024,
 } as const;
 const REGISTRY_ITEM_NAME_RE = /^[a-z0-9][a-z0-9/_-]*$/i;
 const NPM_DEPENDENCY_NAME_RE =
@@ -25,7 +33,12 @@ interface RegistryItem {
   dependencies?: string[];
   devDependencies?: string[];
   registryDependencies?: string[];
-  files?: Array<{ path: string; content?: string; type?: string; target?: string }>;
+  files?: Array<{
+    path: string;
+    content?: string;
+    type?: string;
+    target?: string;
+  }>;
   tailwind?: { config?: Record<string, unknown> };
   cssVars?: Record<string, Record<string, string>>;
 }
@@ -61,6 +74,10 @@ export const INSTALL_COMPONENT_TOOL = {
 export interface InstallComponentDeps {
   getFiles: () => ProjectFiles;
   onFilesChanged: (newFiles: ProjectFiles, changes: FileChange[]) => void;
+  approveRegistryOrigin?: (
+    origin: string,
+    context: ToolExecutionContext,
+  ) => Promise<boolean>;
 }
 
 interface InstallArgs {
@@ -114,32 +131,71 @@ function normalizeRegistryBase(value: string): string | null {
   }
 }
 
+function isLoopbackRegistryHost(hostname: string): boolean {
+  const normalized = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (normalized === "localhost" || normalized === "::1") return true;
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(normalized);
+  return (
+    !!match &&
+    match.slice(1).every((part) => Number(part) <= 255) &&
+    match[1] === "127"
+  );
+}
+
+interface FetchedRegistryItem {
+  item: RegistryItem;
+  responseBytes: number;
+}
+
 async function fetchRegistryItem(
   base: string,
   name: string,
-): Promise<RegistryItem | { error: string }> {
+): Promise<FetchedRegistryItem | { error: string }> {
   const url = buildItemUrl(base, name);
+  const expectedOrigin = new URL(base).origin;
   try {
     const res = await fetchWithTimeout(url, {
       headers: { Accept: "application/json" },
+      redirect: "error",
     });
     if (!res.ok) {
       if (res.status === 404) {
-        return { error: `component "${name}" not found in registry (HTTP 404 at ${url})` };
+        return {
+          error: `component "${name}" not found in registry (HTTP 404 at ${url})`,
+        };
       }
       return { error: `HTTP ${res.status} fetching ${url}` };
     }
-    const json = (await res.json()) as RegistryItem;
+    if (res.url && new URL(res.url).origin !== expectedOrigin) {
+      return { error: "component registry redirected to an unapproved origin" };
+    }
+    const body = await readResponseTextWithLimit(
+      res,
+      INSTALL_COMPONENT_LIMITS.maxRegistryItemBytes,
+      "Component registry response",
+    );
+    let json: RegistryItem;
+    try {
+      json = JSON.parse(body) as RegistryItem;
+    } catch {
+      return { error: `invalid JSON response from ${url}` };
+    }
     if (!json || typeof json !== "object") {
       return { error: `invalid JSON response from ${url}` };
     }
-    return json;
+    return {
+      item: json,
+      responseBytes: new TextEncoder().encode(body).byteLength,
+    };
   } catch (err: any) {
     return { error: `fetch failed for ${url}: ${safeErrorMessage(err)}` };
   }
 }
 
-function mapTargetPath(file: { path: string; target?: string }, componentName: string): string {
+function mapTargetPath(
+  file: { path: string; target?: string },
+  componentName: string,
+): string {
   if (file.target && file.target.trim()) {
     return file.target.replace(/^\/+/, "");
   }
@@ -164,7 +220,12 @@ function mergePackageJson(
       return { error: "existing package.json is not valid JSON" };
     }
   } else {
-    parsed = { name: "app", version: "0.0.0", dependencies: {}, devDependencies: {} };
+    parsed = {
+      name: "app",
+      version: "0.0.0",
+      dependencies: {},
+      devDependencies: {},
+    };
   }
 
   parsed.dependencies = parsed.dependencies ?? {};
@@ -188,7 +249,12 @@ function mergePackageJson(
 }
 
 export function createInstallComponentHandler(deps: InstallComponentDeps) {
-  return async (_name: string, args: unknown): Promise<string> => {
+  const approvedOrigins = new Set([new URL(DEFAULT_REGISTRY_BASE).origin]);
+  return async (
+    _name: string,
+    args: unknown,
+    context?: ToolExecutionContext,
+  ): Promise<string> => {
     const parsed = args as InstallArgs;
     const checkedComponentName = normalizeRegistryItemName(parsed?.name);
     if (!checkedComponentName.ok) {
@@ -196,18 +262,47 @@ export function createInstallComponentHandler(deps: InstallComponentDeps) {
     }
     const componentName = checkedComponentName.name;
 
-    const base = normalizeRegistryBase(parsed.registry_url || DEFAULT_REGISTRY_BASE);
+    const base = normalizeRegistryBase(
+      parsed.registry_url || DEFAULT_REGISTRY_BASE,
+    );
     if (!base) {
       return JSON.stringify({
         ok: false,
         error: "registry_url must be an http(s) URL",
       });
     }
+    const registryOrigin = new URL(base).origin;
+    const registryUrl = new URL(base);
+    if (
+      registryUrl.protocol !== "https:" &&
+      !isLoopbackRegistryHost(registryUrl.hostname)
+    ) {
+      return JSON.stringify({
+        ok: false,
+        error: "custom non-loopback registries must use HTTPS",
+      });
+    }
+    if (!approvedOrigins.has(registryOrigin)) {
+      if (!context || !deps.approveRegistryOrigin) {
+        return JSON.stringify({
+          ok: false,
+          error: `custom registry origin "${registryOrigin}" requires user approval`,
+        });
+      }
+      if (!(await deps.approveRegistryOrigin(registryOrigin, context))) {
+        return JSON.stringify({
+          ok: false,
+          error: `custom registry origin "${registryOrigin}" was denied`,
+        });
+      }
+      approvedOrigins.add(registryOrigin);
+    }
     const overwrite = parsed.overwrite ?? false;
 
     const visited = new Set<string>();
     let layer = [componentName];
     const items: RegistryItem[] = [];
+    let registryResponseBytes = 0;
     while (layer.length > 0) {
       const toFetch = layer.filter((n) => !visited.has(n));
       for (const n of toFetch) visited.add(n);
@@ -217,14 +312,24 @@ export function createInstallComponentHandler(deps: InstallComponentDeps) {
           error: `too many registry dependencies (max ${INSTALL_COMPONENT_LIMITS.maxRegistryItems})`,
         });
       }
-      const results = await Promise.all(
-        toFetch.map((n) => fetchRegistryItem(base, n)),
-      );
       const nextLayer: string[] = [];
-      for (const item of results) {
-        if ("error" in item) {
-          return JSON.stringify({ ok: false, error: item.error });
+      for (const itemName of toFetch) {
+        const fetched = await fetchRegistryItem(base, itemName);
+        if ("error" in fetched) {
+          return JSON.stringify({ ok: false, error: fetched.error });
         }
+        registryResponseBytes += fetched.responseBytes;
+        if (
+          registryResponseBytes >
+          INSTALL_COMPONENT_LIMITS.maxRegistryAggregateBytes
+        ) {
+          return JSON.stringify({
+            ok: false,
+            error:
+              "component registry dependency graph exceeds aggregate response budget",
+          });
+        }
+        const item = fetched.item;
         items.push(item);
         if (
           item.registryDependencies != null &&
@@ -309,10 +414,16 @@ export function createInstallComponentHandler(deps: InstallComponentDeps) {
         if (!checkedPath.ok) {
           return JSON.stringify({ ok: false, error: checkedPath.error });
         }
-        if (checkedPath.path === ".env") {
+        if (isAuthorityFilePath(checkedPath.path)) {
           return JSON.stringify({
             ok: false,
-            error: "component registry cannot write .env; use manage_env",
+            error: `component registry cannot write project authority file "${checkedPath.path}"`,
+          });
+        }
+        if (isSensitiveProjectPath(checkedPath.path)) {
+          return JSON.stringify({
+            ok: false,
+            error: `component registry cannot write protected file "${checkedPath.path}"`,
           });
         }
         const checkedContent = validateProjectFileContent(f.content);
@@ -324,7 +435,8 @@ export function createInstallComponentHandler(deps: InstallComponentDeps) {
           skippedPaths.push(targetPath);
           continue;
         }
-        const action: FileChange["action"] = targetPath in files ? "modified" : "created";
+        const action: FileChange["action"] =
+          targetPath in files ? "modified" : "created";
         newFiles[targetPath] = checkedContent.content;
         changes.push({ path: targetPath, action });
         writtenPaths.push(targetPath);
@@ -332,8 +444,9 @@ export function createInstallComponentHandler(deps: InstallComponentDeps) {
     }
 
     const pkgPath =
-      Object.keys(newFiles).find((p) => p === "package.json" || p.endsWith("/package.json")) ||
-      "package.json";
+      Object.keys(newFiles).find(
+        (p) => p === "package.json" || p.endsWith("/package.json"),
+      ) || "package.json";
     const pkgMerge = mergePackageJson(newFiles[pkgPath], npmDeps, devDeps);
     if ("error" in pkgMerge) {
       return JSON.stringify({ ok: false, error: pkgMerge.error });
@@ -342,9 +455,13 @@ export function createInstallComponentHandler(deps: InstallComponentDeps) {
     if (pkgMerge.changed) {
       const checkedPkg = validateProjectFileContent(pkgMerge.content);
       if (!checkedPkg.ok) {
-        return JSON.stringify({ ok: false, error: `package.json ${checkedPkg.error}` });
+        return JSON.stringify({
+          ok: false,
+          error: `package.json ${checkedPkg.error}`,
+        });
       }
-      const action: FileChange["action"] = pkgPath in files ? "modified" : "created";
+      const action: FileChange["action"] =
+        pkgPath in files ? "modified" : "created";
       newFiles[pkgPath] = checkedPkg.content;
       changes.push({ path: pkgPath, action });
       dependenciesChanged = true;

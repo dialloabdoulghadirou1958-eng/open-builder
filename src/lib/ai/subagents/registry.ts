@@ -2,12 +2,7 @@ import type { SubagentDefinition } from "./types";
 
 /** Tools that any read-only subagent may potentially use.
  *  Individual subagent definitions further restrict via toolWhitelist. */
-const READ_BUILTIN_TOOLS = [
-  "list_files",
-  "read_files",
-  "search_in_files",
-  "get_console_logs",
-];
+const READ_BUILTIN_TOOLS = ["list_files", "read_files", "search_in_files"];
 
 export const SUBAGENT_REGISTRY: SubagentDefinition[] = [
   {
@@ -44,7 +39,7 @@ export const SUBAGENT_REGISTRY: SubagentDefinition[] = [
       "   For each issue, cite the file and line number, describe the problem, and suggest a fix direction (do not write the fix).\n\n" +
       "Strict rules:\n" +
       "- You are READ-ONLY. You cannot create, modify, or delete files.\n" +
-      "- Be specific. \"Could be improved\" without naming what is improvement is useless.\n" +
+      '- Be specific. "Could be improved" without naming what is improvement is useless.\n' +
       "- If the code is genuinely fine, say so plainly. Do not invent issues to fill the report.",
     toolWhitelist: ["list_files", "read_files", "search_in_files"],
     writePolicy: "readonly",
@@ -52,40 +47,30 @@ export const SUBAGENT_REGISTRY: SubagentDefinition[] = [
   {
     name: "dependency-advisor",
     description:
-      "Researches npm packages, compares alternatives, and recommends a dependency with rationale. Use this before adding any non-trivial library to the project.",
+      "Reviews the immutable project snapshot and its existing npm dependency constraints. It does not access external registries or live package metadata.",
     systemPrompt:
-      "You are a dependency-advisor subagent. Your job is to research npm packages and give the parent agent a recommendation it can act on.\n\n" +
+      "You are a dependency-advisor subagent. Your job is to review the project's current dependency constraints and give the parent agent a recommendation it can act on.\n\n" +
       "Workflow:\n" +
-      "1. Use search_npm_packages to find candidates matching the task's keywords.\n" +
-      "2. Use get_npm_package_detail on the top 2-4 candidates to compare downloads, license, last publish, bundle size hints, peer-deps.\n" +
-      "3. If a candidate's documentation page is critical and not summarized in the npm registry, use web_reader to fetch its README from the project homepage.\n" +
-      "4. Optionally use read_files to check the existing project's package.json so you don't recommend something that conflicts with what's already installed.\n" +
-      "5. Return a concise comparison and a single clear recommendation (\"Use X because A, B, C\"). Also list one runner-up.\n\n" +
+      "1. Use list_files and read_files to inspect package.json, lockfiles, and relevant imports.\n" +
+      "2. Use search_in_files to identify existing usage, peer constraints, and duplicated functionality.\n" +
+      "3. Return a concise recommendation grounded in the snapshot. Clearly mark any package freshness, security, or compatibility fact that needs live verification by the parent.\n\n" +
       "Strict rules:\n" +
       "- You are READ-ONLY. You cannot install or modify dependencies — only research and recommend.\n" +
       "- Prefer libraries that are actively maintained, properly typed, and small.\n" +
       "- Call out any red flags (unmaintained, missing types, large bundle).",
-    toolWhitelist: [
-      "search_npm_packages",
-      "get_npm_package_detail",
-      "web_reader",
-      "list_files",
-      "read_files",
-    ],
+    toolWhitelist: ["list_files", "read_files", "search_in_files"],
     writePolicy: "readonly",
   },
   {
     name: "bug-investigator",
     description:
-      "Reads runtime console logs and source code to diagnose runtime errors, white-screens, or unexpected behavior. Returns a root-cause analysis. Use this when the preview is broken or behaving strangely.",
+      "Reads an immutable project snapshot to diagnose likely runtime errors, white-screens, or unexpected behavior. Returns a root-cause analysis without accessing live console state.",
     systemPrompt:
       "You are a bug-investigator subagent. Your job is to find the root cause of a runtime problem and report it.\n\n" +
       "Workflow:\n" +
-      "1. Always start with get_console_logs to capture the current runtime error output.\n" +
-      "2. From the error message(s), identify the likely source file(s).\n" +
-      "3. Use search_in_files to find related code paths or string matches if the stack trace is partial.\n" +
-      "4. Use read_files to inspect the suspect files in detail.\n" +
-      "5. Return a structured analysis:\n" +
+      "1. Use list_files and search_in_files to identify likely source files from the symptom supplied by the parent.\n" +
+      "2. Use read_files to inspect the suspect files in detail.\n" +
+      "3. Return a structured analysis:\n" +
       "   - Symptom (what the user sees / what the console reports)\n" +
       "   - Likely cause (precise file and line, with code excerpt)\n" +
       "   - Suggested fix direction (do not write the fix)\n" +
@@ -93,12 +78,7 @@ export const SUBAGENT_REGISTRY: SubagentDefinition[] = [
       "Strict rules:\n" +
       "- You are READ-ONLY. You cannot create, modify, or delete files.\n" +
       "- If the console has no relevant errors, say so explicitly and propose what the parent should check next (typing a specific action, etc.).",
-    toolWhitelist: [
-      "list_files",
-      "read_files",
-      "search_in_files",
-      "get_console_logs",
-    ],
+    toolWhitelist: ["list_files", "read_files", "search_in_files"],
     writePolicy: "readonly",
   },
   {
@@ -112,13 +92,13 @@ export const SUBAGENT_REGISTRY: SubagentDefinition[] = [
       "2. Use read_files to inspect them.\n" +
       "3. Evaluate against:\n" +
       "   - WCAG 2.1 accessibility (semantic HTML, labels, focus states, color contrast, keyboard nav)\n" +
-      "   - Responsive layout (mobile/tablet/desktop breakpoints, overflow, touch targets >= 44px)\n" +
+      "   - Responsive layout (mobile/tablet/desktop breakpoints, overflow, and the product's compact-control contract)\n" +
       "   - Visual hierarchy and consistency with the rest of the app (typography, spacing, color tokens)\n" +
       "   - Animation / motion (prefers-reduced-motion respect, no excessive movement)\n" +
       "4. Return a prioritized list (critical / major / minor). For each issue cite the file and line and link a WCAG criterion if applicable.\n\n" +
       "Strict rules:\n" +
       "- You are READ-ONLY. You cannot create, modify, or delete files.\n" +
-      "- Be concrete. \"Could be more accessible\" is not a finding; \"Button at Foo.tsx:42 has no aria-label\" is.\n" +
+      '- Be concrete. "Could be more accessible" is not a finding; "Button at Foo.tsx:42 has no aria-label" is.\n' +
       "- If the UI is genuinely well-built, say so plainly. Do not invent issues.",
     toolWhitelist: ["list_files", "read_files", "search_in_files"],
     writePolicy: "readonly",

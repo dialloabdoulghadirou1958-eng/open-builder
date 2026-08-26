@@ -2,6 +2,8 @@ import type {
   Message as _Message,
   ProjectFiles as _ProjectFiles,
   StructuredGenerationErrorKind as _StructuredGenerationErrorKind,
+  ToolExecutionOutput as _ToolExecutionOutput,
+  AttachmentRef as _AttachmentRef,
 } from "../lib/ai/generator-types";
 
 export type {
@@ -18,22 +20,31 @@ export type {
   StructuredGenerationErrorKind,
   GeneratorOptions,
   GeneratorEvents,
+  ToolExecutionContent,
+  ToolExecutionContext,
+  ToolExecutionOutput,
+  McpToolExecutionIdentity,
+  AttachmentRef,
+  ResolvedAttachment,
+  MessageMetadata,
 } from "../lib/ai/generator-types";
 
-export type { AISettings, WebSearchSettings, AssetSearchSettings } from "../store/settings";
+export type {
+  AISettings,
+  WebSearchSettings,
+  AssetSearchSettings,
+} from "../store/settings";
 export type { OpenAIClientConfig } from "../lib/ai/client";
 export type { ApiType } from "../lib/ai/provider-config";
 
 // ─── Chat UI types ────────────────────────────────────────────────────────────
 
 /** Attachment in the input pipeline (before sending) */
-export interface Attachment {
-  type: "file" | "image";
-  name: string;
-  /** DataURL for images/PDFs, plain text for text files */
-  content: string;
-  /** Original file size in bytes */
-  size: number;
+export interface Attachment extends _AttachmentRef {
+  /** Ephemeral object URL used only while the input is visible. */
+  previewUrl?: string;
+  /** Legacy inline content. New attachments are stored in the Blob domain. */
+  content?: string;
 }
 
 export interface AttachmentConstraints {
@@ -68,14 +79,18 @@ export interface TextBlock {
 
 export interface ImageBlock {
   type: "image";
-  url: string;
+  url?: string;
+  attachmentId?: string;
+  name?: string;
   id: string;
 }
 
 export interface FileBlock {
   type: "file";
   name: string;
-  content: string;
+  content?: string;
+  attachmentId?: string;
+  mimeType?: string;
   /** Original file size in bytes */
   size: number;
   id: string;
@@ -94,6 +109,8 @@ export interface ToolBlock {
   path: string;
   paths?: string[];
   result: string;
+  /** Persisted rich output and original MCP identity, when applicable. */
+  toolOutput?: _ToolExecutionOutput;
   /** Tool call id used by the AI SDK — needed to correlate with pending UI prompts. */
   toolCallId: string;
   /** Raw parsed arguments the AI passed to the tool. Used by interactive tools
@@ -102,12 +119,14 @@ export interface ToolBlock {
   id: string;
 }
 
-export type Block = TextBlock | ImageBlock | FileBlock | ThinkingBlock | ToolBlock;
+export type Block =
+  TextBlock | ImageBlock | FileBlock | ThinkingBlock | ToolBlock;
 
 export interface MergedMessage {
   role: "user" | "assistant";
   blocks: Block[];
   id: string;
+  origin?: "auto_qa";
   /** True when this assistant message was synthesized to report a local error
    *  (network failure, aborted retry, etc.). Drives the retry affordance in the
    *  UI without relying on string-prefix sniffing. */
@@ -183,6 +202,7 @@ export interface Conversation {
   template: string;
   isProjectInitialized: boolean;
   compressedContext?: CompressedContext;
+  activeFile?: string;
   pinned?: boolean;
   archived?: boolean;
   createdAt: number;

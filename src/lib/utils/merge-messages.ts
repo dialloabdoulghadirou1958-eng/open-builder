@@ -77,9 +77,14 @@ export function mergeMessages(messages: Message[]): MergedMessage[] {
 
     if (msg.role === "user") {
       const blocks: Block[] = [];
+      const origin = msg.metadata?.origin;
       let j = i;
       let bi = 0;
-      while (j < messages.length && messages[j].role === "user") {
+      while (
+        j < messages.length &&
+        messages[j].role === "user" &&
+        messages[j].metadata?.origin === origin
+      ) {
         const text = getTextContent(messages[j].content);
         if (text) {
           blocks.push({ type: "text", content: text, id: `text-${i}-${bi++}` });
@@ -96,10 +101,29 @@ export function mergeMessages(messages: Message[]): MergedMessage[] {
             id: `file-${i}-${bi++}`,
           });
         }
+        for (const attachment of messages[j].metadata?.attachments ?? []) {
+          if (attachment.type === "image") {
+            blocks.push({
+              type: "image",
+              attachmentId: attachment.id,
+              name: attachment.name,
+              id: `img-${i}-${bi++}`,
+            });
+          } else {
+            blocks.push({
+              type: "file",
+              name: attachment.name,
+              attachmentId: attachment.id,
+              mimeType: attachment.mimeType,
+              size: attachment.size,
+              id: `file-${i}-${bi++}`,
+            });
+          }
+        }
         j++;
       }
       if (blocks.length > 0) {
-        merged.push({ role: "user", blocks, id: `user-${i}` });
+        merged.push({ role: "user", blocks, id: `user-${i}`, origin });
       }
       i = j - 1;
     } else if (msg.role === "assistant") {
@@ -148,12 +172,14 @@ export function mergeMessages(messages: Message[]): MergedMessage[] {
                 /* ignore */
               }
               let result = "";
+              let toolOutput: Message["toolOutput"];
               for (let k = j + 1; k < messages.length; k++) {
                 if (
                   messages[k].role === "tool" &&
                   messages[k].tool_call_id === tc.id
                 ) {
                   result = getTextContent(messages[k].content) || "";
+                  toolOutput = messages[k].toolOutput;
                   break;
                 }
               }
@@ -164,7 +190,9 @@ export function mergeMessages(messages: Message[]): MergedMessage[] {
               const toolName = tc.function.name as keyof typeof t.tool.names;
 
               let title = t.tool.names[toolName] || tc.function.name;
-              if (isReadFiles) {
+              if (toolOutput?.source?.kind === "mcp") {
+                title = `${toolOutput.source.serverName} · ${toolOutput.source.toolTitle || toolOutput.source.toolName}`;
+              } else if (isReadFiles) {
                 title = `${t.tool.found}${paths?.length ?? 0} ${t.tool.files}`;
               } else if (args.query) {
                 title = `${t.tool.names[toolName]}: ${args.query}`;
@@ -197,6 +225,7 @@ export function mergeMessages(messages: Message[]): MergedMessage[] {
                 path: args.path || "",
                 paths,
                 result,
+                toolOutput,
                 toolCallId: tc.id,
                 rawArgs: args,
                 id: `tool-${tc.id}`,

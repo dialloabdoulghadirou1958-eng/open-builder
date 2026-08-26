@@ -5,12 +5,21 @@ import {
   Tablet,
   Smartphone,
   Download,
+  Minus,
+  Plus,
+  Scan,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
 import { useT } from "../../i18n";
 import type { ProjectFiles } from "@/types";
+import type { ReactNode } from "react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export type ViewMode = "preview" | "code";
 export type DeviceSize = "desktop" | "tablet" | "mobile";
@@ -21,6 +30,10 @@ interface ViewToolbarProps {
   deviceSize: DeviceSize;
   onDeviceSizeChange: (size: DeviceSize) => void;
   files: ProjectFiles;
+  previewScale?: number;
+  onPreviewZoomIn?: () => void;
+  onPreviewZoomOut?: () => void;
+  onPreviewFit?: () => void;
 }
 
 async function downloadAsZip(files: ProjectFiles) {
@@ -32,12 +45,49 @@ async function downloadAsZip(files: ProjectFiles) {
   saveAs(blob, "project.zip");
 }
 
+function ToolbarIconButton({
+  label,
+  selected = false,
+  variant = "ghost",
+  onClick,
+  className,
+  children,
+}: {
+  label: string;
+  selected?: boolean;
+  variant?: "ghost" | "outline";
+  onClick: () => void;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant={selected ? "secondary" : variant}
+          size="icon-sm"
+          onClick={onClick}
+          aria-label={label}
+          className={className}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function ViewToolbar({
   viewMode,
   onViewModeChange,
   deviceSize,
   onDeviceSizeChange,
   files,
+  previewScale = 1,
+  onPreviewZoomIn,
+  onPreviewZoomOut,
+  onPreviewFit,
 }: ViewToolbarProps) {
   const t = useT();
   return (
@@ -65,50 +115,69 @@ export function ViewToolbar({
 
       <div className="flex items-center gap-2">
         {viewMode === "preview" && (
-          <div className="flex items-center gap-1 p-0.5 rounded-lg border">
-            <Button
-              variant={deviceSize === "desktop" ? "secondary" : "ghost"}
-              size="icon-sm"
-              onClick={() => onDeviceSizeChange("desktop")}
-              title={t.toolbar.desktop}
-              aria-label={t.toolbar.desktop}
-              className="desktop"
-            >
-              <Monitor size={16} />
-            </Button>
-            <Button
-              variant={deviceSize === "tablet" ? "secondary" : "ghost"}
-              size="icon-sm"
-              onClick={() => onDeviceSizeChange("tablet")}
-              title={t.toolbar.tablet}
-              aria-label={t.toolbar.tablet}
-              className="tablet"
-            >
-              <Tablet size={16} />
-            </Button>
-            <Button
-              variant={deviceSize === "mobile" ? "secondary" : "ghost"}
-              size="icon-sm"
-              onClick={() => onDeviceSizeChange("mobile")}
-              title={t.toolbar.mobile}
-              aria-label={t.toolbar.mobile}
-              className="mobile"
-            >
-              <Smartphone size={16} />
-            </Button>
+          <div className="flex items-center gap-1">
+            {deviceSize !== "desktop" && (
+              <div className="flex items-center gap-0.5 rounded-lg border p-0.5">
+                <ToolbarIconButton
+                  onClick={() => onPreviewZoomOut?.()}
+                  label={t.toolbar.zoomOut}
+                >
+                  <Minus size={14} />
+                </ToolbarIconButton>
+                <span className="w-10 text-center font-mono text-[10px] text-muted-foreground">
+                  {Math.round(previewScale * 100)}%
+                </span>
+                <ToolbarIconButton
+                  onClick={() => onPreviewZoomIn?.()}
+                  label={t.toolbar.zoomIn}
+                >
+                  <Plus size={14} />
+                </ToolbarIconButton>
+                <ToolbarIconButton
+                  onClick={() => onPreviewFit?.()}
+                  label={t.toolbar.fitPreview}
+                >
+                  <Scan size={14} />
+                </ToolbarIconButton>
+              </div>
+            )}
+            <div className="flex items-center gap-1 p-0.5 rounded-lg border">
+              <ToolbarIconButton
+                selected={deviceSize === "desktop"}
+                onClick={() => onDeviceSizeChange("desktop")}
+                label={t.toolbar.desktop}
+                className="desktop"
+              >
+                <Monitor size={16} />
+              </ToolbarIconButton>
+              <ToolbarIconButton
+                selected={deviceSize === "tablet"}
+                onClick={() => onDeviceSizeChange("tablet")}
+                label={t.toolbar.tablet}
+                className="tablet"
+              >
+                <Tablet size={16} />
+              </ToolbarIconButton>
+              <ToolbarIconButton
+                selected={deviceSize === "mobile"}
+                onClick={() => onDeviceSizeChange("mobile")}
+                label={t.toolbar.mobile}
+                className="mobile"
+              >
+                <Smartphone size={16} />
+              </ToolbarIconButton>
+            </div>
           </div>
         )}
 
         {viewMode === "code" && (
-          <Button
-            variant="outline"
-            size="icon-sm"
+          <ToolbarIconButton
             onClick={() => downloadAsZip(files)}
-            title={t.toolbar.download}
-            aria-label={t.toolbar.download}
+            label={t.toolbar.download}
+            variant="outline"
           >
             <Download size={16} />
-          </Button>
+          </ToolbarIconButton>
         )}
       </div>
     </div>

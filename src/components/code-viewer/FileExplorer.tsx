@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { File, Folder, FilePlus, FolderPlus, Search } from "lucide-react";
 import JSZip from "jszip";
-import { Button } from "@/components/ui/button";
+import { TooltipIconButton } from "@/components/ui/tooltip-icon-button";
 import { Input } from "@/components/ui/input";
 import { useT } from "../../i18n";
 import type { ProjectFiles } from "@/types";
@@ -78,10 +78,7 @@ export function FileExplorer({
     return { filteredFiles: out, matchedPaths: matched };
   }, [files, trimmedQuery]);
 
-  const fileTree = useMemo(
-    () => buildFileTree(filteredFiles),
-    [filteredFiles],
-  );
+  const fileTree = useMemo(() => buildFileTree(filteredFiles), [filteredFiles]);
 
   // When searching, auto-expand every ancestor folder of a matched file so
   // hits are visible. We merge with the user's explicit expansion state.
@@ -120,7 +117,8 @@ export function FileExplorer({
     setSelectedFolder(path);
     setExpandedFolders((prev) => {
       const next = new Set(prev);
-      next.has(path) ? next.delete(path) : next.add(path);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
       return next;
     });
   };
@@ -305,26 +303,24 @@ export function FileExplorer({
           {t.explorer.files}
         </span>
         <div className="flex items-center gap-1">
-          <Button
+          <TooltipIconButton
+            label={t.explorer.newFile}
             variant="ghost"
             size="icon"
             className="h-6 w-6"
             onClick={() => startCreate("file", getCurrentDirectory())}
-            title={t.explorer.newFile}
-            aria-label={t.explorer.newFile}
           >
             <FilePlus size={14} />
-          </Button>
-          <Button
+          </TooltipIconButton>
+          <TooltipIconButton
+            label={t.explorer.newFolder}
             variant="ghost"
             size="icon"
             className="h-6 w-6"
             onClick={() => startCreate("folder", getCurrentDirectory())}
-            title={t.explorer.newFolder}
-            aria-label={t.explorer.newFolder}
           >
             <FolderPlus size={14} />
-          </Button>
+          </TooltipIconButton>
         </div>
       </div>
 

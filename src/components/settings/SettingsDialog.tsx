@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type {
   AISettings,
   WebSearchSettings,
@@ -33,6 +33,45 @@ interface SettingsDialogProps {
   onSaveSystem: (settings: SystemSettings) => void;
 }
 
+export type ModelFieldErrors = Partial<
+  Record<"apiKey" | "apiBaseUrl" | "model", string>
+>;
+
+export function validateAISettingsDraft(
+  settings: AISettings,
+  messages: {
+    apiKeyRequired: string;
+    apiBaseUrlRequired: string;
+    apiBaseUrlInvalid: string;
+    modelRequired: string;
+    modelInvalid: string;
+  },
+): ModelFieldErrors {
+  const errors: ModelFieldErrors = {};
+  if (!settings.apiKey.trim()) errors.apiKey = messages.apiKeyRequired;
+
+  const rawUrl = settings.apiBaseUrl.trim();
+  if (!rawUrl) {
+    errors.apiBaseUrl = messages.apiBaseUrlRequired;
+  } else {
+    try {
+      const parsed = new URL(rawUrl);
+      if (!/^https?:$/.test(parsed.protocol)) {
+        errors.apiBaseUrl = messages.apiBaseUrlInvalid;
+      }
+    } catch {
+      errors.apiBaseUrl = messages.apiBaseUrlInvalid;
+    }
+  }
+
+  const model = settings.model.trim();
+  if (!model) errors.model = messages.modelRequired;
+  else if (model.length > 160 || /[\u0000-\u001f\u007f]/.test(model)) {
+    errors.model = messages.modelInvalid;
+  }
+  return errors;
+}
+
 export function SettingsDialog({
   isOpen,
   onClose,
@@ -53,6 +92,12 @@ export function SettingsDialog({
   const [assetSearchForm, setAssetSearchForm] =
     useState<AssetSearchSettings>(assetSearchSettings);
   const [systemForm, setSystemForm] = useState<SystemSettings>(systemSettings);
+  const [showValidation, setShowValidation] = useState(false);
+
+  const modelErrors = useMemo(
+    () => validateAISettingsDraft(formData, t.settings.validation),
+    [formData, t.settings.validation],
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -60,6 +105,7 @@ export function SettingsDialog({
     setWebSearchForm(webSearchSettings);
     setAssetSearchForm(assetSearchSettings);
     setSystemForm(systemSettings);
+    setShowValidation(false);
   }, [
     isOpen,
     settings,
@@ -69,6 +115,8 @@ export function SettingsDialog({
   ]);
 
   const handleSave = () => {
+    setShowValidation(true);
+    if (Object.keys(modelErrors).length > 0) return;
     onSave(formData);
     onSaveWebSearch(webSearchForm);
     onSaveAssetSearch(assetSearchForm);
@@ -78,23 +126,38 @@ export function SettingsDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md sm:max-w-md max-h-[90dvh] flex flex-col">
-        <DialogHeader className="shrink-0 px-2">
+      <DialogContent className="flex h-[100dvh] max-h-[100dvh] max-w-full flex-col gap-0 rounded-none border-x-0 p-0 sm:h-auto sm:max-h-[90dvh] sm:max-w-md sm:gap-4 sm:rounded-lg sm:border sm:p-6">
+        <DialogHeader className="sticky top-0 z-10 shrink-0 border-b bg-background px-4 py-4 pr-12 sm:static sm:border-b-0 sm:px-2 sm:py-0 sm:pr-2">
           <DialogTitle>{t.settings.title}</DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="model" className="flex-1 min-h-0 flex flex-col px-2">
+        <Tabs
+          defaultValue="model"
+          className="min-h-0 flex-1 overflow-hidden px-4 py-3 sm:px-2 sm:py-0"
+        >
           <TabsList className="w-full shrink-0">
-            <TabsTrigger value="model" className="px-1.5 text-xs sm:px-2 sm:text-sm">
+            <TabsTrigger
+              value="model"
+              className="px-1.5 text-xs sm:px-2 sm:text-sm"
+            >
               {t.settings.tabs.model}
             </TabsTrigger>
-            <TabsTrigger value="search" className="px-1.5 text-xs sm:px-2 sm:text-sm">
+            <TabsTrigger
+              value="search"
+              className="px-1.5 text-xs sm:px-2 sm:text-sm"
+            >
               {t.settings.tabs.search}
             </TabsTrigger>
-            <TabsTrigger value="storage" className="px-1.5 text-xs sm:px-2 sm:text-sm">
+            <TabsTrigger
+              value="storage"
+              className="px-1.5 text-xs sm:px-2 sm:text-sm"
+            >
               {t.settings.tabs.storage}
             </TabsTrigger>
-            <TabsTrigger value="system" className="px-1.5 text-xs sm:px-2 sm:text-sm">
+            <TabsTrigger
+              value="system"
+              className="px-1.5 text-xs sm:px-2 sm:text-sm"
+            >
               {t.settings.tabs.system}
             </TabsTrigger>
           </TabsList>
@@ -103,7 +166,11 @@ export function SettingsDialog({
             value="model"
             className="min-h-0 overflow-y-auto py-4 pr-1 space-y-4"
           >
-            <ModelTab formData={formData} setFormData={setFormData} />
+            <ModelTab
+              formData={formData}
+              setFormData={setFormData}
+              errors={showValidation ? modelErrors : {}}
+            />
           </TabsContent>
 
           <TabsContent
@@ -134,7 +201,12 @@ export function SettingsDialog({
           </TabsContent>
         </Tabs>
 
-        <DialogFooter className="shrink-0 flex-row justify-end">
+        <DialogFooter className="sticky bottom-0 z-10 shrink-0 flex-row justify-end border-t bg-background px-4 py-3 sm:static sm:border-t-0 sm:px-0 sm:py-0">
+          {showValidation && Object.keys(modelErrors).length > 0 && (
+            <p className="mr-auto text-xs text-destructive" role="alert">
+              {t.settings.validation.summary}
+            </p>
+          )}
           <Button variant="outline" onClick={onClose}>
             {t.settings.cancel}
           </Button>

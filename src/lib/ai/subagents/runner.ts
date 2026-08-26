@@ -10,18 +10,9 @@ import { BUILTIN_TOOLS, BUILTIN_WRITE_TOOL_NAMES } from "../tools-schema";
 import type { ApiType } from "../provider";
 import { useSubagentStore } from "../../../store/subagent";
 import { filterToolSet } from "../../tools/tool-set-utils";
-import { buildSkillsPromptSection } from "../../skills/tool-handler";
-import { SKILL_TOOL_NAMES } from "../../skills/tools";
-import { isSkillsAvailable, isTauri } from "../../skills/fs";
-import { getSkillRegistry } from "../../skills/instance";
-import {
-  SUBAGENT_BUILTIN_TOOL_NAMES,
-  getSubagentByName,
-} from "./registry";
-import type {
-  SubagentDefinition,
-  SubagentToolResult,
-} from "./types";
+import type { SkillActiveContext } from "../../skills/active-context";
+import { SUBAGENT_BUILTIN_TOOL_NAMES, getSubagentByName } from "./registry";
+import type { SubagentDefinition, SubagentToolResult } from "./types";
 import {
   SUBAGENT_LIMITS,
   limitSubagentEvents,
@@ -44,18 +35,22 @@ export interface RunSubagentOpts {
   toolCallId: string;
   parentApiConfig: ParentApiConfig;
   parentCustomToolSet: ToolSet;
-  parentCombinedToolHandler: (name: string, args: unknown) => Promise<string>;
+  parentCombinedToolHandler: NonNullable<GeneratorOptions["customToolHandler"]>;
   parentForcedSkillsPrompt: string;
+  parentSkillContext: SkillActiveContext | null;
+  additionalToolNames: ReadonlySet<string>;
 }
 
 export interface CreateDispatcherOpts {
   getApiConfig: () => ParentApiConfig;
   getCustomToolSet: () => ToolSet;
-  getCombinedToolHandler: () => (
-    name: string,
-    args: unknown,
-  ) => Promise<string>;
+  getCombinedToolHandler: () => NonNullable<
+    GeneratorOptions["customToolHandler"]
+  >;
   getForcedSkillsPrompt: () => string;
+  getSkillContextSnapshot?: () => SkillActiveContext | null;
+  /** Explicitly approved read-only external tools (currently MCP). */
+  getAdditionalToolNames?: () => ReadonlySet<string>;
 }
 
 type WritePolicy = "readonly" | "fullWrite";
@@ -63,18 +58,13 @@ type WritePolicy = "readonly" | "fullWrite";
 function effectiveSubagentWhitelist(
   def: SubagentDefinition,
   policy: WritePolicy,
+  additionalToolNames: ReadonlySet<string> = new Set(),
 ): Set<string> {
   const whitelist = new Set(def.toolWhitelist);
   if (policy === "readonly") {
     for (const name of BUILTIN_WRITE_TOOL_NAMES) whitelist.delete(name);
   }
-  if (isSkillsAvailable()) {
-    whitelist.add(SKILL_TOOL_NAMES.LIST);
-    whitelist.add(SKILL_TOOL_NAMES.READ);
-    if (policy === "fullWrite" && isTauri()) {
-      whitelist.add(SKILL_TOOL_NAMES.EXECUTE_SCRIPT);
-    }
-  }
+  for (const name of additionalToolNames) whitelist.add(name);
   return whitelist;
 }
 
@@ -93,14 +83,14 @@ function buildSubagentToolSet(
 }
 
 function wrapHandlerWithWhitelist(
-  parentHandler: (name: string, args: unknown) => Promise<string>,
+  parentHandler: NonNullable<GeneratorOptions["customToolHandler"]>,
   whitelist: ReadonlySet<string>,
-): (name: string, args: unknown) => Promise<string> {
-  return async (name, args) => {
+): NonNullable<GeneratorOptions["customToolHandler"]> {
+  return async (name, args, context) => {
     if (!whitelist.has(name)) {
       return `Error: tool "${name}" is not available to this subagent. Available: ${[...whitelist].join(", ")}.`;
     }
-    return parentHandler(name, args);
+    return parentHandler(name, args, context);
   };
 }
 
@@ -173,7 +163,11 @@ export async function runSubagent(
   }
 
   const policy: WritePolicy = def.writePolicy ?? "readonly";
-  const whitelist = effectiveSubagentWhitelist(def, policy);
+  const whitelist = effectiveSubagentWhitelist(
+    def,
+    policy,
+    opts.additionalToolNames,
+  );
   const toolSet = buildSubagentToolSet(whitelist, opts.parentCustomToolSet);
   const wrappedHandler = wrapHandlerWithWhitelist(
     opts.parentCombinedToolHandler,
@@ -181,12 +175,8 @@ export async function runSubagent(
   );
   const apiConfig = resolveApiConfig(opts.parentApiConfig, def.modelOverride);
 
-  const enabledSkills = isSkillsAvailable()
-    ? (await getSkillRegistry()).getAutoEnabled()
-    : [];
-  const skillsSuffix = buildSkillsPromptSection(enabledSkills);
   const effectiveSystemPrompt =
-    def.systemPrompt + skillsSuffix + opts.parentForcedSkillsPrompt;
+    def.systemPrompt + opts.parentForcedSkillsPrompt;
 
   const events: GeneratorEvents = {
     onText: (delta) => {
@@ -217,6 +207,9 @@ export async function runSubagent(
     tools: toolSet,
     customTools: {},
     customToolHandler: wrappedHandler,
+    executionMode: "subagent",
+    allowedMcpAliases: opts.additionalToolNames,
+    initialSkillContext: opts.parentSkillContext,
     // Subagents do not get user interaction or plan-mode tools.
     thinking: false,
   };
@@ -231,10 +224,9 @@ export async function runSubagent(
   try {
     const innerResult = await inner.generate(checkedTask.task);
     const finalText = (innerResult.text || "").slice(0, maxResultLength);
-    const eventsSnapshot =
-      limitSubagentEvents(
-        useSubagentStore.getState().progress[opts.toolCallId]?.events ?? [],
-      );
+    const eventsSnapshot = limitSubagentEvents(
+      useSubagentStore.getState().progress[opts.toolCallId]?.events ?? [],
+    );
 
     if (innerResult.aborted || opts.signal.aborted) {
       useSubagentStore.getState().markStatus(opts.toolCallId, "aborted");
@@ -273,10 +265,9 @@ export async function runSubagent(
     const status = isAbort ? "aborted" : "failed";
     const message =
       (err as { message?: string })?.message ?? "Unknown subagent error";
-    const eventsSnapshot =
-      limitSubagentEvents(
-        useSubagentStore.getState().progress[opts.toolCallId]?.events ?? [],
-      );
+    const eventsSnapshot = limitSubagentEvents(
+      useSubagentStore.getState().progress[opts.toolCallId]?.events ?? [],
+    );
     const textSnapshot =
       useSubagentStore.getState().progress[opts.toolCallId]?.text ?? "";
     useSubagentStore
@@ -314,5 +305,7 @@ export function createSubagentDispatcher(
       parentCustomToolSet: opts.getCustomToolSet(),
       parentCombinedToolHandler: opts.getCombinedToolHandler(),
       parentForcedSkillsPrompt: opts.getForcedSkillsPrompt(),
+      parentSkillContext: opts.getSkillContextSnapshot?.() ?? null,
+      additionalToolNames: opts.getAdditionalToolNames?.() ?? new Set(),
     });
 }

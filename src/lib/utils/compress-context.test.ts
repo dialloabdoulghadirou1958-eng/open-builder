@@ -73,7 +73,7 @@ describe("compressContext", () => {
 
     expect(result).toEqual({
       summary:
-        "Short summary.\n\nCurrent project files:\n- package.json\n- src/App.tsx",
+        'Short summary.\n\nCurrent project files:\n- "package.json"\n- "src/App.tsx"',
       fromIndex: 3,
     });
     expect(mocks.getProviderModel).toHaveBeenCalledWith(cfg);
@@ -86,6 +86,111 @@ describe("compressContext", () => {
     );
     expect(summaryInput).toContain("tool_result: OK — created: src/App.tsx");
     expect(summaryInput).not.toContain("Make it prettier");
+  });
+
+  it("never converts a PDF attachment into base64 summary text", async () => {
+    mocks.generateText.mockResolvedValue({ text: "PDF noted." });
+    const sentinel = "JVBERi0xLjQtc2VjcmV0LXNlbnRpbmVs";
+    const messages: Message[] = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Review this document" },
+          {
+            type: "file",
+            file: {
+              data: `data:application/pdf;base64,${sentinel}`,
+              mediaType: "application/pdf",
+              filename: "spec.pdf",
+            },
+          },
+        ],
+      },
+      { role: "assistant", content: "I will review it." },
+      { role: "user", content: "Continue" },
+    ];
+
+    await compressContext(messages, cfg);
+
+    const prompt = mocks.generateText.mock.calls[0][0].prompt as string;
+    expect(prompt).toContain('PDF attachment: "spec.pdf"');
+    expect(prompt).not.toContain(sentinel);
+    expect(prompt).not.toContain("data:application/pdf");
+  });
+
+  it("redacts secret tool arguments and protected legacy file results", async () => {
+    mocks.generateText.mockResolvedValue({ text: "Safe summary." });
+    const sentinel = "legacy-super-secret";
+    const messages: Message[] = [
+      { role: "user", content: "Configure the app" },
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "env-call",
+            type: "function",
+            function: {
+              name: "manage_env",
+              arguments: JSON.stringify({
+                operations: [
+                  {
+                    target: "env",
+                    action: "set",
+                    key: "TOKEN",
+                    value: sentinel,
+                  },
+                ],
+              }),
+            },
+          },
+          {
+            id: "read-call",
+            type: "function",
+            function: {
+              name: "read_files",
+              arguments: JSON.stringify({ paths: [".env"] }),
+            },
+          },
+        ],
+      },
+      { role: "tool", tool_call_id: "env-call", content: "OK" },
+      { role: "tool", tool_call_id: "read-call", content: `TOKEN=${sentinel}` },
+      { role: "user", content: "Continue" },
+    ];
+
+    await compressContext(messages, cfg);
+
+    const prompt = mocks.generateText.mock.calls[0][0].prompt as string;
+    expect(prompt).not.toContain(sentinel);
+    expect(prompt).toContain("[REDACTED]");
+    expect(prompt).toContain("Protected tool result omitted");
+  });
+
+  it("sanitizes legacy and newly generated summaries during recompression", async () => {
+    const legacySentinel = "legacy-recompress-secret-sentinel";
+    const generatedSentinel = "generated-summary-secret-sentinel";
+    mocks.generateText.mockResolvedValue({
+      text: `Result: {"access_token":"${generatedSentinel}"}`,
+    });
+    const messages: Message[] = [
+      { role: "user", content: "Initial request" },
+      { role: "assistant", content: "Initial response" },
+      { role: "user", content: "Intermediate request" },
+      { role: "assistant", content: "Intermediate response" },
+      { role: "user", content: "Continue" },
+    ];
+
+    const result = await compressContext(messages, cfg, {
+      fromIndex: 2,
+      summary: `Legacy: {"password":"${legacySentinel}"}`,
+    });
+
+    const prompt = mocks.generateText.mock.calls[0][0].prompt as string;
+    expect(prompt).not.toContain(legacySentinel);
+    expect(prompt).toContain("[REDACTED]");
+    expect(result?.summary).not.toContain(generatedSentinel);
+    expect(result?.summary).toContain("[REDACTED]");
   });
 
   it("bounds compressed summaries", () => {

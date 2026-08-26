@@ -1,11 +1,10 @@
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   SandpackProvider,
   SandpackLayout,
   SandpackCodeEditor,
   SandpackPreview,
   SandpackConsole,
-  RoundedButton,
 } from "@codesandbox/sandpack-react";
 import type { SandpackPredefinedTemplate } from "@codesandbox/sandpack-react";
 import { Terminal } from "lucide-react";
@@ -17,12 +16,18 @@ import { ViewToolbar } from "./code-viewer/ViewToolbar";
 import { FileExplorer } from "./code-viewer/FileExplorer";
 import type { ViewMode, DeviceSize } from "./code-viewer/ViewToolbar";
 import type { ProjectFiles } from "../types";
+import {
+  hasSensitiveProjectFileContent,
+  projectFilesForPreview,
+} from "../lib/utils/project-file-policy";
+import { TooltipIconButton } from "@/components/ui/tooltip-icon-button";
 
 interface CodeViewerProps {
+  conversationId: string;
   files: ProjectFiles;
   currentFile: string;
   onFileSelect: (path: string) => void;
-  onFileChange: (path: string, content: string) => void;
+  onFileChange: (conversationId: string, path: string, content: string) => void;
   onRenameFile: (oldPath: string, newPath: string) => void;
   onDeleteFile: (path: string) => void;
   onMoveFile: (sourcePath: string, targetFolder: string) => void;
@@ -31,6 +36,7 @@ interface CodeViewerProps {
 }
 
 export function CodeViewer({
+  conversationId,
   files,
   currentFile,
   onFileSelect,
@@ -45,23 +51,85 @@ export function CodeViewer({
   const [viewMode, setViewMode] = useState<ViewMode>("preview");
   const [deviceSize, setDeviceSize] = useState<DeviceSize>("desktop");
   const [showConsole, setShowConsole] = useState(false);
+  const [requestedScale, setRequestedScale] = useState<number | null>(null);
+  const [fitScale, setFitScale] = useState(1);
+  const previewHostRef = useRef<HTMLDivElement>(null);
   const isDark = useTheme();
 
-  const sandpackFiles = Object.fromEntries(
-    Object.entries(files).map(([path, content]) => [
-      path.startsWith("/") ? path : `/${path}`,
-      { code: content },
-    ]),
+  const deviceDimensions =
+    deviceSize === "tablet"
+      ? { width: 768, height: 1024 }
+      : { width: 375, height: 667 };
+  const previewScale =
+    deviceSize === "desktop" ? 1 : (requestedScale ?? fitScale);
+
+  useEffect(() => {
+    if (deviceSize === "desktop") return;
+    const host = previewHostRef.current;
+    if (!host) return;
+    const update = () => {
+      const rect = host.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      setFitScale(
+        Math.min(
+          1,
+          Math.max(
+            0.25,
+            Math.min(
+              (rect.width - 32) / deviceDimensions.width,
+              (rect.height - 32) / deviceDimensions.height,
+            ),
+          ),
+        ),
+      );
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [deviceDimensions.height, deviceDimensions.width, deviceSize, viewMode]);
+
+  const handleDeviceSizeChange = (next: DeviceSize) => {
+    setDeviceSize(next);
+    setRequestedScale(null);
+  };
+
+  const previewFiles = useMemo(() => projectFilesForPreview(files), [files]);
+  const handleSandpackFileChange = useCallback(
+    (targetConversationId: string, path: string, content: string) => {
+      const canonical = files[path];
+      if (
+        canonical !== undefined &&
+        hasSensitiveProjectFileContent(canonical)
+      ) {
+        return;
+      }
+      onFileChange(targetConversationId, path, content);
+    },
+    [files, onFileChange],
+  );
+  const sandpackFiles = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(previewFiles).map(([path, content]) => [
+          path.startsWith("/") ? path : `/${path}`,
+          { code: content },
+        ]),
+      ),
+    [previewFiles],
   );
 
-  const sandpackCurrentFile = currentFile.startsWith("/")
-    ? currentFile
-    : `/${currentFile}`;
+  const requestedCurrentFile = currentFile.replace(/^\/+/, "");
+  const effectiveCurrentFile =
+    requestedCurrentFile in previewFiles
+      ? requestedCurrentFile
+      : (Object.keys(previewFiles)[0] ?? requestedCurrentFile);
+  const sandpackCurrentFile = `/${effectiveCurrentFile}`;
 
   const handleCreateFile = (path: string) => {
     const p = path.startsWith("/") ? path.slice(1) : path;
     if (!(p in files)) {
-      onFileChange(p, "// New file\n");
+      onFileChange(conversationId, p, "// New file\n");
       onFileSelect(p);
     }
   };
@@ -69,7 +137,7 @@ export function CodeViewer({
   const handleCreateFolder = (path: string) => {
     const p = path.startsWith("/") ? path.slice(1) : path;
     // Use trailing "/" to represent empty folder, no .gitkeep needed
-    if (!(`${p}/` in files)) onFileChange(`${p}/`, "");
+    if (!(`${p}/` in files)) onFileChange(conversationId, `${p}/`, "");
   };
 
   return (
@@ -78,8 +146,16 @@ export function CodeViewer({
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         deviceSize={deviceSize}
-        onDeviceSizeChange={setDeviceSize}
+        onDeviceSizeChange={handleDeviceSizeChange}
         files={files}
+        previewScale={previewScale}
+        onPreviewZoomIn={() =>
+          setRequestedScale(Math.min(1.5, previewScale + 0.1))
+        }
+        onPreviewZoomOut={() =>
+          setRequestedScale(Math.max(0.25, previewScale - 0.1))
+        }
+        onPreviewFit={() => setRequestedScale(null)}
       />
 
       <div className="flex-1 overflow-hidden relative bg-muted/50">
@@ -91,57 +167,84 @@ export function CodeViewer({
           options={{ activeFile: sandpackCurrentFile }}
           style={{ height: "100%" }}
         >
-          <SandpackListener onFileChange={onFileChange} />
+          <SandpackListener
+            conversationId={conversationId}
+            onFileChange={handleSandpackFileChange}
+          />
           <SandpackLayout>
             {/* Preview */}
             <div
+              ref={previewHostRef}
               className={cn(
-                "transition-[width,height,transform,opacity] duration-300 mx-auto",
+                "h-full w-full",
                 viewMode === "preview" ? "block" : "hidden",
-                deviceSize === "desktop" && "w-full h-full",
-                deviceSize !== "desktop" &&
-                  "my-4 shadow-lg border rounded-lg overflow-hidden bg-background",
+                deviceSize === "desktop"
+                  ? "overflow-hidden"
+                  : "overflow-auto p-4",
               )}
-              style={
-                deviceSize === "tablet"
-                  ? { width: 768, height: 1024, maxHeight: "calc(100% - 2rem)" }
-                  : deviceSize === "mobile"
-                    ? {
-                        width: 375,
-                        height: 667,
-                        maxHeight: "calc(100% - 2rem)",
-                      }
-                    : { height: "100%" }
-              }
             >
-              <div className="grid grid-rows-3 h-full">
+              <div
+                className={cn(
+                  "mx-auto",
+                  deviceSize !== "desktop" && "relative",
+                )}
+                style={
+                  deviceSize === "desktop"
+                    ? { width: "100%", height: "100%" }
+                    : {
+                        width: deviceDimensions.width * previewScale,
+                        height: deviceDimensions.height * previewScale,
+                      }
+                }
+              >
                 <div
                   className={cn(
-                    "transition-[width,height,transform,opacity] duration-300 ease-in-out",
-                    showConsole ? "row-span-2" : "row-span-3",
+                    "grid grid-rows-3 h-full",
+                    deviceSize !== "desktop" &&
+                      "absolute left-0 top-0 overflow-hidden rounded-lg border bg-background shadow-lg",
                   )}
+                  style={
+                    deviceSize === "desktop"
+                      ? undefined
+                      : {
+                          width: deviceDimensions.width,
+                          height: deviceDimensions.height,
+                          transform: `scale(${previewScale})`,
+                          transformOrigin: "top left",
+                        }
+                  }
                 >
-                  <SandpackPreview
-                    showNavigator
-                    showOpenInCodeSandbox={false}
-                    showRefreshButton
-                    actionsChildren={
-                      <RoundedButton
-                        onClick={() => setShowConsole(!showConsole)}
-                        title={showConsole ? t.console.hide : t.console.show}
-                      >
-                        <Terminal size={16} />
-                      </RoundedButton>
-                    }
-                  />
-                </div>
-                <div
-                  className={cn(
-                    "overflow-hidden border-t",
-                    showConsole ? "row-span-1" : "max-h-0 border-t-0",
-                  )}
-                >
-                  <SandpackConsole showSyntaxError={true} />
+                  <div
+                    className={cn(
+                      "transition-[width,height,transform,opacity] duration-300 ease-in-out",
+                      showConsole ? "row-span-2" : "row-span-3",
+                    )}
+                  >
+                    <SandpackPreview
+                      showNavigator
+                      showOpenInCodeSandbox={false}
+                      showRefreshButton
+                      actionsChildren={
+                        <TooltipIconButton
+                          label={showConsole ? t.console.hide : t.console.show}
+                          type="button"
+                          size="icon-sm"
+                          variant="ghost"
+                          onClick={() => setShowConsole(!showConsole)}
+                        >
+                          <Terminal size={16} />
+                        </TooltipIconButton>
+                      }
+                    />
+                  </div>
+                  <div
+                    className={cn(
+                      "overflow-hidden border-t",
+                      showConsole ? "row-span-1" : "max-h-0 border-t-0",
+                    )}
+                  >
+                    <SandpackConsole showSyntaxError={true} />
+                  </div>
                 </div>
               </div>
             </div>
@@ -155,7 +258,7 @@ export function CodeViewer({
             >
               <div className="w-56 border-r h-full shrink-0 overflow-hidden flex flex-col">
                 <FileExplorer
-                  files={files}
+                  files={previewFiles}
                   currentFile={currentFile}
                   onFileSelect={onFileSelect}
                   onCreateFile={handleCreateFile}

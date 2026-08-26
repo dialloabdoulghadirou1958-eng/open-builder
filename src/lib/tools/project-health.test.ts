@@ -161,4 +161,27 @@ describe("createProjectHealthCheckHandler", () => {
     expect(output.summary.errors).toBeGreaterThan(0);
     expect(output.summary.warnings).toBeGreaterThan(0);
   });
+
+  it("omits live console state in isolated Auto QA runs", () => {
+    const handler = createProjectHealthCheckHandler({
+      getFiles: () => ({
+        "index.html":
+          '<html><head><title>App</title><meta name="viewport" content="width=device-width"></head></html>',
+      }),
+      getConsoleLogs: () => [
+        { method: "error", data: ["Authorization: Bearer secret-sentinel"] },
+      ],
+    });
+
+    const output = handler("project_health_check", { include_console: true }, {
+      run: { mode: "auto_qa" },
+    } as unknown as NonNullable<Parameters<typeof handler>[2]>);
+
+    expect(output).not.toContain("secret-sentinel");
+    expect(JSON.parse(output).issues).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ category: "runtime" }),
+      ]),
+    );
+  });
 });

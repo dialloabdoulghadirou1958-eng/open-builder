@@ -2,6 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, PanelLeftClose, Search, Library } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useConversationStore, DEFAULT_TITLE } from "../../store/conversation";
 import { useProjectTemplateStore } from "../../store/project-templates";
 import { useSettingsStore } from "../../store/settings";
@@ -278,41 +283,59 @@ export function SessionList({ onClose }: SessionListProps) {
     ) : null;
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-background">
-      <div className="px-3 py-2.5 border-b flex items-center justify-between">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onClose}
-          title={t.header.sessions}
-          aria-label={t.sessions.close}
-          className="h-8 w-8"
-        >
-          <PanelLeftClose size={18} />
-        </Button>
-        <span className="text-sm font-medium">{t.sessions.title}</span>
+    <nav
+      aria-label={t.sessions.title}
+      className="flex h-full flex-col overflow-hidden bg-background"
+    >
+      <header className="flex items-center justify-between border-b px-3 py-2.5">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              aria-label={t.sessions.close}
+              className="h-8 w-8"
+            >
+              <PanelLeftClose size={18} aria-hidden="true" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t.sessions.close}</TooltipContent>
+        </Tooltip>
+        <h2 className="text-sm font-medium">{t.sessions.title}</h2>
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => openTemplates()}
-            title={t.sessions.templates.title}
-            aria-label={t.sessions.templates.title}
-          >
-            <Library size={17} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={handleNew}
-            aria-label={t.commandPalette.actions.newConversation}
-          >
-            <Plus size={18} />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => openTemplates()}
+                aria-label={t.sessions.templates.title}
+              >
+                <Library size={17} aria-hidden="true" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t.sessions.templates.title}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={handleNew}
+                aria-label={t.commandPalette.actions.newConversation}
+              >
+                <Plus size={18} aria-hidden="true" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {t.commandPalette.actions.newConversation}
+            </TooltipContent>
+          </Tooltip>
         </div>
-      </div>
+      </header>
       <div className="px-3 py-3">
         <div className="relative">
           <Search
@@ -416,6 +439,6 @@ export function SessionList({ onClose }: SessionListProps) {
           onDeleteTemplate={deleteTemplate}
         />
       )}
-    </div>
+    </nav>
   );
 }

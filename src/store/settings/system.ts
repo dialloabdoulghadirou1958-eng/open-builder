@@ -10,6 +10,7 @@ export interface SystemSettings {
   reverseProxyAllowedHosts: string;
   planModeEnabled: boolean;
   autoQaEnabled: boolean;
+  developerSkillScriptsEnabled: boolean;
 }
 
 export const systemDefaults: SystemSettings = {
@@ -19,6 +20,7 @@ export const systemDefaults: SystemSettings = {
   reverseProxyAllowedHosts: "",
   planModeEnabled: false,
   autoQaEnabled: false,
+  developerSkillScriptsEnabled: false,
 };
 
 export interface SystemSlice {
@@ -27,15 +29,19 @@ export interface SystemSlice {
   setPlanMode: (enabled: boolean) => void;
 }
 
-export const createSystemSlice: StateCreator<SystemSlice, [], [], SystemSlice> =
-  (set) => ({
-    system: systemDefaults,
-    setSystem: (settings) => set({ system: settings }),
-    setPlanMode: (enabled) =>
-      set((state) => ({
-        system: {
-          ...state.system,
-          planModeEnabled: enabled,
-        },
-      })),
-  });
+export const createSystemSlice: StateCreator<
+  SystemSlice,
+  [],
+  [],
+  SystemSlice
+> = (set) => ({
+  system: systemDefaults,
+  setSystem: (settings) => set({ system: settings }),
+  setPlanMode: (enabled) =>
+    set((state) => ({
+      system: {
+        ...state.system,
+        planModeEnabled: enabled,
+      },
+    })),
+});

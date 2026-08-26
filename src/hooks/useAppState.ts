@@ -24,6 +24,11 @@ export function useAppState() {
   const setIsProjectInitialized = useConversationStore(
     (s) => s.setIsProjectInitialized,
   );
+  const setCurrentFile = useConversationStore((s) => s.setActiveFile);
+  const currentFile =
+    activeConv?.activeFile && activeConv.activeFile in files
+      ? activeConv.activeFile
+      : (Object.keys(files)[0] ?? "src/App.tsx");
 
   // ── Settings state from zustand ──
   const settings = useSettingsStore((s) => s.ai);
@@ -41,10 +46,17 @@ export function useAppState() {
   const handleSaveSettings = setAI;
   const handleSaveWebSearchSettings = setWebSearch;
   const handleSaveAssetSearchSettings = setAssetSearch;
-  const handleSaveSystemSettings = setSystem;
+  const handleSaveSystemSettings = useCallback(
+    (next: typeof systemSettings) => {
+      setSystem(next);
+      void import("../lib/infra/proxy").then(({ applyProxyPolicy }) => {
+        applyProxyPolicy(next.reverseProxy, next.reverseProxyAllowedHosts);
+      });
+    },
+    [setSystem],
+  );
 
   // ── Ephemeral UI state ──
-  const [currentFile, setCurrentFile] = useState("src/App.tsx");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [sandpackKey, setSandpackKey] = useState(0);

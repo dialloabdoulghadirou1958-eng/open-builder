@@ -1,4 +1,5 @@
 import { truncateText } from "./network-guard";
+import { redactSensitiveText } from "../utils/message-security";
 
 export const CONSOLE_LOG_LIMITS = {
   maxLogs: 30,
@@ -41,7 +42,7 @@ export function formatConsoleLogLine(log: ConsoleLog): string {
   const text = limitedItems
     .map((item) => {
       const part = truncateText(
-        stringifyConsoleItem(item),
+        redactSensitiveText(stringifyConsoleItem(item)),
         CONSOLE_LOG_LIMITS.maxItemChars,
       );
       return part.truncated ? `${part.text} [truncated]` : part.text;

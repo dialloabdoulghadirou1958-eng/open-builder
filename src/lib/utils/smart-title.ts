@@ -7,12 +7,18 @@ export async function generateSmartTitle(
   messages: Message[],
   cfg: ProviderConfig,
 ): Promise<string | null> {
-  const hasUser = messages.some((m) => m.role === "user");
+  const hasUser = messages.some(
+    (m) => m.role === "user" && m.metadata?.origin !== "auto_qa",
+  );
   const hasAssistant = messages.some((m) => m.role === "assistant");
   if (!hasUser || !hasAssistant) return null;
 
   const relevant = messages
-    .filter((m) => m.role === "user" || m.role === "assistant")
+    .filter(
+      (m) =>
+        m.role === "assistant" ||
+        (m.role === "user" && m.metadata?.origin !== "auto_qa"),
+    )
     .slice(0, 6)
     .map((m) => {
       const text =

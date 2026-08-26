@@ -4,9 +4,9 @@
 
 **AI-Powered Web App Generator — Describe in natural language, instantly generate runnable projects**
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-7.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-8.x-646CFF?logo=vite&logoColor=white)](https://vitejs.dev)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4.x-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![Tauri](https://img.shields.io/badge/Tauri-2.x-FFC131?logo=tauri&logoColor=white)](https://tauri.app)
@@ -21,11 +21,11 @@ English | [简体中文](README.zh-CN.md)
 
 ## Introduction
 
-Open Builder is an AI-driven web app generator that runs entirely in the browser. Simply describe the application you want to build in natural language, and the AI will automatically create, modify, and delete files in an in-memory file system through a Tool Call loop, with live preview powered by [Sandpack](https://sandpack.codesandbox.io/).
+Open Builder is a desktop-first AI web app generator with a browser-compatible interface. Simply describe the application you want to build in natural language, and the AI will create, modify, and delete files in an in-memory file system through a Tool Call loop, with live preview powered by [Sandpack](https://sandpack.codesandbox.io/).
 
 No backend server is required. All computation can happen in the browser, and provider settings, including API keys, are stored in browser local storage. API keys are sent only to the providers you configure.
 
-It also supports building as a desktop app (macOS / Windows / Linux) and mobile app (iOS / Android) via [Tauri](https://tauri.app), delivering a native application experience.
+The Tauri desktop build (macOS / Windows / Linux) provides local runtime capabilities such as stdio MCP. Web and experimental mobile builds intentionally omit local process and Skill script execution.
 
 > An API service compatible with a wide range of mainstream models—such as OpenAI, Anthropic, Google, Ollama, and others.
 
@@ -63,8 +63,8 @@ It also supports building as a desktop app (macOS / Windows / Linux) and mobile 
 - **Project Templates** — Save generated projects as reusable local templates and start new sessions from them
 - **Smart Session Naming** — Auto-generates session titles based on conversation content
 - **Slash Commands** — Input box supports `/compact`, `/review`, and other shortcut commands
-- **Image & File Input** — Upload screenshots, design mockups, or files as context input
-- **Skills System** — Auto-match installed skill metadata or force one or more skills for the next message; Web creates text-only skills while desktop also supports package imports, references, and scripts
+- **Image & File Input** — Upload screenshots, text files, or PDFs; PDF-capable models receive PDFs as native file input without local text extraction
+- **Skills System** — Auto-match installed skill metadata or force one or more skills for the next message; imported Skills are disabled by default, and desktop scripts require the developer switch plus approval for every invocation
 - **Local Settings** — Provider configuration and API keys persist in browser local storage
 - **Storage Governance** — Inspect local data usage and safely clean archived sessions, empty sessions, and old snapshots
 - **Streaming Output** — Real-time display of AI thinking process and code generation progress
@@ -129,12 +129,12 @@ pnpm tauri:android:build
 
 Click the settings button in the top-right corner and fill in:
 
-| Option         | Description                   | Example                                      |
-| -------------- | ----------------------------- | -------------------------------------------- |
-| API Key        | Your AI service API key       | `sk-...`                                     |
-| API URL        | OpenAI-compatible endpoint    | `https://api.openai.com/v1/chat/completions` |
-| Model Name     | Model ID to use               | `gpt-5.3-codex`, `deepseek-chat`             |
-| Tavily API Key | (Optional) Web search feature | `tvly-...`                                   |
+| Option         | Description                   | Example                          |
+| -------------- | ----------------------------- | -------------------------------- |
+| API Key        | Your AI service API key       | `sk-...`                         |
+| API Base URL   | Provider origin/base path     | `https://api.openai.com`         |
+| Model Name     | Model ID to use               | `gpt-5.3-codex`, `deepseek-chat` |
+| Tavily API Key | (Optional) Web search feature | `tvly-...`                       |
 
 > Settings and API keys are stored in browser local storage. Treat the browser profile and device as part of your credential security boundary.
 
@@ -156,37 +156,37 @@ User Message → AI Planning → Tool Call → Execute → Return Result → AI 
 
 Built-in tools:
 
-| Tool                     | Description                                       |
-| ------------------------ | ------------------------------------------------- |
-| `init_project`           | Initialize Sandpack project template              |
-| `manage_dependencies`    | Modify package.json to manage dependencies        |
-| `list_files`             | List all project files                            |
-| `read_files`             | Batch read file contents                          |
-| `write_file`             | Create or overwrite a file                        |
-| `patch_file`             | Precise search-and-replace patch                  |
-| `delete_file`            | Delete a file                                     |
-| `rename_file` / `move_file` | Rename or move files while updating relative imports |
-| `search_in_files`        | Global file content search                        |
-| `get_console_logs`       | Read Sandpack preview console output              |
-| `compact_context`        | Compress long conversation context                |
-| `ask_user_question`      | Ask the user for key clarifications               |
-| `exit_plan_mode`         | Submit a plan and wait for user approval          |
-| `dispatch_subagent`      | Dispatch read-only subagents for exploration, review, or diagnosis |
-| `project_health_check`   | Inspect project structure, package files, env schema, console logs, accessibility, and responsive risks |
-| `web_search`             | Web search (supports Built-in, Tavily, Firecrawl) |
-| `web_reader`             | Read web page content                             |
-| `image_search`           | Image search (supports Pixabay, Unsplash)         |
-| `search_npm_packages`    | NPM package search                                |
-| `get_npm_package_detail` | Get detailed information about NPM package        |
-| `list_skills` / `read_skill` | Discover and load auto-matched or forced skills |
-| `execute_skill_script` | Run an active skill script in the desktop app only |
-| `read_env_schema` / `manage_env` | Safely inspect and manage env files       |
+| Tool                             | Description                                                                                             |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `init_project`                   | Initialize Sandpack project template                                                                    |
+| `manage_dependencies`            | Modify package.json to manage dependencies                                                              |
+| `list_files`                     | List all project files                                                                                  |
+| `read_files`                     | Batch read file contents                                                                                |
+| `write_file`                     | Create or overwrite a file                                                                              |
+| `patch_file`                     | Precise search-and-replace patch                                                                        |
+| `delete_file`                    | Delete a file                                                                                           |
+| `rename_file` / `move_file`      | Rename or move files while updating relative imports                                                    |
+| `search_in_files`                | Global file content search                                                                              |
+| `get_console_logs`               | Read Sandpack preview console output                                                                    |
+| `compact_context`                | Compress long conversation context                                                                      |
+| `ask_user_question`              | Ask the user for key clarifications                                                                     |
+| `exit_plan_mode`                 | Submit a plan and wait for user approval                                                                |
+| `dispatch_subagent`              | Dispatch read-only subagents for exploration, review, or diagnosis                                      |
+| `project_health_check`           | Inspect project structure, package files, env schema, console logs, accessibility, and responsive risks |
+| `web_search`                     | Web search (supports Built-in, Tavily, Firecrawl)                                                       |
+| `web_reader`                     | Read web page content                                                                                   |
+| `image_search`                   | Image search (supports Pixabay, Unsplash)                                                               |
+| `search_npm_packages`            | NPM package search                                                                                      |
+| `get_npm_package_detail`         | Get detailed information about NPM package                                                              |
+| `list_skills` / `read_skill`     | Discover and load auto-matched or forced skills                                                         |
+| `execute_skill_script`           | Run an active skill script in the desktop app only                                                      |
+| `read_env_schema` / `manage_env` | Safely inspect and manage env files                                                                     |
 
 ### Tech Stack
 
 | Category       | Technology                        |
 | -------------- | --------------------------------- |
-| Framework      | React 19 + TypeScript 7           |
+| Framework      | React 19 + TypeScript 6           |
 | Build Tool     | Vite 8                            |
 | Styling        | Tailwind CSS v4                   |
 | UI Components  | shadcn/ui + Radix UI              |
@@ -203,16 +203,16 @@ Built-in tools:
 
 Open Builder is compatible with the API formats of mainstream large language models:
 
-| Provider  | Recommended Models                   | API URL                                                              |
-| --------- | ------------------------------------ | -------------------------------------------------------------------- |
-| OpenAI    | `gpt-5.3-codex`, `gpt-5.2`           | `https://api.openai.com/v1/responses`                                |
-| Anthropic | `claude-4.6-sonnet`, `claude-opus-4` | `https://api.anthropic.com/v1/messages`                              |
-| Google    | `gemini-2.0-flash-exp`               | `https://generativelanguage.googleapis.com/v1beta/models`            |
-| DeepSeek  | `deepseek-chat`, `deepseek-reasoner` | `https://api.deepseek.com/v1/chat/completions`                       |
-| Qwen      | `qwen-3.5`, `qwen3-coder-plus`       | `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions` |
-| Moonshot  | `kimi-k2.5`                          | `https://api.moonshot.cn/v1/chat/completions`                        |
-| Zhipu AI  | `glm-5`                              | `https://open.bigmodel.cn/api/paas/v4/chat/completions`              |
-| Ollama    | `gpt-oss:120b`、`qwen3:8b`           | `http://localhost:11434/v1/chat/completions`                         |
+| Provider  | Recommended Models                   | API Base URL                                     |
+| --------- | ------------------------------------ | ------------------------------------------------ |
+| OpenAI    | `gpt-5.3-codex`, `gpt-5.2`           | `https://api.openai.com`                         |
+| Anthropic | `claude-4.6-sonnet`, `claude-opus-4` | `https://api.anthropic.com`                      |
+| Google    | `gemini-2.0-flash-exp`               | `https://generativelanguage.googleapis.com`      |
+| DeepSeek  | `deepseek-chat`, `deepseek-reasoner` | `https://api.deepseek.com`                       |
+| Qwen      | `qwen-3.5`, `qwen3-coder-plus`       | `https://dashscope.aliyuncs.com/compatible-mode` |
+| Moonshot  | `kimi-k2.5`                          | `https://api.moonshot.cn`                        |
+| Zhipu AI  | `glm-5`                              | `https://open.bigmodel.cn/api/paas/v4`           |
+| Ollama    | `gpt-oss:120b`, `qwen3:8b`           | `http://localhost:11434`                         |
 
 > For best results, use a model with strong Function Calling support.
 
@@ -229,12 +229,7 @@ pnpm build
 
 ### GitHub Pages
 
-GitHub Actions is configured — push a version tag to auto-build and deploy:
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
+GitHub Actions builds and deploys Pages when `main` is updated (or when the workflow is started manually). The workflow sets Vite's base path to the repository subpath, including the static MCP OAuth callback entry. A `v*` tag creates a separate draft desktop release after all quality gates pass; it does not deploy Pages.
 
 See [.github/workflows/deploy.yml](.github/workflows/deploy.yml).
 

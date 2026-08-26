@@ -13,6 +13,12 @@ export const TOOL_ERROR_MAX_CHARS = 500;
 export const TOOL_QUERY_MAX_CHARS = 300;
 export const TOOL_URL_MAX_CHARS = 2_048;
 
+function formatByteLimit(bytes: number): string {
+  return bytes >= 1024 * 1024
+    ? `${Math.round(bytes / 1024 / 1024)} MB`
+    : `${Math.round(bytes / 1024)} KB`;
+}
+
 export class ToolTimeoutError extends Error {
   constructor(timeoutMs: number) {
     super(`Request timed out after ${timeoutMs}ms`);
@@ -63,7 +69,8 @@ export function truncateText(
   text: unknown,
   maxChars: number,
 ): { text: string; truncated: boolean; originalLength: number } {
-  const value = typeof text === "string" ? text : text == null ? "" : String(text);
+  const value =
+    typeof text === "string" ? text : text == null ? "" : String(text);
   return {
     text: value.length > maxChars ? value.slice(0, maxChars) : value,
     truncated: value.length > maxChars,
@@ -145,7 +152,9 @@ export function normalizeHttpUrl(
 export function normalizeHttpUrlList(
   value: unknown,
   maxUrls: number,
-): { ok: true; urls: string[]; truncated: boolean } | { ok: false; error: string } {
+):
+  | { ok: true; urls: string[]; truncated: boolean }
+  | { ok: false; error: string } {
   if (!Array.isArray(value) || value.length === 0) {
     return { ok: false, error: "urls must be a non-empty array" };
   }
@@ -181,12 +190,68 @@ export async function fetchWithTimeout(
   }
 }
 
+export async function readResponseBytesWithLimit(
+  response: Response,
+  maxBytes: number,
+  label: string,
+): Promise<Uint8Array> {
+  const contentLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw new Error(`${label} exceeds ${formatByteLimit(maxBytes)} limit.`);
+  }
+  if (!response.body) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > maxBytes) {
+      throw new Error(`${label} exceeds ${formatByteLimit(maxBytes)} limit.`);
+    }
+    return bytes;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new Error(`${label} exceeds ${formatByteLimit(maxBytes)} limit.`);
+    }
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+export async function readResponseTextWithLimit(
+  response: Response,
+  maxBytes: number,
+  label: string,
+): Promise<string> {
+  return new TextDecoder("utf-8", { fatal: false }).decode(
+    await readResponseBytesWithLimit(response, maxBytes, label),
+  );
+}
+
 export async function mapWithConcurrency<T, R>(
   items: T[],
   limit: number,
   mapper: (item: T, index: number) => Promise<R>,
 ): Promise<R[]> {
-  const concurrency = clampInt(limit, TOOL_MAX_CONCURRENCY, 1, items.length || 1);
+  const concurrency = clampInt(
+    limit,
+    TOOL_MAX_CONCURRENCY,
+    1,
+    items.length || 1,
+  );
   const results: R[] = new Array(items.length);
   let nextIndex = 0;
 

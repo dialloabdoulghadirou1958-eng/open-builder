@@ -8,29 +8,43 @@ import { streamText, generateText } from "ai";
 import type { ToolSet } from "ai";
 import { getProviderModel, buildProviderOptions } from "./provider";
 import type { ApiType } from "./provider";
-import { messagesToModelMessages } from "./messages";
-import { BUILTIN_TOOLS } from "./tools-schema";
+import {
+  messagesToModelMessages,
+  untrustedReferenceToModelMessages,
+} from "./messages";
+import {
+  BUILTIN_TOOLS,
+  TOOL_POLICY_VERSION,
+  getToolCapability,
+  type ExecutionMode,
+  type RuntimePlatform,
+  type ToolRunContext,
+} from "./tools-schema";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt";
 import { buildProjectGuidelinesSection } from "./project-guidelines";
 import { isWriteToolName } from "./tools-schema";
-import {
-  PLAN_APPROVED_PREFIX,
-  PLAN_REJECTED_PREFIX,
-} from "./plan-mode";
+import { PLAN_APPROVED_PREFIX, PLAN_REJECTED_PREFIX } from "./plan-mode";
 import { dispatchFsTool } from "../tools/fs-tools";
 import {
   formatAskUserAnswers,
+  normalizeToolExecutionOutput,
   normalizeToolResultForModel,
 } from "../utils/tool-result";
 import {
   buildProjectFilesPromptListing,
   validateProjectFiles,
 } from "../utils/project-files";
+import {
+  pickSensitiveProjectFiles,
+  projectFilesForModel,
+} from "../utils/project-file-policy";
 import { normalizeSubagentTask } from "./subagents/limits";
 import {
   ALWAYS_ALLOWED_TOOL_NAMES,
-  skillActiveContext,
+  createSkillActiveContext,
 } from "../skills/active-context";
+import type { SkillActiveContextController } from "../skills/active-context";
+import { recordPermissionActivity } from "../security/activity-log";
 import type {
   Message,
   ToolCall,
@@ -41,6 +55,8 @@ import type {
   GeneratorOptions,
   GeneratorEvents,
   AskUserQuestion,
+  ToolExecutionOutput,
+  ResolvedAttachment,
 } from "./generator-types";
 
 // Re-export everything so callers can keep importing types from this module.
@@ -58,6 +74,10 @@ export type {
   GenerateResult,
   GeneratorOptions,
   GeneratorEvents,
+  ToolExecutionContent,
+  ToolExecutionContext,
+  ToolExecutionOutput,
+  McpToolExecutionIdentity,
 } from "./generator-types";
 
 export class WebAppGenerator {
@@ -76,7 +96,7 @@ export class WebAppGenerator {
   private readonly maxIterations: number;
   private readonly useStream: boolean;
   private tools: ToolSet;
-  private readonly customToolSet: ToolSet;
+  private customToolSet: ToolSet;
   private readonly customToolHandler?: GeneratorOptions["customToolHandler"];
   private readonly useThinking: boolean;
   private readonly thinkingBudget: number;
@@ -88,7 +108,13 @@ export class WebAppGenerator {
   private readonly onPlanApproved?: GeneratorOptions["onPlanApproved"];
   private readonly dispatchSubagent?: GeneratorOptions["dispatchSubagent"];
   private systemPromptSuffix: string = "";
+  private untrustedReferenceContext: string = "";
   private readOnlyMode = false;
+  private executionMode: ExecutionMode;
+  private readonly runtimePlatform: RuntimePlatform;
+  private allowedMcpAliases: ReadonlySet<string>;
+  private readonly skillContext: SkillActiveContextController;
+  private runId: string;
 
   constructor(options: GeneratorOptions, events: GeneratorEvents = {}) {
     this.apiType = options.apiType ?? "openai-compatible";
@@ -112,6 +138,13 @@ export class WebAppGenerator {
     this.requestPlanApproval = options.requestPlanApproval;
     this.onPlanApproved = options.onPlanApproved;
     this.dispatchSubagent = options.dispatchSubagent;
+    this.executionMode = options.executionMode ?? "chat";
+    this.runtimePlatform = options.runtimePlatform ?? "web";
+    this.allowedMcpAliases = new Set(options.allowedMcpAliases ?? []);
+    this.skillContext = createSkillActiveContext(
+      options.initialSkillContext ?? null,
+    );
+    this.runId = this.createRunId();
 
     this.files = { ...(options.initialFiles ?? {}) };
     this.messages = [];
@@ -144,6 +177,10 @@ export class WebAppGenerator {
     this.systemPromptSuffix = suffix;
   }
 
+  setUntrustedReferenceContext(reference: string): void {
+    this.untrustedReferenceContext = reference;
+  }
+
   /** Replace the tool set used on subsequent iterations.
    *  Used to switch between plan-mode (no write tools) and full tool set after plan approval.
    *  The provided set is used as-is — the caller is responsible for including any builtins it wants. */
@@ -153,10 +190,45 @@ export class WebAppGenerator {
 
   setReadOnlyMode(readOnly: boolean): void {
     this.readOnlyMode = readOnly;
+    if (this.executionMode !== "subagent" && this.executionMode !== "auto_qa") {
+      this.executionMode = readOnly ? "plan" : "chat";
+    }
+  }
+
+  setExecutionMode(mode: ExecutionMode): void {
+    this.executionMode = mode;
+    this.readOnlyMode = mode === "plan" || mode === "subagent";
+  }
+
+  setAllowedMcpAliases(aliases: ReadonlySet<string>): void {
+    this.allowedMcpAliases = new Set(aliases);
+  }
+
+  getSkillContext(): SkillActiveContextController {
+    return this.skillContext;
+  }
+
+  getRunContext(): ToolRunContext {
+    const activeSkillIds = new Set(
+      this.skillContext.snapshot()?.skills.map((skill) => skill.skillId) ?? [],
+    );
+    return Object.freeze({
+      runId: this.runId,
+      mode: this.executionMode,
+      platform: this.runtimePlatform,
+      allowedMcpAliases: new Set(this.allowedMcpAliases),
+      activeSkillIds,
+      approvedSkillScriptHashes: new Set<string>(),
+      policyVersion: TOOL_POLICY_VERSION,
+    });
   }
 
   getCustomToolSet(): ToolSet {
     return this.customToolSet;
+  }
+
+  setCustomToolSet(tools: ToolSet): void {
+    this.customToolSet = tools;
   }
 
   abort(): void {
@@ -166,24 +238,30 @@ export class WebAppGenerator {
 
   /** Retry the loop without adding a new user message (user message is already in history). */
   async retry(): Promise<GenerateResult> {
+    this.runId = this.createRunId();
     return this._runGenerateLoop();
   }
 
   async generate(
     userMessage: string,
-    attachments?: Array<{
-      type: string;
-      name: string;
-      content: string;
-      size: number;
-    }>,
+    attachments?: ResolvedAttachment[],
   ): Promise<GenerateResult> {
+    this.runId = this.createRunId();
     if (attachments && attachments.length > 0) {
       const parts: ContentPart[] = [];
       if (userMessage) parts.push({ type: "text", text: userMessage });
       for (const att of attachments) {
         if (att.type === "image") {
           parts.push({ type: "image_url", image_url: { url: att.content } });
+        } else if (att.mimeType === "application/pdf") {
+          parts.push({
+            type: "file",
+            file: {
+              data: att.content,
+              mediaType: att.mimeType,
+              filename: att.name,
+            },
+          });
         } else {
           parts.push({
             type: "text",
@@ -201,14 +279,23 @@ export class WebAppGenerator {
 
   // ═══════════════════════════ internals ══════════════════════════════════
 
+  private createRunId(): string {
+    return (
+      globalThis.crypto?.randomUUID?.() ??
+      `run-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+  }
+
   private async _runGenerateLoop(): Promise<GenerateResult> {
-    const systemContent = this.buildSystemContent();
     let fullText = "";
     let aborted = false;
     let maxReached = false;
 
     try {
       for (let iter = 0; iter < this.maxIterations; iter++) {
+        // Authorization transitions (notably Plan approval) can change the
+        // trusted suffix and untrusted reference context between iterations.
+        const systemContent = this.buildSystemContent();
         const isLastIter = iter === this.maxIterations - 1;
         const instructions = isLastIter
           ? systemContent +
@@ -231,6 +318,83 @@ export class WebAppGenerator {
           break;
         }
 
+        // Plan approval is an exclusive authorization barrier. A provider must
+        // observe the approval result and start a fresh iteration before it can
+        // use the expanded Chat schema. Never execute sibling calls that were
+        // composed while the run was still authorized only for Plan Mode.
+        const exitPlanCall = assistantMsg.tool_calls.find(
+          (toolCall) =>
+            this.executionMode === "plan" &&
+            toolCall.function.name === "exit_plan_mode" &&
+            !this.providerToolNames.has(toolCall.function.name),
+        );
+        if (exitPlanCall) {
+          const barrierContext = this.getRunContext();
+          const { result, changes } = await this.executeTool(exitPlanCall);
+          this.messages.push({
+            role: "tool",
+            tool_call_id: exitPlanCall.id,
+            content: result.text,
+            toolOutput: result,
+          });
+          if (changes.length > 0) {
+            this.events.onFileChange?.(this.getFiles(), changes);
+          }
+
+          for (const siblingCall of assistantMsg.tool_calls) {
+            if (
+              siblingCall === exitPlanCall ||
+              this.providerToolNames.has(siblingCall.function.name)
+            ) {
+              continue;
+            }
+            const output = normalizeToolExecutionOutput({
+              text:
+                `Error: tool "${siblingCall.function.name}" was discarded ` +
+                "because exit_plan_mode must be the only tool call in its response. " +
+                "Reissue it in a fresh provider iteration after plan approval.",
+              isError: true,
+            });
+            let siblingArgs: unknown = null;
+            try {
+              siblingArgs = JSON.parse(siblingCall.function.arguments);
+            } catch {
+              // Keep malformed arguments inert while still completing the tool call.
+            }
+            this.messages.push({
+              role: "tool",
+              tool_call_id: siblingCall.id,
+              content: output.text,
+              toolOutput: output,
+            });
+            recordPermissionActivity({
+              tool: siblingCall.function.name,
+              source: barrierContext.allowedMcpAliases.has(
+                siblingCall.function.name,
+              )
+                ? "mcp"
+                : (getToolCapability(siblingCall.function.name)?.source ??
+                  "unknown"),
+              mode: barrierContext.mode,
+              platform: barrierContext.platform,
+              decision: "denied",
+              reason: "exit_plan_mode exclusive authorization barrier",
+            });
+            this.events.onToolResult?.(
+              siblingCall.function.name,
+              siblingArgs,
+              output.text,
+              siblingCall.id,
+              output,
+            );
+          }
+
+          if (iter === this.maxIterations - 1) {
+            maxReached = true;
+          }
+          continue;
+        }
+
         // Split dispatch_subagent calls out — they run in parallel after the
         // regular sequential calls finish. Read-only subagents share file
         // snapshots, so parallel execution is safe.
@@ -249,37 +413,13 @@ export class WebAppGenerator {
             continue;
           }
 
-          if (
-            toolCall.function.name === "compact_context" &&
-            this.events.onCompact
-          ) {
-            const compacted = await this.events.onCompact();
-            if (compacted) {
-              this.messages = compacted;
-              this.messages.push(assistantMsg);
-            }
-            this.messages.push({
-              role: "tool",
-              tool_call_id: toolCall.id,
-              content: compacted
-                ? "OK — context compressed successfully."
-                : "Context compression skipped (not enough messages).",
-            });
-            this.events.onToolResult?.(
-              toolCall.function.name,
-              {},
-              this.messages[this.messages.length - 1].content as string,
-              toolCall.id,
-            );
-            continue;
-          }
-
           const { result, changes } = await this.executeTool(toolCall);
 
           this.messages.push({
             role: "tool",
             tool_call_id: toolCall.id,
-            content: result,
+            content: result.text,
+            toolOutput: result,
           });
 
           if (changes.length > 0) {
@@ -300,7 +440,8 @@ export class WebAppGenerator {
             this.messages.push({
               role: "tool",
               tool_call_id: accepted[i].id,
-              content: results[i].result,
+              content: results[i].result.text,
+              toolOutput: results[i].result,
             });
           }
 
@@ -380,7 +521,9 @@ export class WebAppGenerator {
   }
 
   private buildSystemContent(): string {
-    const listing = buildProjectFilesPromptListing(this.files);
+    const listing = buildProjectFilesPromptListing(
+      projectFilesForModel(this.files),
+    );
     const guidelines = buildProjectGuidelinesSection(this.files);
     return this.systemPrompt + listing + guidelines + this.systemPromptSuffix;
   }
@@ -391,7 +534,10 @@ export class WebAppGenerator {
   ): Promise<Message> {
     this.ctrl = new AbortController();
 
-    const coreMessages = messagesToModelMessages(messages, this.apiType);
+    const coreMessages = [
+      ...untrustedReferenceToModelMessages(this.untrustedReferenceContext),
+      ...messagesToModelMessages(messages, this.apiType),
+    ];
     const model = getProviderModel({
       apiType: this.apiType,
       apiBaseUrl: this.apiBaseUrl,
@@ -529,25 +675,83 @@ export class WebAppGenerator {
 
   private async executeTool(
     toolCall: ToolCall,
-  ): Promise<{ result: string; changes: FileChange[] }> {
+  ): Promise<{ result: ToolExecutionOutput; changes: FileChange[] }> {
     const name = toolCall.function.name;
+    const logDecision = (
+      decision: "allowed" | "denied" | "requested",
+      reason?: string,
+    ) => {
+      recordPermissionActivity({
+        tool: name,
+        source: this.allowedMcpAliases.has(name)
+          ? "mcp"
+          : (getToolCapability(name)?.source ?? "unknown"),
+        mode: this.executionMode,
+        platform: this.runtimePlatform,
+        decision,
+        reason,
+      });
+    };
 
     let args: any;
     try {
       args = JSON.parse(toolCall.function.arguments);
     } catch {
       const errMsg = `Error: failed to parse arguments for "${name}"`;
-      this.events.onToolResult?.(name, null, errMsg, toolCall.id);
-      return { result: errMsg, changes: [] };
+      const output = normalizeToolExecutionOutput({
+        text: errMsg,
+        isError: true,
+      });
+      this.events.onToolResult?.(name, null, output.text, toolCall.id, output);
+      return { result: output, changes: [] };
     }
 
-    const activeCtx = skillActiveContext.get();
+    if (!Object.prototype.hasOwnProperty.call(this.tools, name)) {
+      const errMsg =
+        `Error: tool "${name}" is not authorized for the current ` +
+        `${this.executionMode} run.`;
+      const output = normalizeToolExecutionOutput({
+        text: errMsg,
+        isError: true,
+      });
+      logDecision("denied", "tool is absent from the current run allowlist");
+      this.events.onToolResult?.(name, args, output.text, toolCall.id, output);
+      return { result: output, changes: [] };
+    }
+
+    const capability = getToolCapability(name);
+    const isAuthorizedMcpAlias =
+      this.executionMode !== "auto_qa" && this.allowedMcpAliases.has(name);
+    if (
+      (!capability && !isAuthorizedMcpAlias) ||
+      (capability &&
+        (!capability.modes.includes(this.executionMode) ||
+          !capability.platforms.includes(this.runtimePlatform)))
+    ) {
+      const errMsg =
+        `Error: tool "${name}" is not permitted by policy for ` +
+        `${this.executionMode} on ${this.runtimePlatform}.`;
+      const output = normalizeToolExecutionOutput({
+        text: errMsg,
+        isError: true,
+      });
+      logDecision("denied", "tool capability policy rejected execution");
+      this.events.onToolResult?.(name, args, output.text, toolCall.id, output);
+      return { result: output, changes: [] };
+    }
+
+    const activeCtx = this.skillContext.get();
     if (this.readOnlyMode && isWriteToolName(name)) {
       const errMsg =
         `Error: tool "${name}" is not available while Plan Mode is active. ` +
         "Submit or revise the plan first; write tools are enabled only after approval.";
-      this.events.onToolResult?.(name, args, errMsg, toolCall.id);
-      return { result: errMsg, changes: [] };
+      const output = normalizeToolExecutionOutput({
+        text: errMsg,
+        isError: true,
+      });
+      logDecision("denied", "write tool blocked by Plan Mode");
+      this.events.onToolResult?.(name, args, output.text, toolCall.id, output);
+      return { result: output, changes: [] };
     }
 
     if (
@@ -562,9 +766,20 @@ export class WebAppGenerator {
         `Tool "${name}" is not in the active skills ${activeNames} ` +
         `allowed-tools. Available now: ${activeCtx.allowedTools.join(", ")}. ` +
         `Work within these tools, or call read_skill on a different skill, or wait for the next user message to clear the restriction.`;
-      this.events.onToolResult?.(name, args, errMsg, toolCall.id);
-      return { result: errMsg, changes: [] };
+      const output = normalizeToolExecutionOutput({
+        text: errMsg,
+        isError: true,
+      });
+      logDecision("denied", "active Skill allowed-tools restriction");
+      this.events.onToolResult?.(name, args, output.text, toolCall.id, output);
+      return { result: output, changes: [] };
     }
+
+    logDecision(
+      getToolCapability(name)?.approval === "per_call"
+        ? "requested"
+        : "allowed",
+    );
 
     // File-system tools go through the shared dispatcher.
     const fsOutcome = await dispatchFsTool(name, args, this.files);
@@ -573,8 +788,18 @@ export class WebAppGenerator {
         const validation = validateProjectFiles(fsOutcome.newFiles);
         if (!validation.ok) {
           const errMsg = `Error: ${validation.error}`;
-          this.events.onToolResult?.(name, args, errMsg, toolCall.id);
-          return { result: errMsg, changes: [] };
+          const output = normalizeToolExecutionOutput({
+            text: errMsg,
+            isError: true,
+          });
+          this.events.onToolResult?.(
+            name,
+            args,
+            output.text,
+            toolCall.id,
+            output,
+          );
+          return { result: output, changes: [] };
         }
         this.files = fsOutcome.newFiles;
       }
@@ -588,13 +813,29 @@ export class WebAppGenerator {
         this.events.onDependenciesChange?.(this.getFiles());
       }
       const normalized = normalizeToolResultForModel(fsOutcome.result);
-      this.events.onToolResult?.(name, args, normalized.result, toolCall.id);
-      return { result: normalized.result, changes: fsOutcome.changes };
+      const output = normalizeToolExecutionOutput(normalized.result);
+      this.events.onToolResult?.(name, args, output.text, toolCall.id, output);
+      return { result: output, changes: fsOutcome.changes };
     }
 
-    let result: string;
+    let result: string | ToolExecutionOutput;
 
     switch (name) {
+      case "compact_context": {
+        const currentAssistant = this.messages.at(-1);
+        const compacted = await this.events.onCompact?.();
+        if (compacted) {
+          this.messages = [...compacted];
+          if (currentAssistant?.role === "assistant") {
+            this.messages.push(currentAssistant);
+          }
+        }
+        result = compacted
+          ? "OK — context compressed successfully."
+          : "Context compression skipped (not enough messages).";
+        break;
+      }
+
       case "ask_user_question": {
         if (!this.askUserQuestion) {
           result =
@@ -622,8 +863,7 @@ export class WebAppGenerator {
         }
         const subagentName =
           typeof args?.subagent === "string" ? args.subagent : "";
-        const subagentTask =
-          typeof args?.task === "string" ? args.task : "";
+        const subagentTask = typeof args?.task === "string" ? args.task : "";
         const checkedTask = normalizeSubagentTask(subagentTask);
         if (!subagentName) {
           result =
@@ -638,7 +878,7 @@ export class WebAppGenerator {
           const dispatched = await this.dispatchSubagent(
             subagentName,
             checkedTask.task,
-            this.files,
+            projectFilesForModel(this.files),
             this.ctrl!.signal,
             toolCall.id,
           );
@@ -648,7 +888,13 @@ export class WebAppGenerator {
           // onFileChange event with the resolved changes.
           if (dispatched.files) {
             const beforeFiles = this.files;
-            const afterFiles = dispatched.files;
+            const afterFiles = {
+              ...dispatched.files,
+              // A subagent only sees the redacted projection. Preserve the
+              // original secret-bearing files instead of writing that
+              // projection back into the canonical project tree.
+              ...pickSensitiveProjectFiles(beforeFiles),
+            };
             const validation = validateProjectFiles(afterFiles);
             if (!validation.ok) {
               result = `Error: subagent returned an invalid project: ${validation.error}`;
@@ -693,10 +939,13 @@ export class WebAppGenerator {
             args.plan as string,
           );
           if (decision.approved) {
-            const newTools = this.onPlanApproved?.();
+            const newTools = await this.onPlanApproved?.();
             if (newTools) {
               this.tools = newTools;
             }
+            // Approval changes the capability boundary. Rotate the run identity
+            // so expanded tools can only execute in the next provider iteration.
+            this.runId = this.createRunId();
             result = `${PLAN_APPROVED_PREFIX} by the user. Plan mode is now exited — proceed to implement the plan using the available write tools.`;
           } else {
             result = decision.feedback
@@ -713,7 +962,12 @@ export class WebAppGenerator {
       default:
         if (this.customToolHandler) {
           try {
-            result = await this.customToolHandler(name, args);
+            result = await this.customToolHandler(name, args, {
+              signal: this.ctrl!.signal,
+              toolCallId: toolCall.id,
+              run: this.getRunContext(),
+              skillContext: this.skillContext,
+            });
           } catch (err: any) {
             result = `Error in custom tool "${name}": ${err.message}`;
           }
@@ -722,8 +976,8 @@ export class WebAppGenerator {
         }
     }
 
-    const normalized = normalizeToolResultForModel(result);
-    this.events.onToolResult?.(name, args, normalized.result, toolCall.id);
-    return { result: normalized.result, changes: [] };
+    const output = normalizeToolExecutionOutput(result);
+    this.events.onToolResult?.(name, args, output.text, toolCall.id, output);
+    return { result: output, changes: [] };
   }
 }

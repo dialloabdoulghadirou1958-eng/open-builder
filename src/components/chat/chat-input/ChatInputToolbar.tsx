@@ -1,4 +1,6 @@
+import { lazy, Suspense, useState } from "react";
 import {
+  Cable,
   Check,
   CodeXml,
   FileText,
@@ -10,6 +12,7 @@ import {
   Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TooltipIconButton } from "@/components/ui/tooltip-icon-button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,10 +24,16 @@ import {
 import { useT } from "../../../i18n";
 import { SkillsMenu } from "./SkillsMenu";
 
+const McpMenu = lazy(() =>
+  import("./McpMenu").then((module) => ({ default: module.McpMenu })),
+);
+
 interface ChatInputToolbarProps {
   onPickImage: () => void;
   onPickFile: () => void;
   onManageSkills?: () => void;
+  onManageMcp?: () => void;
+  onReconnectMcp?: () => Promise<void> | void;
   skillsAvailable: boolean;
   skillsInitializing: boolean;
   forcedSkillIds: readonly string[];
@@ -38,10 +47,55 @@ interface ChatInputToolbarProps {
   onStop: () => void;
 }
 
+function DeferredMcpMenu({
+  onManage,
+  onReconnectAll,
+}: {
+  onManage: () => void;
+  onReconnectAll?: () => Promise<void> | void;
+}) {
+  const t = useT();
+  const [requested, setRequested] = useState(false);
+  const [open, setOpen] = useState(false);
+  const fallback = (
+    <TooltipIconButton
+      label={t.mcp.title}
+      type="button"
+      size="icon"
+      variant="ghost"
+      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+      onClick={() => {
+        setRequested(true);
+        setOpen(true);
+      }}
+    >
+      {requested ? (
+        <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+      ) : (
+        <Cable size={16} aria-hidden="true" />
+      )}
+    </TooltipIconButton>
+  );
+
+  if (!requested) return fallback;
+  return (
+    <Suspense fallback={fallback}>
+      <McpMenu
+        onManage={onManage}
+        onReconnectAll={onReconnectAll}
+        open={open}
+        onOpenChange={setOpen}
+      />
+    </Suspense>
+  );
+}
+
 export function ChatInputToolbar({
   onPickImage,
   onPickFile,
   onManageSkills,
+  onManageMcp,
+  onReconnectMcp,
   skillsAvailable,
   skillsInitializing,
   forcedSkillIds,
@@ -66,7 +120,7 @@ export function ChatInputToolbar({
               size="icon"
               variant="ghost"
               className="w-7 h-7 text-muted-foreground hover:text-foreground"
-              title={t.chat.attachment}
+              aria-label={t.chat.attachment}
             >
               <Paperclip size={16} />
             </Button>
@@ -90,6 +144,12 @@ export function ChatInputToolbar({
             initializing={skillsInitializing}
           />
         )}
+        {onManageMcp && (
+          <DeferredMcpMenu
+            onManage={onManageMcp}
+            onReconnectAll={onReconnectMcp}
+          />
+        )}
       </div>
 
       <div className="flex items-center gap-1">
@@ -100,7 +160,7 @@ export function ChatInputToolbar({
               variant="ghost"
               size="sm"
               className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
-              title={t.chat.planMode.modeMenuLabel}
+              aria-label={t.chat.planMode.modeMenuLabel}
             >
               {planModeEnabled ? <ListTodo size={14} /> : <CodeXml size={14} />}
               {planModeEnabled
@@ -156,13 +216,13 @@ export function ChatInputToolbar({
         </DropdownMenu>
 
         {isGenerating ? (
-          <Button
+          <TooltipIconButton
+            label={t.chat.stopGeneration}
             type="button"
             size="icon"
             onClick={onStop}
             variant={isHoveringStop ? "destructive" : "secondary"}
             className="w-7 h-7 transition-[opacity,transform,color,background-color,border-color] duration-200 rounded-full relative"
-            title={t.chat.stopGeneration}
             onMouseEnter={() => onHoveringStopChange(true)}
             onMouseLeave={() => onHoveringStopChange(false)}
           >
@@ -176,17 +236,17 @@ export function ChatInputToolbar({
             >
               <Square size={14} fill="currentColor" />
             </span>
-          </Button>
+          </TooltipIconButton>
         ) : (
-          <Button
+          <TooltipIconButton
+            label={t.chat.send}
             type="submit"
             size="icon"
             disabled={!hasContent}
             className="w-7 h-7"
-            title={t.chat.send}
           >
             <SendHorizonal size={16} />
-          </Button>
+          </TooltipIconButton>
         )}
       </div>
     </div>

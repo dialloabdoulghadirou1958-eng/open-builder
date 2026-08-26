@@ -2,14 +2,15 @@ import { z } from "zod";
 import { readResponseBytesWithLimit } from "./import-limits";
 import { SKILL_IMPORT_LIMITS, assertSafePath } from "./paths";
 import type { SkillManifest, SkillManifestEntry } from "./types";
+import { skillDisplayTextSchema } from "./display-text";
 
 const token = z.string().trim().min(1);
 
 const SkillManifestEntrySchema = z
   .object({
     id: token.max(SKILL_IMPORT_LIMITS.maxIdChars).regex(/^[a-zA-Z0-9._-]+$/),
-    name: token.max(64),
-    description: token.max(512),
+    name: skillDisplayTextSchema(64),
+    description: skillDisplayTextSchema(512),
     version: token.max(SKILL_IMPORT_LIMITS.maxVersionChars),
     allowedTools: z
       .array(token.max(SKILL_IMPORT_LIMITS.maxAllowedToolChars))
@@ -115,6 +116,7 @@ export async function loadSkillManifest(
   } catch (error) {
     throw new Error(
       `Failed to parse skills manifest: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
     );
   }
   return SkillManifestSchema.parse(parsed) as SkillManifest;
@@ -137,9 +139,10 @@ export async function downloadManifestSkillFiles(
           `Failed to download skill file "${path}": ${response.status} ${response.statusText}`,
         );
       }
-      const maxBytes = path === manifest.entry
-        ? SKILL_IMPORT_LIMITS.maxSkillMdBytes
-        : SKILL_IMPORT_LIMITS.maxFileBytes;
+      const maxBytes =
+        path === manifest.entry
+          ? SKILL_IMPORT_LIMITS.maxSkillMdBytes
+          : SKILL_IMPORT_LIMITS.maxFileBytes;
       const bytes = await readResponseBytesWithLimit(response, maxBytes, path);
       budget.total += bytes.byteLength;
       if (budget.total > SKILL_IMPORT_LIMITS.maxTotalBytes) {

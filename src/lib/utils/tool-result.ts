@@ -1,4 +1,5 @@
 import type { AskUserAnswers } from "../../types/api";
+import type { ToolExecutionOutput } from "../ai/generator-types";
 
 export const TOOL_RESULT_LIMITS = {
   maxModelResultChars: 160_000,
@@ -16,6 +17,24 @@ export function normalizeToolResultForModel(result: string): {
       result.slice(0, TOOL_RESULT_LIMITS.maxModelResultChars) +
       `\n\n[tool result truncated after ${TOOL_RESULT_LIMITS.maxModelResultChars} chars]`,
     truncated: true,
+  };
+}
+
+/** Preserve rich custom-tool data while keeping the legacy text contract
+ * bounded and deterministic. */
+export function normalizeToolExecutionOutput(
+  value: string | ToolExecutionOutput,
+): ToolExecutionOutput {
+  const output = typeof value === "string" ? { text: value } : value;
+  const normalized = normalizeToolResultForModel(output.text);
+  return {
+    ...output,
+    text: normalized.result,
+    modelOutput:
+      output.modelOutput ??
+      (output.isError
+        ? { type: "error-text", value: normalized.result }
+        : { type: "text", value: normalized.result }),
   };
 }
 

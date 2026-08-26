@@ -1,6 +1,7 @@
 import { createSkillFs, isSkillsAvailable } from "./fs";
 import { SkillRegistry } from "./registry";
 import { useSkillsStore } from "../../store/skills";
+import { detectRuntimePlatform } from "../runtime/platform";
 
 let registryPromise: Promise<SkillRegistry> | null = null;
 let initialized = false;
@@ -27,7 +28,10 @@ export function getSkillRegistry(): Promise<SkillRegistry> {
     }
     await waitForStoreHydration();
     const fs = createSkillFs();
-    const registry = new SkillRegistry(fs, useSkillsStore.getState());
+    const platform = await detectRuntimePlatform();
+    const registry = new SkillRegistry(fs, useSkillsStore.getState(), {
+      platform,
+    });
     if (!initialized) {
       await registry.initialize();
       initialized = true;

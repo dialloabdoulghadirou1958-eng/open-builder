@@ -91,7 +91,8 @@ export function validateAttachmentFile(
     };
   }
 
-  const nextTotal = existing.reduce((sum, item) => sum + item.size, 0) + file.size;
+  const nextTotal =
+    existing.reduce((sum, item) => sum + item.size, 0) + file.size;
   if (nextTotal > constraints.maxTotalBytes) {
     return {
       ok: false,

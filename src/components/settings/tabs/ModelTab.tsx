@@ -20,6 +20,12 @@ import {
 } from "@/lib/ai/provider-config";
 import type { ApiType } from "@/lib/ai/provider-config";
 import { useT } from "../../../i18n";
+import type { ModelFieldErrors } from "../SettingsDialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const API_ENDPOINTS: Record<ApiType, string> = {
   "openai-compatible": "/chat/completions",
@@ -31,9 +37,14 @@ const API_ENDPOINTS: Record<ApiType, string> = {
 interface ModelTabProps {
   formData: AISettings;
   setFormData: (v: AISettings) => void;
+  errors?: ModelFieldErrors;
 }
 
-export function ModelTab({ formData, setFormData }: ModelTabProps) {
+export function ModelTab({
+  formData,
+  setFormData,
+  errors = {},
+}: ModelTabProps) {
   const t = useT();
   const modelCache = useSettingsStore((s) => s.modelCache);
   const setModelCache = useSettingsStore((s) => s.setModelCache);
@@ -51,12 +62,14 @@ export function ModelTab({ formData, setFormData }: ModelTabProps) {
   const [fetchFailed, setFetchFailed] = useState(!cacheHit);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const loadingKeyRef = useRef<string>("");
 
   const fetchModels = useCallback(async () => {
     if (!formData.apiBaseUrl || !formData.apiKey) {
       setModels([]);
       setFetchFailed(true);
+      setFetchError(null);
       clearModelCache();
       return;
     }
@@ -74,15 +87,19 @@ export function ModelTab({ formData, setFormData }: ModelTabProps) {
       );
       setModels(ids);
       setFetchFailed(false);
+      setFetchError(null);
       setModelCache({
         models: ids,
         apiType: formData.apiType,
         apiBaseUrl: formData.apiBaseUrl,
         apiKey: formData.apiKey,
       });
-    } catch {
+    } catch (error) {
       setModels([]);
       setFetchFailed(true);
+      setFetchError(
+        (error instanceof Error ? error.message : String(error)).slice(0, 300),
+      );
       clearModelCache();
     } finally {
       loadingKeyRef.current = "";
@@ -101,6 +118,7 @@ export function ModelTab({ formData, setFormData }: ModelTabProps) {
     if (!formData.apiBaseUrl || !formData.apiKey) {
       setModels([]);
       setFetchFailed(true);
+      setFetchError(null);
       return;
     }
     const cached = useSettingsStore.getState().modelCache;
@@ -112,6 +130,7 @@ export function ModelTab({ formData, setFormData }: ModelTabProps) {
     ) {
       setModels(cached.models);
       setFetchFailed(false);
+      setFetchError(null);
       return;
     }
     const timer = setTimeout(() => {
@@ -130,6 +149,7 @@ export function ModelTab({ formData, setFormData }: ModelTabProps) {
     });
     setModels([]);
     setFetchFailed(true);
+    setFetchError(null);
     clearModelCache();
   };
 
@@ -180,12 +200,23 @@ export function ModelTab({ formData, setFormData }: ModelTabProps) {
           id="apiKey"
           type="password"
           value={formData.apiKey}
+          aria-invalid={Boolean(errors.apiKey)}
+          aria-describedby={errors.apiKey ? "apiKey-error" : "apiKey-hint"}
           onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
           placeholder="sk-..."
         />
-        <p className="text-xs text-muted-foreground">
+        <p id="apiKey-hint" className="text-xs text-muted-foreground">
           {t.settings.apiKey.hint}
         </p>
+        {errors.apiKey && (
+          <p
+            id="apiKey-error"
+            role="alert"
+            className="text-xs text-destructive"
+          >
+            {errors.apiKey}
+          </p>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -197,18 +228,34 @@ export function ModelTab({ formData, setFormData }: ModelTabProps) {
           id="apiBaseUrl"
           type="text"
           value={formData.apiBaseUrl}
+          aria-invalid={Boolean(errors.apiBaseUrl)}
+          aria-describedby={
+            errors.apiBaseUrl ? "apiBaseUrl-error" : "apiBaseUrl-preview"
+          }
           onChange={(e) =>
             setFormData({ ...formData, apiBaseUrl: e.target.value })
           }
           placeholder={DEFAULT_BASE_URLS[formData.apiType]}
         />
-        <p className="text-xs text-muted-foreground break-all">
+        <p
+          id="apiBaseUrl-preview"
+          className="text-xs text-muted-foreground break-all"
+        >
           {t.settings.apiBaseUrl.preview}:{" "}
           {resolveBaseURL(
             formData.apiBaseUrl || DEFAULT_BASE_URLS[formData.apiType],
             formData.apiType,
           ) + API_ENDPOINTS[formData.apiType]}
         </p>
+        {errors.apiBaseUrl && (
+          <p
+            id="apiBaseUrl-error"
+            role="alert"
+            className="text-xs text-destructive"
+          >
+            {errors.apiBaseUrl}
+          </p>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -222,7 +269,12 @@ export function ModelTab({ formData, setFormData }: ModelTabProps) {
               value={formData.model}
               onValueChange={(v) => setFormData({ ...formData, model: v })}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger
+                id="model"
+                className="w-full"
+                aria-invalid={Boolean(errors.model)}
+                aria-describedby={errors.model ? "model-error" : "model-hint"}
+              >
                 <SelectValue placeholder={t.settings.model.selectPlaceholder} />
               </SelectTrigger>
               <SelectContent>
@@ -233,21 +285,27 @@ export function ModelTab({ formData, setFormData }: ModelTabProps) {
                 ))}
               </SelectContent>
             </Select>
-            <Button
-              variant="outline"
-              size="icon"
-              className="shrink-0 size-9"
-              onClick={(e) => {
-                e.preventDefault();
-                fetchModels();
-              }}
-              disabled={isLoading}
-            >
-              <RefreshCw
-                size={14}
-                className={cn(isRefreshing && "animate-spin")}
-              />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="shrink-0 size-9"
+                  aria-label={t.settings.refreshModels}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    fetchModels();
+                  }}
+                  disabled={isLoading}
+                >
+                  <RefreshCw
+                    size={14}
+                    className={cn(isRefreshing && "animate-spin")}
+                  />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t.settings.refreshModels}</TooltipContent>
+            </Tooltip>
           </div>
         ) : (
           <div className="flex gap-2">
@@ -255,6 +313,8 @@ export function ModelTab({ formData, setFormData }: ModelTabProps) {
               id="model"
               type="text"
               value={formData.model}
+              aria-invalid={Boolean(errors.model)}
+              aria-describedby={errors.model ? "model-error" : "model-hint"}
               onChange={(e) =>
                 setFormData({ ...formData, model: e.target.value })
               }
@@ -262,25 +322,43 @@ export function ModelTab({ formData, setFormData }: ModelTabProps) {
               className="flex-1"
             />
             {formData.apiBaseUrl && formData.apiKey && (
-              <Button
-                variant="outline"
-                size="icon"
-                className="shrink-0 size-9"
-                onClick={(e) => {
-                  e.preventDefault();
-                  fetchModels();
-                }}
-                disabled={isLoading}
-              >
-                <RefreshCw
-                  size={14}
-                  className={cn(isRefreshing && "animate-spin")}
-                />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="shrink-0 size-9"
+                    aria-label={t.settings.refreshModels}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      fetchModels();
+                    }}
+                    disabled={isLoading}
+                  >
+                    <RefreshCw
+                      size={14}
+                      className={cn(isRefreshing && "animate-spin")}
+                    />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t.settings.refreshModels}</TooltipContent>
+              </Tooltip>
             )}
           </div>
         )}
-        <p className="text-xs text-muted-foreground">{t.settings.model.hint}</p>
+        <p id="model-hint" className="text-xs text-muted-foreground">
+          {t.settings.model.hint}
+        </p>
+        {errors.model && (
+          <p id="model-error" role="alert" className="text-xs text-destructive">
+            {errors.model}
+          </p>
+        )}
+        {fetchError && (
+          <p role="status" className="text-xs text-destructive break-words">
+            {t.settings.connectionFailed}: {fetchError}
+          </p>
+        )}
       </div>
     </>
   );

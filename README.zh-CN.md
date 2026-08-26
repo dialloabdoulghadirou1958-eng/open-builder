@@ -4,9 +4,9 @@
 
 **基于 AI 的 Web 应用生成器 —— 用自然语言描述，即刻生成可运行的完整项目**
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-7.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-8.x-646CFF?logo=vite&logoColor=white)](https://vitejs.dev)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4.x-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![Tauri](https://img.shields.io/badge/Tauri-2.x-FFC131?logo=tauri&logoColor=white)](https://tauri.app)
@@ -21,11 +21,11 @@
 
 ## 简介
 
-Open Builder 是一个完全运行在浏览器中的 AI 驱动 Web 应用生成器。你只需用自然语言描述想要构建的应用，AI 就会通过工具调用（Tool Call）循环，在内存文件系统中自动创建、修改、删除文件，并通过 [Sandpack](https://sandpack.codesandbox.io/) 实时预览运行结果。
+Open Builder 是一个桌面优先、同时提供浏览器界面的 AI Web 应用生成器。你只需用自然语言描述想要构建的应用，AI 就会通过工具调用（Tool Call）循环，在内存文件系统中自动创建、修改、删除文件，并通过 [Sandpack](https://sandpack.codesandbox.io/) 实时预览运行结果。
 
 整个过程无需后端服务器，所有计算均可在浏览器端完成。模型服务配置和 API Key 会保存在浏览器本地存储中，API Key 仅发送给你配置的服务商。
 
-同时支持通过 [Tauri](https://tauri.app) 构建为桌面应用（macOS / Windows / Linux）和移动应用（iOS / Android），享受原生应用体验。
+Tauri 桌面版（macOS / Windows / Linux）提供 stdio MCP 等本机运行能力；Web 与实验性移动版明确不提供本机进程和 Skill 脚本执行。
 
 > 兼容任何多种主流模型的 API 服务，比如 OpenAI、Anthropic、Google、Ollama 等服务。
 
@@ -63,8 +63,8 @@ Open Builder 是一个完全运行在浏览器中的 AI 驱动 Web 应用生成�
 - **项目模板** — 可将生成项目保存为本地模板，并从模板快速新建会话
 - **智能会话命名** — 根据对话内容自动生成会话标题，无需手动命名
 - **Slash 指令** — 输入框支持 `/compact`、`/review` 等斜杠快捷命令
-- **图片与文件输入** — 支持上传截图、设计稿或文件作为上下文输入
-- **技能系统** — 支持默认 metadata 自动匹配，也可为下一条消息强制指定一项或多项技能；Web 创建纯文本技能，桌面端额外支持技能包、参考资料和脚本
+- **图片与文件输入** — 支持上传截图、文本文件或 PDF；支持 PDF 的模型会收到原生 PDF 文件输入，本地不抽取 PDF 文本
+- **技能系统** — 支持 metadata 匹配和手动指定；导入的 Skill 默认停用，桌面脚本还必须开启开发者开关并在每次调用时确认
 - **本地设置** — 服务商配置和 API Key 会持久化到浏览器本地存储
 - **存储治理** — 可查看本地数据占用，并安全清理归档会话、空会话和旧快照
 - **流式输出** — 实时展示 AI 思考过程和代码生成进度
@@ -129,12 +129,12 @@ pnpm tauri:android:build
 
 点击界面右上角的设置按钮，填写以下信息：
 
-| 配置项         | 说明                  | 示例                                         |
-| -------------- | --------------------- | -------------------------------------------- |
-| API Key        | 你的 AI 服务 API 密钥 | `sk-...`                                     |
-| API URL        | OpenAI 兼容的接口地址 | `https://api.openai.com/v1/chat/completions` |
-| 模型名称       | 使用的模型 ID         | `gpt-5.3-codex`、`deepseek-chat`             |
-| Tavily API Key | （可选）联网搜索功能  | `tvly-...`                                   |
+| 配置项         | 说明                  | 示例                             |
+| -------------- | --------------------- | -------------------------------- |
+| API Key        | 你的 AI 服务 API 密钥 | `sk-...`                         |
+| API Base URL   | 服务商域名或基础路径  | `https://api.openai.com`         |
+| 模型名称       | 使用的模型 ID         | `gpt-5.3-codex`、`deepseek-chat` |
+| Tavily API Key | （可选）联网搜索功能  | `tvly-...`                       |
 
 > 设置和 API Key 都保存在浏览器本地存储中。请将当前浏览器配置文件和设备视为凭据安全边界的一部分。
 
@@ -156,37 +156,37 @@ pnpm tauri:android:build
 
 内置工具列表：
 
-| 工具                     | 描述                                        |
-| ------------------------ | ------------------------------------------- |
-| `init_project`           | 初始化 Sandpack 项目模板                    |
-| `manage_dependencies`    | 修改 package.json 管理依赖                  |
-| `list_files`             | 列出所有项目文件                            |
-| `read_files`             | 批量读取文件内容                            |
-| `write_file`             | 创建或覆写文件                              |
-| `patch_file`             | 精确搜索替换补丁（推荐用于小改动）          |
-| `delete_file`            | 删除文件                                    |
-| `rename_file` / `move_file` | 重命名或移动文件，并自动更新相对路径引用 |
-| `search_in_files`        | 全局搜索文件内容                            |
-| `get_console_logs`       | 读取 Sandpack 预览控制台输出               |
-| `compact_context`        | 压缩长对话上下文                            |
-| `ask_user_question`      | 在关键需求不明确时向用户提问                |
-| `exit_plan_mode`         | 提交实施方案并等待用户批准                  |
-| `dispatch_subagent`      | 调用只读子代理进行探索、审查或诊断          |
-| `project_health_check`   | 检查项目结构、依赖文件、环境变量、控制台日志、可访问性和响应式风险 |
-| `web_search`             | 联网搜索（支持模型内置、Tavily、Firecrawl） |
-| `web_reader`             | 读取网页内容                                |
-| `image_search`           | 图片搜索（支持 Pixabay、Unsplash）          |
-| `search_npm_packages`    | NPM 包搜索                                  |
-| `get_npm_package_detail` | 获取 NPM 包的详细信息                       |
-| `list_skills` / `read_skill` | 发现并加载自动匹配或强制指定的技能 |
-| `execute_skill_script` | 仅在桌面端运行已激活技能的脚本 |
-| `read_env_schema` / `manage_env` | 安全读取与管理环境变量文件           |
+| 工具                             | 描述                                                               |
+| -------------------------------- | ------------------------------------------------------------------ |
+| `init_project`                   | 初始化 Sandpack 项目模板                                           |
+| `manage_dependencies`            | 修改 package.json 管理依赖                                         |
+| `list_files`                     | 列出所有项目文件                                                   |
+| `read_files`                     | 批量读取文件内容                                                   |
+| `write_file`                     | 创建或覆写文件                                                     |
+| `patch_file`                     | 精确搜索替换补丁（推荐用于小改动）                                 |
+| `delete_file`                    | 删除文件                                                           |
+| `rename_file` / `move_file`      | 重命名或移动文件，并自动更新相对路径引用                           |
+| `search_in_files`                | 全局搜索文件内容                                                   |
+| `get_console_logs`               | 读取 Sandpack 预览控制台输出                                       |
+| `compact_context`                | 压缩长对话上下文                                                   |
+| `ask_user_question`              | 在关键需求不明确时向用户提问                                       |
+| `exit_plan_mode`                 | 提交实施方案并等待用户批准                                         |
+| `dispatch_subagent`              | 调用只读子代理进行探索、审查或诊断                                 |
+| `project_health_check`           | 检查项目结构、依赖文件、环境变量、控制台日志、可访问性和响应式风险 |
+| `web_search`                     | 联网搜索（支持模型内置、Tavily、Firecrawl）                        |
+| `web_reader`                     | 读取网页内容                                                       |
+| `image_search`                   | 图片搜索（支持 Pixabay、Unsplash）                                 |
+| `search_npm_packages`            | NPM 包搜索                                                         |
+| `get_npm_package_detail`         | 获取 NPM 包的详细信息                                              |
+| `list_skills` / `read_skill`     | 发现并加载自动匹配或强制指定的技能                                 |
+| `execute_skill_script`           | 仅在桌面端运行已激活技能的脚本                                     |
+| `read_env_schema` / `manage_env` | 安全读取与管理环境变量文件                                         |
 
 ### 技术栈
 
 | 类别          | 技术                              |
 | ------------- | --------------------------------- |
-| 框架          | React 19 + TypeScript 7           |
+| 框架          | React 19 + TypeScript 6           |
 | 构建工具      | Vite 8                            |
 | 样式          | Tailwind CSS v4                   |
 | UI 组件       | shadcn/ui + Radix UI              |
@@ -203,16 +203,16 @@ pnpm tauri:android:build
 
 Open Builder 兼容主流大模型的 API 格式：
 
-| 服务商    | 推荐模型                             | API URL                                                              |
-| --------- | ------------------------------------ | -------------------------------------------------------------------- |
-| OpenAI    | `gpt-5.3-codex`、`gpt-5.2`           | `https://api.openai.com/v1/responses`                                |
-| Anthropic | `claude-4.6-sonnet`、`claude-opus-4` | `https://api.anthropic.com/v1/messages`                              |
-| Google    | `gemini-2.0-flash-exp`               | `https://generativelanguage.googleapis.com/v1beta/models`            |
-| DeepSeek  | `deepseek-chat`、`deepseek-reasoner` | `https://api.deepseek.com/v1/chat/completions`                       |
-| 通义千问  | `qwen-3.5`、`qwen3-coder-plus`       | `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions` |
-| 月之暗面  | `kimi-k2.5`                          | `https://api.moonshot.cn/v1/chat/completions`                        |
-| 智谱 AI   | `glm-5`                              | `https://open.bigmodel.cn/api/paas/v4/chat/completions`              |
-| Ollama    | `gpt-oss:120b`、`qwen3:8b`           | `http://localhost:11434/v1/chat/completions`                         |
+| 服务商    | 推荐模型                             | API Base URL                                     |
+| --------- | ------------------------------------ | ------------------------------------------------ |
+| OpenAI    | `gpt-5.3-codex`、`gpt-5.2`           | `https://api.openai.com`                         |
+| Anthropic | `claude-4.6-sonnet`、`claude-opus-4` | `https://api.anthropic.com`                      |
+| Google    | `gemini-2.0-flash-exp`               | `https://generativelanguage.googleapis.com`      |
+| DeepSeek  | `deepseek-chat`、`deepseek-reasoner` | `https://api.deepseek.com`                       |
+| 通义千问  | `qwen-3.5`、`qwen3-coder-plus`       | `https://dashscope.aliyuncs.com/compatible-mode` |
+| 月之暗面  | `kimi-k2.5`                          | `https://api.moonshot.cn`                        |
+| 智谱 AI   | `glm-5`                              | `https://open.bigmodel.cn/api/paas/v4`           |
+| Ollama    | `gpt-oss:120b`、`qwen3:8b`           | `http://localhost:11434`                         |
 
 > 推荐使用支持 Function Calling 的强力模型以获得最佳效果。
 
@@ -229,12 +229,7 @@ pnpm build
 
 ### 部署到 GitHub Pages
 
-本项目配置了 GitHub Actions，推送版本 tag 即可自动构建并部署：
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
+GitHub Actions 会在 `main` 更新或手动触发时构建并部署 Pages。工作流会自动设置 Vite 仓库子路径，并包含静态 MCP OAuth 回调入口。`v*` tag 只会在全部质量门禁通过后创建一个桌面版 draft release，不会部署 Pages。
 
 详见 [.github/workflows/deploy.yml](.github/workflows/deploy.yml)。
 

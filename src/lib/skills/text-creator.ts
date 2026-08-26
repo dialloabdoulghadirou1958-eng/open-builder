@@ -4,6 +4,7 @@ import type { ImportResult } from "./importer";
 import { parseSkillMd } from "./parser";
 import { SKILL_IMPORT_LIMITS } from "./paths";
 import type { SkillRegistry } from "./registry";
+import { skillDisplayTextSchema } from "./display-text";
 
 export interface TextSkillInput {
   name: string;
@@ -13,8 +14,8 @@ export interface TextSkillInput {
 }
 
 const TextSkillInputSchema = z.object({
-  name: z.string().trim().min(1).max(64),
-  description: z.string().trim().min(1).max(512),
+  name: skillDisplayTextSchema(64),
+  description: skillDisplayTextSchema(512),
   instructions: z.string().trim().min(1),
   tags: z
     .array(z.string().trim().min(1).max(SKILL_IMPORT_LIMITS.maxTagChars))
@@ -56,7 +57,11 @@ export async function createTextSkill(
 
   const baseId = sanitizeId(parsed.name);
   let id = baseId;
-  for (let suffix = 2; registry.list().some((skill) => skill.id === id); suffix++) {
+  for (
+    let suffix = 2;
+    registry.list().some((skill) => skill.id === id);
+    suffix++
+  ) {
     id = appendSuffix(baseId, `-${suffix}`);
   }
 

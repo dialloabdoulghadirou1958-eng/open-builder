@@ -6,9 +6,12 @@ import { resolveSkillUrl } from "./url-resolver";
 import { SKILL_IMPORT_LIMITS, assertSafePath } from "./paths";
 import {
   assertSkillArchiveSize,
+  assertSkillArchiveEntryMetadata,
   assertSkillImportEntryCount,
+  assertSkillZipCentralDirectory,
   createSkillImportBudget,
   readResponseBytesWithLimit,
+  stripCommonZipPrefix,
 } from "./import-limits";
 
 export interface ImportResult {
@@ -39,26 +42,87 @@ interface StagedSkill {
   files: Record<string, string>;
 }
 
-function stripCommonPrefix(paths: string[]): {
-  prefix: string;
-  stripped: string[];
+interface ZipEntryWithMetadata extends JSZip.JSZipObject {
+  _data?: {
+    compressedSize?: number;
+    uncompressedSize?: number;
+  };
+  internalStream(type: "uint8array"): ZipStreamHelper;
+}
+
+interface ZipStreamHelper {
+  on(event: "data", listener: (chunk: Uint8Array) => void): ZipStreamHelper;
+  on(event: "end", listener: () => void): ZipStreamHelper;
+  on(event: "error", listener: (error: Error) => void): ZipStreamHelper;
+  pause(): ZipStreamHelper;
+  resume(): ZipStreamHelper;
+}
+
+function zipEntrySizes(file: JSZip.JSZipObject): {
+  compressedBytes: number;
+  uncompressedBytes: number;
 } {
-  if (paths.length === 0) return { prefix: "", stripped: [] };
-  const segs = paths.map((p) => p.split("/"));
-  const first = segs[0];
-  let common = 0;
-  outer: for (let i = 0; i < first.length - 1; i++) {
-    for (const s of segs) {
-      if (s.length <= i + 1 || s[i] !== first[i]) break outer;
-    }
-    common = i + 1;
+  const metadata = (file as ZipEntryWithMetadata)._data;
+  if (
+    typeof metadata?.compressedSize !== "number" ||
+    typeof metadata.uncompressedSize !== "number"
+  ) {
+    throw new Error(
+      `Zip entry "${file.name}" is missing bounded size metadata.`,
+    );
   }
-  const prefix = first.slice(0, common).join("/");
-  const stripped = paths.map((p) => {
-    const parts = p.split("/").slice(common);
-    return parts.join("/");
+  return {
+    compressedBytes: metadata.compressedSize,
+    uncompressedBytes: metadata.uncompressedSize,
+  };
+}
+
+async function decompressZipEntry(
+  file: JSZip.JSZipObject,
+  path: string,
+  budget: ReturnType<typeof createSkillImportBudget>,
+): Promise<Uint8Array> {
+  const stream = (file as ZipEntryWithMetadata).internalStream("uint8array");
+  const tracker = budget.createFileTracker(path);
+
+  return new Promise<Uint8Array>((resolve, reject) => {
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    let settled = false;
+
+    const abort = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      stream.pause();
+      chunks.length = 0;
+      reject(error instanceof Error ? error : new Error(String(error)));
+    };
+
+    stream
+      .on("data", (chunk) => {
+        if (settled) return;
+        try {
+          tracker.trackChunk(chunk.byteLength);
+          chunks.push(chunk);
+          totalBytes += chunk.byteLength;
+        } catch (error) {
+          abort(error);
+        }
+      })
+      .on("error", abort)
+      .on("end", () => {
+        if (settled) return;
+        settled = true;
+        const output = new Uint8Array(totalBytes);
+        let offset = 0;
+        for (const chunk of chunks) {
+          output.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+        resolve(output);
+      })
+      .resume();
   });
-  return { prefix, stripped };
 }
 
 async function stageZip(
@@ -66,6 +130,7 @@ async function stageZip(
   subpath?: string,
 ): Promise<StagedSkill> {
   assertSkillArchiveSize(buffer.byteLength);
+  assertSkillZipCentralDirectory(buffer, subpath);
   const zip = await JSZip.loadAsync(buffer);
   const entries: { path: string; file: JSZip.JSZipObject }[] = [];
   zip.forEach((path, file) => {
@@ -75,7 +140,9 @@ async function stageZip(
   if (entries.length === 0) {
     throw new Error("Zip archive contains no files.");
   }
-  const { prefix, stripped } = stripCommonPrefix(entries.map((e) => e.path));
+  const { prefix, stripped } = stripCommonZipPrefix(
+    entries.map((entry) => entry.path),
+  );
 
   let working = entries.map((e, i) => ({ ...e, strippedPath: stripped[i] }));
   let idHint = prefix.split("/").pop() || "imported-skill";
@@ -98,13 +165,32 @@ async function stageZip(
   }
 
   const files: Record<string, string> = {};
-  const budget = createSkillImportBudget();
+  const declaredBudget = createSkillImportBudget();
+  const actualBudget = createSkillImportBudget();
+  const declaredSizes = new Map<string, number>();
   for (const entry of working) {
     const relPath = entry.strippedPath;
     if (!relPath) continue;
     assertSafePath(relPath);
-    const blob = await entry.file.async("uint8array");
-    budget.trackFile(relPath, blob.byteLength);
+    const { compressedBytes, uncompressedBytes } = zipEntrySizes(entry.file);
+    assertSkillArchiveEntryMetadata(
+      relPath,
+      compressedBytes,
+      uncompressedBytes,
+    );
+    declaredBudget.trackFile(relPath, uncompressedBytes);
+    declaredSizes.set(relPath, uncompressedBytes);
+  }
+  for (const entry of working) {
+    const relPath = entry.strippedPath;
+    if (!relPath) continue;
+    assertSafePath(relPath);
+    const blob = await decompressZipEntry(entry.file, relPath, actualBudget);
+    if (blob.byteLength !== declaredSizes.get(relPath)) {
+      throw new Error(
+        `Zip entry "${relPath}" size changed during decompression.`,
+      );
+    }
     const text = new TextDecoder("utf-8", { fatal: false }).decode(blob);
     files[relPath] = text;
   }
@@ -209,7 +295,10 @@ export async function importFromStaged(
     assertSafePath(path);
     budget.trackFile(path, new TextEncoder().encode(files[path]).byteLength);
   }
-  return finalizeImport(registry, { proposedId: sanitizeId(proposedId), files });
+  return finalizeImport(registry, {
+    proposedId: sanitizeId(proposedId),
+    files,
+  });
 }
 
 async function finalizeImport(

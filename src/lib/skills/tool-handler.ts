@@ -7,14 +7,15 @@ import {
 } from "./script-execution-guard";
 import { SKILL_TOOL_NAMES } from "./tools";
 import type { PreparedSkill } from "./types";
+import type { ToolExecutionContext } from "../ai/generator-types";
+import type { SkillActiveContextController } from "./active-context";
 
 export interface SkillToolDeps {
   getRegistry: () => Promise<SkillRegistry>;
   getExecutor: () => Promise<ScriptExecutor>;
   scriptExecutionEnabled?: boolean;
-  isSkillActive?: (id: string) => boolean;
-  /** Called after a successful read_skill. */
-  onActivate?: (skill: SkillEntry) => void;
+  /** Test/standalone fallback. Production passes the run-local context. */
+  skillContext?: SkillActiveContextController;
 }
 
 function findByName(
@@ -43,8 +44,13 @@ function parseScriptArgs(value: unknown): string[] {
 
 export function createSkillToolHandler(
   deps: SkillToolDeps,
-): (name: string, args: unknown) => Promise<string> {
-  return async (name, args) => {
+): (
+  name: string,
+  args: unknown,
+  context?: ToolExecutionContext,
+) => Promise<string> {
+  return async (name, args, context) => {
+    const activeContext = context?.skillContext ?? deps.skillContext;
     if (name === SKILL_TOOL_NAMES.LIST) {
       const registry = await deps.getRegistry();
       const skills = registry.getAutoEnabled();
@@ -74,14 +80,17 @@ export function createSkillToolHandler(
         : findByName(registry, skillName, true);
       const skill =
         autoMatched ??
-        (forced && deps.isSkillActive?.(forced.id) ? forced : undefined);
+        (forced && activeContext?.isActive(forced.id) ? forced : undefined);
       if (!skill) {
         return `Error: skill "${skillName}" not found or not enabled.`;
       }
       if (referencePath) {
         try {
-          const reference = await registry.readReference(skill.id, referencePath);
-          deps.onActivate?.(skill);
+          const reference = await registry.readReference(
+            skill.id,
+            referencePath,
+          );
+          activeContext?.activate(skill);
           return `# Skill reference: ${skill.name}/${referencePath}\n\n${reference}`;
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -110,7 +119,7 @@ export function createSkillToolHandler(
             `Until the next user message, only these tools (plus flow tools like ask_user_question / exit_plan_mode / list_skills / read_skill / execute_skill_script / dispatch_subagent / compact_context) are available.`,
         );
       }
-      deps.onActivate?.(skill);
+      activeContext?.activate(skill);
       return sections.join("\n");
     }
 
@@ -138,7 +147,7 @@ export function createSkillToolHandler(
       if (!skill) {
         return `Error: skill "${skillName}" not found.`;
       }
-      if (!deps.isSkillActive?.(skill.id)) {
+      if (!activeContext?.isActive(skill.id)) {
         return `Error: skill "${skillName}" must be loaded with read_skill or explicitly forced before running its scripts.`;
       }
       let scriptContent: string;
@@ -155,12 +164,19 @@ export function createSkillToolHandler(
       try {
         const executionParams = {
           skillId: skill.id,
+          skillName: skill.name,
+          skillSource: skill.source,
+          runId: context?.run.runId ?? "standalone",
+          callId: context?.toolCallId ?? "standalone",
           scriptPath,
           scriptContent,
           args: scriptArgs,
+          signal: context?.signal,
         };
         validateScriptExecuteParams(executionParams);
-        const result = normalizeScriptResult(await executor.execute(executionParams));
+        const result = normalizeScriptResult(
+          await executor.execute(executionParams),
+        );
         const parts: string[] = [];
         parts.push(`Exit code: ${result.exitCode}`);
         if (result.stdout) parts.push(`stdout:\n${result.stdout}`);
@@ -188,9 +204,7 @@ export function buildSkillsPromptSection(enabled: SkillEntry[]): string {
     const metadata = [
       `id: ${s.id}`,
       `version: ${s.version}`,
-      ...(s.tags && s.tags.length > 0
-        ? [`tags: ${s.tags.join(", ")}`]
-        : []),
+      ...(s.tags && s.tags.length > 0 ? [`tags: ${s.tags.join(", ")}`] : []),
       ...(s.allowedTools && s.allowedTools.length > 0
         ? [`allowed-tools: ${s.allowedTools.join(", ")}`]
         : []),

@@ -1,5 +1,9 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import {
+  MarkdownContent,
   normalizeMarkdownHref,
   normalizeMarkdownImageSrc,
 } from "./MarkdownContent";
@@ -34,5 +38,22 @@ describe("MarkdownContent URL guards", () => {
         `data:image/png;base64,${"a".repeat(2 * 1024 * 1024)}`,
       ),
     ).toBeUndefined();
+  });
+
+  it("gives code copy controls a name and polite status region", () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(MarkdownContent, {
+          content: "```ts\nconst answer = 42;\n```",
+          variant: "assistant",
+        }),
+      ),
+    );
+
+    expect(markup).toMatch(/aria-label="(?:Copy|复制)"/);
+    expect(markup).toContain('role="status"');
+    expect(markup).toContain('aria-live="polite"');
   });
 });

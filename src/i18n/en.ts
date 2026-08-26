@@ -10,6 +10,15 @@ export const en: typeof zh = {
     officialWebsite: "Official website",
     openSourceProject: "Open-source project",
   },
+  approvals: {
+    registryHeader: "Registry origin",
+    registryQuestion: "Allow this component registry origin? {origin}",
+    approveOnce: "Allow this run",
+    approveOnceDesc:
+      "Trust this origin only in the current generator instance.",
+    deny: "Deny",
+    denyDesc: "Do not connect to this origin or write component files.",
+  },
   settings: {
     title: "Settings",
     tabs: {
@@ -24,6 +33,16 @@ export const en: typeof zh = {
     },
     cancel: "Cancel",
     save: "Save",
+    refreshModels: "Refresh model list",
+    connectionFailed: "Connection failed",
+    validation: {
+      summary: "Fix the highlighted model settings before saving.",
+      apiKeyRequired: "API Key is required.",
+      apiBaseUrlRequired: "API Base URL is required.",
+      apiBaseUrlInvalid: "Enter a valid HTTP or HTTPS base URL.",
+      modelRequired: "Model name is required.",
+      modelInvalid: "Model name is invalid or too long.",
+    },
     apiKey: { hint: "Your API key will be saved in local browser settings" },
     apiType: {
       label: "API Type",
@@ -83,18 +102,31 @@ export const en: typeof zh = {
       off: "Disabled",
       hint: "Automatically checks and fixes obvious issues after generation.",
     },
+    skillScripts: {
+      label: "Developer Skill scripts",
+      on: "Enabled",
+      off: "Disabled",
+      hint: "Off by default. Every run still requires a native confirmation and is not network-sandboxed.",
+    },
     reverseProxy: {
       label: "Reverse Proxy",
       on: "Enabled",
       off: "Disabled",
       hint: "When enabled, all API requests will be forwarded through the system proxy to resolve CORS issues. Streaming output may be affected.",
-      allowedHosts: "Allowed proxy hosts",
+      allowedHosts: "Allowed proxy origins",
       allowedHostsHint:
-        "One host per line or comma-separated. Supports *.example.com. Empty allows all hosts.",
+        "One origin per line or comma-separated, including scheme and port. Supports https://*.example.com. Empty denies custom origins; the saved API origin is added automatically.",
       recentRequests: "Recent proxy requests",
       refreshLog: "Refresh log",
       clearLog: "Clear log",
       emptyLog: "No proxy requests yet.",
+    },
+    permissionActivity: {
+      label: "Permission activity",
+      refresh: "Refresh",
+      clear: "Clear",
+      empty: "No permission decisions yet.",
+      hint: "Stored locally with bounded history and redacted targets. Credential values are never recorded.",
     },
     storage: {
       label: "Storage Governance",
@@ -103,6 +135,8 @@ export const en: typeof zh = {
       snapshots: "Snapshots",
       projectFiles: "Project files",
       templates: "Templates",
+      mcp: "MCP servers",
+      attachments: "Attachments",
       messages: "messages",
       memories: "memories",
       skills: "skills",
@@ -125,7 +159,9 @@ export const en: typeof zh = {
       button: "Reset & Clear All Data",
       confirm: "Confirm Reset",
       cancel: "Cancel",
-      warning: "This will reset all settings and delete all data (conversations, snapshots, memories). This action cannot be undone.",
+      warning:
+        "This resets settings and deletes conversations, snapshots, memories, templates, MCP data, Skill metadata/files, and attachments. This cannot be undone.",
+      failed: "Clear failed",
     },
   },
   empty: {
@@ -139,9 +175,11 @@ export const en: typeof zh = {
   },
   chat: {
     placeholder: "Describe the app you want...",
+    autoQaActivity: "Automatic QA activity",
     uploadImage: "Upload image",
     uploadFile: "Upload file",
     attachment: "Add attachment",
+    slashCommands: "Slash commands",
     attachmentErrors: {
       maxCount: "You can attach up to {count} files.",
       maxTotalSize: "Attachments can total up to {size}.",
@@ -259,7 +297,8 @@ export const en: typeof zh = {
   },
   skills: {
     title: "Skills",
-    description: "Auto-matched skills inject metadata; you can also force skills for the next message.",
+    description:
+      "Auto-matched skills inject metadata; you can also force skills for the next message.",
     empty: "No skills installed yet.",
     import: "Add skill",
     manage: "Manage skills...",
@@ -270,7 +309,8 @@ export const en: typeof zh = {
     updating: "Updating skill",
     updateAvailable: "Update available",
     forceForNext: "Force for next message",
-    forceForNextHint: "Selected skills load in full for the next message and clear after sending.",
+    forceForNextHint:
+      "Selected skills load in full for the next message and clear after sending.",
     autoMatchOff: "Auto-match off",
     forcedSelection: "Selected forced skills",
     forcedLabel: "Forced skills",
@@ -278,8 +318,9 @@ export const en: typeof zh = {
     delete: "Delete",
     cancel: "Cancel",
     builtinCantDelete: "Built-in skills cannot be deleted",
-    confirmDelete: "Delete skill \"{name}\"?",
-    confirmDeleteDesc: "The skill files will be removed from disk. This cannot be undone.",
+    confirmDelete: 'Delete skill "{name}"?',
+    confirmDeleteDesc:
+      "The skill files will be removed from disk. This cannot be undone.",
     details: "Details",
     closeDetails: "Close",
     allowedTools: "Allowed tools",
@@ -312,7 +353,8 @@ export const en: typeof zh = {
     },
     importer: {
       cancel: "Cancel",
-      textHint: "Enter skill metadata and instructions. Open Builder will generate a valid text-only SKILL.md.",
+      textHint:
+        "Enter skill metadata and instructions. Open Builder will generate a valid text-only SKILL.md.",
       name: "Name",
       description: "Description",
       instructions: "Instructions",
@@ -339,6 +381,179 @@ export const en: typeof zh = {
       failed: "Import failed: {message}",
     },
   },
+  mcp: {
+    title: "MCP",
+    description:
+      "Connect external MCP servers and review every tool before it is available to the model. Server settings and credentials stay local.",
+    manage: "Manage MCP...",
+    menuHint:
+      "Enabled state is global. Only connected and approved tools are available to the model.",
+    add: "Add server",
+    cancel: "Cancel",
+    save: "Save",
+    saving: "Saving...",
+    edit: "Edit",
+    delete: "Delete",
+    close: "Collapse",
+    details: "Details",
+    refresh: "Reconnect",
+    refreshAll: "Reconnect enabled servers",
+    test: "Test connection",
+    testing: "Testing...",
+    authorize: "Authorize",
+    review: "Review changes",
+    approve: "Approve and enable",
+    approveChanges: "Approve changes",
+    enabled: "Enabled",
+    disabled: "Disabled",
+    enableAll: "Enable MCP globally",
+    disableAll: "Disable MCP globally",
+    enableServer: "Enable server {name}",
+    disableServer: "Disable server {name}",
+    empty: "No MCP servers have been added.",
+    emptySearch: "No MCP servers match your search.",
+    search: "Search servers, addresses, or tools",
+    loading: "Loading MCP configuration...",
+    initializing: "Reading connection status...",
+    unavailable: "The MCP runtime is currently unavailable.",
+    readySummary: "{ready} ready, {enabled} enabled",
+    attentionSummary: "{count} need attention",
+    toolsSummary: "{enabled} of {total} tools enabled",
+    plaintextWarningTitle: "Credential storage",
+    plaintextWarning:
+      "Headers, tokens, and client secrets are stored in local app data, not a system credential vault. Save them only on a trusted device.",
+    webPlatformHint:
+      "The web app supports Streamable HTTP and explicit SSE, subject to browser CORS, HTTPS, and mixed-content rules.",
+    desktopPlatformHint:
+      "The desktop app also supports local stdio and uses a dedicated network path for remote servers.",
+    stdioDesktopOnly: "Local stdio is available only in the desktop app.",
+    confirmDelete: 'Delete MCP server "{name}"?',
+    confirmDeleteDesc:
+      "This removes its local settings, credentials, and tool approvals. Tool names already stored in message history remain intact.",
+    filters: {
+      all: "All",
+      ready: "Ready",
+      attention: "Needs attention",
+      remote: "Remote",
+      stdio: "Stdio",
+    },
+    status: {
+      idle: "Not connected",
+      connecting: "Connecting",
+      needs_auth: "Authorization required",
+      ready: "Ready",
+      error: "Connection failed",
+      drifted: "Definition changed",
+    },
+    transport: {
+      label: "Transport",
+      streamableHttp: "Streamable HTTP",
+      sse: "Legacy SSE",
+      stdio: "Local stdio",
+      sseWarning:
+        "Use SSE only when a server explicitly requires the legacy protocol. Authentication and ordinary connection failures never fall back to SSE.",
+    },
+    auth: {
+      label: "Authentication",
+      none: "None",
+      headers: "Custom headers",
+      oauthAuthorizationCode: "OAuth Authorization Code + PKCE",
+      oauthClientCredentials: "OAuth Client Credentials",
+      issuer: "Issuer / metadata URL",
+      issuerPlaceholder: "https://auth.example.com",
+      clientRegistration: "Client registration",
+      cimd: "CIMD discovery",
+      dcr: "Dynamic client registration",
+      manual: "Manual client settings",
+      clientMetadataUrl: "Client ID Metadata Document URL",
+      clientMetadataUrlPlaceholder:
+        "https://app.example.com/oauth/client-metadata.json",
+      clientId: "Client ID",
+      clientSecret: "Client secret",
+      scopes: "Scopes",
+      scopesPlaceholder: "read tools.invoke",
+      tokenEndpoint: "Token endpoint (optional)",
+      resource: "Resource (optional)",
+      redirectUri: "Redirect URI (optional)",
+      redirectUriPlaceholder: "Leave empty to use the platform callback",
+      redirectHint:
+        "The web app uses a same-origin callback; desktop uses a one-time local callback. Authorization failures do not change transport.",
+    },
+    editor: {
+      addTitle: "Add MCP server",
+      editTitle: "Edit {name}",
+      description:
+        "Test the connection and review tool definitions after saving. Editing connection settings clears the prior approval baseline.",
+      remote: "Remote",
+      stdio: "Stdio",
+      json: "Import JSON",
+      name: "Name",
+      namePlaceholder: "For example, GitHub Tools",
+      url: "Server URL",
+      urlPlaceholder: "https://mcp.example.com/mcp",
+      headers: "Headers (JSON)",
+      headersPlaceholder: '{\n  "Authorization": "Bearer ..."\n}',
+      headersHint:
+        "Header values may contain credentials. Error messages and interface summaries never show complete values.",
+      command: "Command",
+      commandPlaceholder: "npx",
+      args: "Arguments",
+      argsPlaceholder: "One argument per line, for example:\n-y\n@scope/server",
+      cwd: "Working directory (optional)",
+      cwdPlaceholder: "/absolute/path",
+      env: "Environment variables (JSON)",
+      envPlaceholder: '{\n  "API_TOKEN": "..."\n}',
+      stdioHint:
+        "The command runs directly without a shell. Enter one argument per line; environment variables are passed only to this server process.",
+      invalidJson:
+        "{field} must be a JSON object containing string values only.",
+      required: "Enter {field}.",
+      duplicateName: 'A server named "{name}" already exists.',
+    },
+    importer: {
+      hint: "Paste standard JSON containing mcpServers. Errors, warnings, and naming conflicts are shown before import.",
+      placeholder:
+        '{\n  "mcpServers": {\n    "example": {\n      "url": "https://mcp.example.com/mcp"\n    }\n  }\n}',
+      preview: "Preview import",
+      previewing: "Checking...",
+      apply: "Import {count}",
+      applying: "Importing...",
+      conflict: "Same-name configuration",
+      skip: "Skip",
+      replace: "Replace and review again",
+      valid: "Ready to import",
+      invalid: "Cannot import",
+      warnings: "Warnings",
+      errors: "Errors",
+      noEntries: "The JSON contains no MCP servers that can be imported.",
+      success: "Imported {count} MCP servers.",
+    },
+    server: {
+      instructions: "Server instructions",
+      noInstructions: "This server did not provide instructions.",
+      tools: "Tools",
+      noTools: "This server did not provide tools.",
+      changed:
+        "Tool definitions or instructions changed. They remain unavailable to the model until reviewed.",
+      added: "Added",
+      removed: "Removed",
+      modified: "Changed",
+      errorDetails: "Connection error",
+      lastConnected: "Last connected: {time}",
+      neverConnected: "Never connected successfully",
+    },
+    tool: {
+      enable: "Allow the model to call {name}",
+      plan: "Allow in Plan Mode",
+      subagent: "Allow for subagents",
+      readOnly: "Declared read-only",
+      writeCapable: "May modify external state",
+      approvalHint:
+        "Plan Mode and subagent access require both a server read-only declaration and your explicit approval.",
+      disabledReadOnly:
+        "This tool is not declared read-only, so it cannot be used in Plan Mode or by subagents.",
+    },
+  },
   message: {
     rollback: "Rollback",
     retry: "Retry",
@@ -362,13 +577,19 @@ export const en: typeof zh = {
       },
       actions: {
         auth: "Check your API key, base URL, and model settings.",
-        network: "Check your network connection, proxy settings, or service URL, then retry.",
-        model: "The model service may be unavailable or rate-limited. Try again later or switch models.",
+        network:
+          "Check your network connection, proxy settings, or service URL, then retry.",
+        model:
+          "The model service may be unavailable or rate-limited. Try again later or switch models.",
         tool: "A tool call failed. Retrying often recovers; if it repeats, inspect recent files or tool arguments.",
-        context_length: "This conversation is too long. Compress context before continuing.",
-        aborted: "Generation was stopped. The current project state has been preserved.",
-        runtime_check: "The automatic check did not finish. You can still run a manual health check.",
-        unknown: "Review the error details. If retry still fails, compress context or check model settings.",
+        context_length:
+          "This conversation is too long. Compress context before continuing.",
+        aborted:
+          "Generation was stopped. The current project state has been preserved.",
+        runtime_check:
+          "The automatic check did not finish. You can still run a manual health check.",
+        unknown:
+          "Review the error details. If retry still fails, compress context or check model settings.",
       },
     },
     generatingVerbs: [
@@ -396,6 +617,13 @@ export const en: typeof zh = {
     confirmDesc:
       "Rollback will restore project files to the state at the time of this operation. This action cannot be undone. Are you sure?",
     cancel: "Cancel",
+  },
+  resetProject: {
+    title: "Reset Project",
+    description:
+      "This permanently deletes the current conversation history, project files, template state, and snapshots. This action cannot be undone.",
+    cancel: "Cancel",
+    confirm: "Reset Project",
   },
   snapshots: {
     title: "Snapshot History",
@@ -429,6 +657,7 @@ export const en: typeof zh = {
     new: { name: "/new", desc: "New conversation" },
     fork: { name: "/fork", desc: "Fork conversation" },
     clear: { name: "/clear", desc: "Clear context" },
+    reset: { name: "/reset", desc: "Reset project" },
     compact: { name: "/compact", desc: "Compress context" },
     health: { name: "/health", desc: "Project health check" },
     review: { name: "/review", desc: "Security review" },
@@ -453,6 +682,9 @@ export const en: typeof zh = {
     desktop: "Desktop",
     tablet: "Tablet",
     mobile: "Mobile",
+    zoomIn: "Zoom in preview",
+    zoomOut: "Zoom out preview",
+    fitPreview: "Fit preview",
     download: "Download",
   },
   console: {

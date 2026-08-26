@@ -21,7 +21,7 @@ export function createOpenAIGenerator(
   events?: GeneratorEvents,
   initialFiles?: ProjectFiles,
   customTools?: ToolSet,
-  customToolHandler?: (name: string, args: unknown) => string | Promise<string>,
+  customToolHandler?: GeneratorOptions["customToolHandler"],
   extras?: Pick<
     GeneratorOptions,
     | "tools"
@@ -29,6 +29,10 @@ export function createOpenAIGenerator(
     | "requestPlanApproval"
     | "onPlanApproved"
     | "dispatchSubagent"
+    | "executionMode"
+    | "runtimePlatform"
+    | "allowedMcpAliases"
+    | "initialSkillContext"
   >,
 ): WebAppGenerator {
   const options: GeneratorOptions = {

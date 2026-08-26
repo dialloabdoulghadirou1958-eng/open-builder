@@ -1,6 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
 import type { ProjectFiles } from "../../types";
+import type { ToolExecutionContext } from "../ai/generator-types";
+import { redactSensitiveText } from "../utils/message-security";
 import { truncateText } from "./network-guard";
 import {
   CONSOLE_LOG_LIMITS,
@@ -160,13 +162,15 @@ export function runProjectHealthCheck(
   }
 
   if (includeConsole) {
-    for (const log of consoleLogs.slice(-PROJECT_HEALTH_LIMITS.maxConsoleLogs)) {
+    for (const log of consoleLogs.slice(
+      -PROJECT_HEALTH_LIMITS.maxConsoleLogs,
+    )) {
       const method = log.method.toLowerCase();
       if (method !== "error" && method !== "warn") continue;
       const text = truncateText(
-        log.data
-          .map((item) => stringifyConsoleItem(item))
-          .join(" "),
+        redactSensitiveText(
+          log.data.map((item) => stringifyConsoleItem(item)).join(" "),
+        ),
         PROJECT_HEALTH_LIMITS.maxConsoleMessageChars,
       ).text;
       issues.push({
@@ -199,14 +203,17 @@ export function runProjectHealthCheck(
 export function createProjectHealthCheckHandler(deps: {
   getFiles: () => ProjectFiles;
   getConsoleLogs: () => ConsoleLog[];
-}): (name: string, args: unknown) => string {
-  return (name, args) => {
+}): (name: string, args: unknown, context?: ToolExecutionContext) => string {
+  return (name, args, context) => {
     if (name !== "project_health_check") {
       return `Error: unknown tool "${name}"`;
     }
+    const restrictedMode =
+      context?.run.mode === "auto_qa" || context?.run.mode === "subagent";
     const includeConsole =
+      !restrictedMode &&
       (args as { include_console?: boolean } | undefined)?.include_console !==
-      false;
+        false;
     return JSON.stringify(
       runProjectHealthCheck(deps.getFiles(), deps.getConsoleLogs(), {
         includeConsole,
@@ -226,7 +233,9 @@ function sortIssuesByImpact(
   return [...issues].sort((a, b) => {
     const severityDelta = severityRank[a.severity] - severityRank[b.severity];
     if (severityDelta !== 0) return severityDelta;
-    return a.category.localeCompare(b.category) || a.message.localeCompare(b.message);
+    return (
+      a.category.localeCompare(b.category) || a.message.localeCompare(b.message)
+    );
   });
 }
 
@@ -279,7 +288,9 @@ function inspectAccessibility(
       if (reported >= 5) return;
     }
 
-    for (const match of content.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gi)) {
+    for (const match of content.matchAll(
+      /<button\b([^>]*)>([\s\S]*?)<\/button>/gi,
+    )) {
       const attrs = match[1] ?? "";
       const body = stripTags(match[2] ?? "").trim();
       const named =

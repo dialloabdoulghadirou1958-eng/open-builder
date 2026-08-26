@@ -2,6 +2,7 @@ import { z } from "zod";
 import { load as yamlLoad, YAMLException } from "js-yaml";
 import { assertSkillMdSize } from "./import-limits";
 import { SKILL_IMPORT_LIMITS, textBytes } from "./paths";
+import { skillDisplayTextSchema } from "./display-text";
 
 const TOOL_NAME_RE = /^[a-zA-Z0-9_.:-]+$/;
 
@@ -15,12 +16,15 @@ function boundedToken(maxChars: number) {
     .trim()
     .min(1)
     .max(maxChars)
-    .regex(TOOL_NAME_RE, "must contain only letters, digits, '.', '_', '-' or ':'");
+    .regex(
+      TOOL_NAME_RE,
+      "must contain only letters, digits, '.', '_', '-' or ':'",
+    );
 }
 
 export const SkillFrontmatterSchema = z.object({
-  name: z.string().min(1).max(64),
-  description: z.string().min(1).max(512),
+  name: skillDisplayTextSchema(64),
+  description: skillDisplayTextSchema(512),
   version: z
     .string()
     .trim()
@@ -28,11 +32,7 @@ export const SkillFrontmatterSchema = z.object({
     .max(SKILL_IMPORT_LIMITS.maxVersionChars)
     .optional()
     .default("1.0.0"),
-  author: z
-    .string()
-    .trim()
-    .max(SKILL_IMPORT_LIMITS.maxAuthorChars)
-    .optional(),
+  author: z.string().trim().max(SKILL_IMPORT_LIMITS.maxAuthorChars).optional(),
   "allowed-tools": z
     .array(boundedToken(SKILL_IMPORT_LIMITS.maxAllowedToolChars))
     .max(SKILL_IMPORT_LIMITS.maxAllowedTools)
@@ -73,7 +73,9 @@ export function parseSkillMd(raw: string): ParsedSkill {
     fmObj = yamlLoad(fmRaw);
   } catch (err) {
     const msg = err instanceof YAMLException ? err.message : String(err);
-    throw new Error(`Failed to parse SKILL.md frontmatter: ${msg}`);
+    throw new Error(`Failed to parse SKILL.md frontmatter: ${msg}`, {
+      cause: err,
+    });
   }
   if (!fmObj || typeof fmObj !== "object" || Array.isArray(fmObj)) {
     throw new Error("SKILL.md frontmatter must be a YAML mapping.");

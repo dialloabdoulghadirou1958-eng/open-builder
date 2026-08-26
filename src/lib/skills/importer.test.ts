@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import JSZip from "jszip";
 import { importFromStaged, importFromZip } from "./importer";
 import { SkillRegistry, type SkillsStoreApi } from "./registry";
 import type { DirEntry, SkillFs } from "./fs";
 import { SKILL_IMPORT_LIMITS } from "./paths";
 import type { SkillEntry } from "./types";
+import { createSkillImportBudget } from "./import-limits";
 
 class MemorySkillFs implements SkillFs {
   files = new Map<string, string>();
@@ -110,6 +111,31 @@ function skillMd(overrides: string[] = []): string {
   ].join("\n");
 }
 
+function forgeCentralDirectoryUncompressedSize(
+  buffer: ArrayBuffer,
+  entryName: string,
+  forgedSize: number,
+): ArrayBuffer {
+  const bytes = new Uint8Array(buffer.slice(0));
+  const view = new DataView(bytes.buffer);
+  const decoder = new TextDecoder();
+  for (let offset = 0; offset <= bytes.byteLength - 46; offset += 1) {
+    if (view.getUint32(offset, true) !== 0x02014b50) continue;
+    const nameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    const nameStart = offset + 46;
+    const nameEnd = nameStart + nameLength;
+    if (nameEnd > bytes.byteLength) break;
+    if (decoder.decode(bytes.subarray(nameStart, nameEnd)) === entryName) {
+      view.setUint32(offset + 24, forgedSize, true);
+      return bytes.buffer;
+    }
+    offset = nameEnd + extraLength + commentLength - 1;
+  }
+  throw new Error(`Central directory entry not found: ${entryName}`);
+}
+
 describe("skill importer limits", () => {
   it("rejects oversized zip archives before parsing", async () => {
     const { registry } = createRegistry();
@@ -120,6 +146,38 @@ describe("skill importer limits", () => {
         new ArrayBuffer(SKILL_IMPORT_LIMITS.maxArchiveBytes + 1),
       ),
     ).rejects.toThrow(/archive exceeds/i);
+  });
+
+  it("rejects a many-entry ZIP32 directory before JSZip builds objects", async () => {
+    const { registry } = createRegistry();
+    const buffer = new ArrayBuffer(22);
+    const view = new DataView(buffer);
+    view.setUint32(0, 0x06054b50, true);
+    view.setUint16(8, SKILL_IMPORT_LIMITS.maxArchiveEntries + 1, true);
+    view.setUint16(10, SKILL_IMPORT_LIMITS.maxArchiveEntries + 1, true);
+
+    const loadAsync = vi.spyOn(JSZip, "loadAsync");
+    try {
+      await expect(importFromZip(registry, buffer)).rejects.toThrow(
+        /too many files/i,
+      );
+      expect(loadAsync).not.toHaveBeenCalled();
+    } finally {
+      loadAsync.mockRestore();
+    }
+  });
+
+  it("fails closed on ZIP64 central-directory sentinels", async () => {
+    const { registry } = createRegistry();
+    const buffer = new ArrayBuffer(22);
+    const view = new DataView(buffer);
+    view.setUint32(0, 0x06054b50, true);
+    view.setUint16(8, 0xffff, true);
+    view.setUint16(10, 0xffff, true);
+    view.setUint32(12, 0xffffffff, true);
+    view.setUint32(16, 0xffffffff, true);
+
+    await expect(importFromZip(registry, buffer)).rejects.toThrow(/ZIP64/i);
   });
 
   it("rejects imports with too many staged files", async () => {
@@ -154,7 +212,90 @@ describe("skill importer limits", () => {
     expect(result.entry.version).toBe("1.0.0");
     expect(result.entry.allowedTools).toEqual(["read_file"]);
     expect(result.entry.tags).toEqual(["react"]);
+    expect(result.entry.autoEnabled).toBe(false);
     expect(store.getSkill("demo")).toEqual(result.entry);
+  });
+
+  it.each([
+    ["name", "Demo\\nSpoofed"],
+    ["description", "Trusted\\u0007Spoofed"],
+    ["name", "Trusted\\u202eSpoofed"],
+  ])(
+    "rejects control characters in imported %s",
+    async (field, escapedValue) => {
+      const { registry } = createRegistry();
+      const value = JSON.parse(`"${escapedValue}"`) as string;
+      const metadata = {
+        name: "Demo Skill",
+        description: "Demo description",
+        [field]: value,
+      };
+      const raw = [
+        "---",
+        `name: ${JSON.stringify(metadata.name)}`,
+        `description: ${JSON.stringify(metadata.description)}`,
+        "---",
+        "",
+        "Body",
+      ].join("\n");
+
+      await expect(
+        importFromStaged(registry, "control-character", { "SKILL.md": raw }),
+      ).rejects.toThrow(/control or invisible formatting characters/i);
+    },
+  );
+
+  it("rejects highly compressed entries before allocating their contents", async () => {
+    const { registry } = createRegistry();
+    const zip = new JSZip();
+    zip.file("demo/SKILL.md", skillMd());
+    zip.file("demo/references/bomb.txt", "A".repeat(1024 * 1024));
+    const buffer = await zip.generateAsync({
+      type: "arraybuffer",
+      compression: "DEFLATE",
+      compressionOptions: { level: 9 },
+    });
+
+    await expect(importFromZip(registry, buffer)).rejects.toThrow(
+      /compression ratio/i,
+    );
+  });
+
+  it("enforces actual decompressed bytes when zip metadata lies", async () => {
+    const { registry } = createRegistry();
+    const zip = new JSZip();
+    const bombPath = "demo/references/metadata-lie.txt";
+    zip.file("demo/SKILL.md", skillMd());
+    zip.file(bombPath, "A".repeat(SKILL_IMPORT_LIMITS.maxTotalBytes));
+    const honestBuffer = await zip.generateAsync({
+      type: "arraybuffer",
+      compression: "DEFLATE",
+      compressionOptions: { level: 9 },
+    });
+    const forgedBuffer = forgeCentralDirectoryUncompressedSize(
+      honestBuffer,
+      bombPath,
+      1,
+    );
+
+    await expect(importFromZip(registry, forgedBuffer)).rejects.toThrow(
+      /exceeds 2 MB limit while decompressing/i,
+    );
+  });
+
+  it("enforces the actual cumulative decompressed-byte budget", () => {
+    const budget = createSkillImportBudget();
+    budget.createFileTracker("SKILL.md").trackChunk(1);
+    for (let index = 0; index < 3; index += 1) {
+      budget
+        .createFileTracker(`references/chunk-${index}.txt`)
+        .trackChunk(SKILL_IMPORT_LIMITS.maxFileBytes);
+    }
+    const finalTracker = budget.createFileTracker("references/final.txt");
+
+    expect(() =>
+      finalTracker.trackChunk(SKILL_IMPORT_LIMITS.maxFileBytes),
+    ).toThrow(/total size limit while decompressing/i);
   });
 
   it("rejects malformed allowed tool names from zip imports", async () => {

@@ -1,4 +1,5 @@
 import type { ProjectFiles } from "../../types";
+import { hasUnsafeProjectPathCharacters } from "./project-file-policy";
 
 export const PROJECT_FILE_LIMITS = {
   maxFiles: 1_000,
@@ -30,7 +31,10 @@ export function getProjectFilesStats(files: ProjectFiles): ProjectFilesStats {
 }
 
 function validateProjectPath(path: string): string | null {
-  if (!path || path.includes("\0")) return "file path must not be empty";
+  if (!path) return "file path must not be empty";
+  if (hasUnsafeProjectPathCharacters(path)) {
+    return "file path must not contain control characters";
+  }
   if (path.length > PROJECT_FILE_LIMITS.maxPathChars) {
     return `file path is too long (max ${PROJECT_FILE_LIMITS.maxPathChars} characters): ${path}`;
   }
@@ -48,14 +52,16 @@ function validateProjectPath(path: string): string | null {
   return null;
 }
 
-export function validateProjectFiles(files: ProjectFiles): {
-  ok: true;
-  stats: ProjectFilesStats;
-} | {
-  ok: false;
-  error: string;
-  stats: ProjectFilesStats;
-} {
+export function validateProjectFiles(files: ProjectFiles):
+  | {
+      ok: true;
+      stats: ProjectFilesStats;
+    }
+  | {
+      ok: false;
+      error: string;
+      stats: ProjectFilesStats;
+    } {
   const entries = Object.entries(files);
   const stats: ProjectFilesStats = { fileCount: entries.length, totalBytes: 0 };
 
@@ -112,5 +118,13 @@ export function buildProjectFilesPromptListing(files: ProjectFiles): string {
     hidden > 0
       ? `\n- ... ${hidden} more files omitted from prompt; use list_files/search_in_files for the full tree.`
       : "";
-  return header + shown.map((p) => `- ${p}`).join("\n") + suffix;
+  const quotedPaths = shown.map((path) => {
+    const quoted = JSON.stringify(path);
+    return quoted.replace(
+      /[\u007f-\u009f\u2028\u2029]/gu,
+      (character) =>
+        `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
+    );
+  });
+  return header + quotedPaths.map((path) => `- ${path}`).join("\n") + suffix;
 }

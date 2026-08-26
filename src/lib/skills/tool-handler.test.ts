@@ -9,6 +9,8 @@ import { SKILL_TOOL_NAMES } from "./tools";
 import type { SkillEntry } from "./types";
 import type { SkillRegistry } from "./registry";
 import type { ScriptExecutor } from "./script-executor";
+import { createSkillActiveContext } from "./active-context";
+import type { ToolExecutionContext } from "../ai/generator-types";
 
 const skill: SkillEntry = {
   id: "skill-1",
@@ -29,11 +31,13 @@ function createRegistry(scriptContent = "console.log('ok')"): SkillRegistry {
 }
 
 function activeScriptDeps(executor: ScriptExecutor) {
+  const skillContext = createSkillActiveContext();
+  skillContext.activate(skill);
   return {
     getRegistry: async () => createRegistry(),
     getExecutor: async () => executor,
     scriptExecutionEnabled: true,
-    isSkillActive: () => true,
+    skillContext,
   };
 }
 
@@ -76,7 +80,11 @@ describe("createSkillToolHandler", () => {
         canExecute: () => false,
         execute: vi.fn(),
       }),
-      isSkillActive: (id) => id === forcedSkill.id,
+      skillContext: (() => {
+        const context = createSkillActiveContext();
+        context.activate(forcedSkill);
+        return context;
+      })(),
     });
 
     const result = await handler(SKILL_TOOL_NAMES.READ, {
@@ -96,7 +104,7 @@ describe("createSkillToolHandler", () => {
       getRegistry: async () => createRegistry(),
       getExecutor: async () => executor,
       scriptExecutionEnabled: true,
-      isSkillActive: () => false,
+      skillContext: createSkillActiveContext(),
     });
 
     const result = await handler(SKILL_TOOL_NAMES.EXECUTE_SCRIPT, {
@@ -126,6 +134,50 @@ describe("createSkillToolHandler", () => {
     });
 
     expect(result).toContain("Exit code: 0");
+  });
+
+  it("passes the tool run identity and AbortSignal to script execution", async () => {
+    const execute = vi.fn(async () => ({
+      stdout: "ok",
+      stderr: "",
+      exitCode: 0,
+    }));
+    const executor: ScriptExecutor = {
+      canExecute: () => true,
+      execute,
+    };
+    const handler = createSkillToolHandler(activeScriptDeps(executor));
+    const controller = new AbortController();
+    const skillContext = createSkillActiveContext();
+    skillContext.activate(skill);
+    const context: ToolExecutionContext = {
+      signal: controller.signal,
+      toolCallId: "skill-call-1",
+      run: Object.freeze({
+        runId: "run-1",
+        mode: "chat",
+        platform: "desktop",
+        allowedMcpAliases: new Set<string>(),
+        activeSkillIds: new Set<string>(),
+        approvedSkillScriptHashes: new Set<string>(),
+        policyVersion: "test",
+      }),
+      skillContext,
+    };
+
+    await handler(
+      SKILL_TOOL_NAMES.EXECUTE_SCRIPT,
+      { skill_name: "demo-skill", script_path: "hello.js" },
+      context,
+    );
+
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "run-1",
+        callId: "skill-call-1",
+        signal: controller.signal,
+      }),
+    );
   });
 
   it("returns an error when script execution throws", async () => {
@@ -180,7 +232,11 @@ describe("createSkillToolHandler", () => {
         createRegistry("x".repeat(SCRIPT_EXECUTION_LIMITS.maxScriptBytes + 1)),
       getExecutor: async () => executor,
       scriptExecutionEnabled: true,
-      isSkillActive: () => true,
+      skillContext: (() => {
+        const context = createSkillActiveContext();
+        context.activate(skill);
+        return context;
+      })(),
     });
 
     const result = await handler(SKILL_TOOL_NAMES.EXECUTE_SCRIPT, {

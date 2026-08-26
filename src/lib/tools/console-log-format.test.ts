@@ -48,4 +48,17 @@ describe("console log formatting", () => {
     expect(output).toContain("[truncated]");
     expect(output).not.toContain("entry 0");
   });
+
+  it("redacts credentials before console output reaches a model or history", () => {
+    const sentinel = "console-secret-sentinel";
+    const output = formatConsoleLogs([
+      {
+        method: "error",
+        data: [`Authorization: Bearer ${sentinel}`, `API_TOKEN=${sentinel}`],
+      },
+    ]);
+
+    expect(output).not.toContain(sentinel);
+    expect(output).toContain("[REDACTED]");
+  });
 });

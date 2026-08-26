@@ -9,10 +9,7 @@ import {
   ASSET_SEARCH_TOOLS,
   createAssetSearchToolHandler,
 } from "./asset-search";
-import {
-  NPM_SEARCH_TOOLS,
-  createNpmSearchToolHandler,
-} from "./npm-search";
+import { NPM_SEARCH_TOOLS, createNpmSearchToolHandler } from "./npm-search";
 import {
   MEMORY_TOOLS,
   MEMORY_TOOL_NAME,
@@ -23,8 +20,7 @@ import { DISPATCH_SUBAGENT_TOOL } from "./subagent-tool";
 import { getSkillTools, SKILL_TOOL_NAME_SET } from "../skills/tools";
 import { createSkillToolHandler } from "../skills/tool-handler";
 import { getSkillRegistry } from "../skills/instance";
-import { isSkillsAvailable, isTauri } from "../skills/fs";
-import { skillActiveContext } from "../skills/active-context";
+import { isSkillsAvailable } from "../skills/fs";
 import {
   INSTALL_COMPONENT_TOOL,
   createInstallComponentHandler,
@@ -41,10 +37,7 @@ import {
   PROJECT_HEALTH_CHECK_TOOL,
   createProjectHealthCheckHandler,
 } from "./project-health";
-import {
-  formatConsoleLogs,
-  type ConsoleLog,
-} from "./console-log-format";
+import { formatConsoleLogs, type ConsoleLog } from "./console-log-format";
 import { getBuiltinSearchConfig } from "../ai/provider";
 import type { ApiType } from "../ai/provider";
 import type {
@@ -52,8 +45,14 @@ import type {
   AssetSearchSettings,
   ProjectFiles,
 } from "../../types";
-import type { FileChange } from "../ai/generator-types";
+import type {
+  FileChange,
+  GeneratorOptions,
+  ToolExecutionContext,
+} from "../ai/generator-types";
 import { validateProjectFiles } from "../utils/project-files";
+import { detectRuntimePlatform } from "../runtime/platform";
+import type { RuntimePlatform } from "../ai/tools-schema";
 
 export interface ToolFeatures {
   builtinSearch: boolean;
@@ -82,17 +81,23 @@ export interface BuildToolHandlersArgs {
   getConsoleLogs: () => ConsoleLog[];
   memoryDeps: MemoryDeps;
   filesBridge?: ProjectFilesBridge;
+  developerSkillScriptsEnabled: boolean;
+  requestRegistryOriginApproval?: (
+    origin: string,
+    context: ToolExecutionContext,
+  ) => Promise<boolean>;
 }
 
 export interface BuiltToolHandlers {
   customToolSet: ToolSet;
-  combinedToolHandler: (name: string, args: unknown) => Promise<string>;
+  combinedToolHandler: NonNullable<GeneratorOptions["customToolHandler"]>;
   providerToolNames: string[];
+  runtimePlatform: RuntimePlatform;
 }
 
-export function buildToolHandlers(
+export async function buildToolHandlers(
   args: BuildToolHandlersArgs,
-): BuiltToolHandlers {
+): Promise<BuiltToolHandlers> {
   const {
     features,
     effectiveWebSearchSettings,
@@ -101,7 +106,10 @@ export function buildToolHandlers(
     getConsoleLogs,
     memoryDeps,
     filesBridge,
+    developerSkillScriptsEnabled,
+    requestRegistryOriginApproval,
   } = args;
+  const runtimePlatform = await detectRuntimePlatform();
 
   let builtinSearchTools: Record<string, unknown> = {};
   let providerToolNames: string[] = [];
@@ -137,7 +145,10 @@ export function buildToolHandlers(
       }
     : undefined;
   const installComponentHandler = guardedFilesBridge
-    ? createInstallComponentHandler(guardedFilesBridge)
+    ? createInstallComponentHandler({
+        ...guardedFilesBridge,
+        approveRegistryOrigin: requestRegistryOriginApproval,
+      })
     : null;
   const screenshotToCodeHandler = guardedFilesBridge
     ? createScreenshotToCodeHandler({ apiConfig, ...guardedFilesBridge })
@@ -152,43 +163,44 @@ export function buildToolHandlers(
       })
     : null;
   const skillsAvailable = isSkillsAvailable();
-  const desktopSkills = isTauri();
-  const skillTools = getSkillTools(desktopSkills);
+  const scriptExecutionEnabled =
+    runtimePlatform === "desktop" && developerSkillScriptsEnabled;
+  const skillTools = getSkillTools(scriptExecutionEnabled);
   const skillToolHandler = skillsAvailable
     ? createSkillToolHandler({
         getRegistry: () => getSkillRegistry(),
         getExecutor: async () => {
-          if (!desktopSkills) {
+          if (!scriptExecutionEnabled) {
             throw new Error("Skill scripts are only available on desktop.");
           }
           return (await import("../skills/script-executor-tauri"))
             .TauriScriptExecutor;
         },
-        scriptExecutionEnabled: desktopSkills,
-        isSkillActive: (id) => skillActiveContext.isActive(id),
-        onActivate: (skill) => {
-          skillActiveContext.activate(skill);
-        },
+        scriptExecutionEnabled,
       })
     : null;
   const combinedToolHandler = async (
     name: string,
     handlerArgs: unknown,
+    context?: Parameters<NonNullable<GeneratorOptions["customToolHandler"]>>[2],
   ): Promise<string> => {
     if (name === "get_console_logs") {
+      if (context?.run.mode === "auto_qa" || context?.run.mode === "subagent") {
+        return "Error: runtime console logs are unavailable in isolated runs.";
+      }
       return formatConsoleLogs(getConsoleLogs());
     }
     if (name === MEMORY_TOOL_NAME) {
       return memoryHandler(name, handlerArgs);
     }
     if (skillToolHandler && SKILL_TOOL_NAME_SET.has(name)) {
-      return skillToolHandler(name, handlerArgs);
+      return skillToolHandler(name, handlerArgs, context);
     }
     if (name === "search_npm_packages" || name === "get_npm_package_detail") {
       return npmSearchHandler(name, handlerArgs);
     }
     if (name === "install_component" && installComponentHandler) {
-      return installComponentHandler(name, handlerArgs);
+      return installComponentHandler(name, handlerArgs, context);
     }
     if (name === "screenshot_to_code" && screenshotToCodeHandler) {
       return screenshotToCodeHandler(name, handlerArgs);
@@ -197,7 +209,7 @@ export function buildToolHandlers(
       return applyDesignStyleHandler(name, handlerArgs);
     }
     if (name === "project_health_check" && projectHealthCheckHandler) {
-      return projectHealthCheckHandler(name, handlerArgs);
+      return projectHealthCheckHandler(name, handlerArgs, context);
     }
     if (name === "image_search" && assetSearchHandler) {
       return assetSearchHandler(name, handlerArgs);
@@ -228,5 +240,10 @@ export function buildToolHandlers(
     ...(skillsAvailable ? skillTools : {}),
   };
 
-  return { customToolSet, combinedToolHandler, providerToolNames };
+  return {
+    customToolSet,
+    combinedToolHandler,
+    providerToolNames,
+    runtimePlatform,
+  };
 }

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ClipboardList, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { MarkdownContent } from "./MarkdownContent";
+import { LazyMarkdownContent } from "./LazyMarkdownContent";
 import { useT } from "../../i18n";
 import { useInteractiveStore } from "../../store/interactive";
 import {
@@ -35,15 +35,12 @@ export function PlanApprovalCard({
   const [mode, setMode] = useState<Mode>("buttons");
   const [feedback, setFeedback] = useState("");
 
-  const planText =
-    pending && pending.kind === "plan" ? pending.plan : plan;
+  const planText = pending && pending.kind === "plan" ? pending.plan : plan;
   const isApproved = !pending && result.startsWith(PLAN_APPROVED_PREFIX);
   const isRejected = !pending && result.startsWith(PLAN_REJECTED_PREFIX);
 
   const handleApprove = () => {
-    useInteractiveStore
-      .getState()
-      .resolvePlan(toolCallId, { approved: true });
+    useInteractiveStore.getState().resolvePlan(toolCallId, { approved: true });
   };
 
   const handleReject = () => {
@@ -61,9 +58,7 @@ export function PlanApprovalCard({
     <div className="border border-border rounded-lg overflow-hidden bg-card">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/40">
         <ClipboardList className="w-4 h-4 text-primary" />
-        <span className="text-sm font-medium">
-          {t.chat.planApproval.title}
-        </span>
+        <span className="text-sm font-medium">{t.chat.planApproval.title}</span>
         {isApproved && (
           <span className="ml-auto inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
             <Check className="w-3.5 h-3.5" />
@@ -78,7 +73,7 @@ export function PlanApprovalCard({
         )}
       </div>
       <div className="px-3 py-2 text-sm max-h-96 overflow-y-auto">
-        <MarkdownContent content={planText} variant="assistant" />
+        <LazyMarkdownContent content={planText} variant="assistant" />
       </div>
       {pending && (
         <div className="px-3 py-2 border-t border-border bg-muted/20 space-y-2">

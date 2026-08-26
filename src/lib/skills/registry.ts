@@ -7,11 +7,7 @@ import {
 } from "./manifest";
 import { parseSkillMd } from "./parser";
 import { SKILL_IMPORT_LIMITS, assertSafePath, textBytes } from "./paths";
-import type {
-  PreparedSkill,
-  SkillEntry,
-  SkillManifestEntry,
-} from "./types";
+import type { PreparedSkill, SkillEntry, SkillManifestEntry } from "./types";
 
 export const FORCED_SKILLS_MAX_BYTES = 128 * 1024;
 
@@ -24,7 +20,7 @@ export interface SkillsStoreApi {
 }
 
 export interface SkillRegistryOptions {
-  platform?: "web" | "desktop";
+  platform?: "web" | "desktop" | "mobile";
   fetcher?: SkillFetch;
 }
 
@@ -36,7 +32,7 @@ function sameList(a?: string[], b?: string[]): boolean {
 }
 
 export class SkillRegistry {
-  private readonly platform: "web" | "desktop";
+  private readonly platform: "web" | "desktop" | "mobile";
   private readonly fetcher: SkillFetch;
   private readonly manifest = new Map<string, SkillManifestEntry>();
   private readonly readyIds = new Set<string>();
@@ -62,7 +58,7 @@ export class SkillRegistry {
       this.issues.set("manifest", this.errorMessage(error));
     }
 
-    if (this.platform === "web") {
+    if (this.platform !== "desktop") {
       await this.cleanupWebSkillDirectories();
     }
 
@@ -128,7 +124,9 @@ export class SkillRegistry {
       const skill = this.requireSkill(id);
       if (!this.readyIds.has(id)) {
         if (skill.source !== "builtin") {
-          throw new Error(`Skill "${skill.name}" is missing its SKILL.md file.`);
+          throw new Error(
+            `Skill "${skill.name}" is missing its SKILL.md file.`,
+          );
         }
         await this.ensureBuiltinCached(id, false);
       }
@@ -227,7 +225,8 @@ export class SkillRegistry {
       version: parsed.frontmatter.version,
       allowedTools: parsed.frontmatter["allowed-tools"],
       tags: parsed.frontmatter.tags,
-      autoEnabled: extras.autoEnabled ?? existing?.autoEnabled ?? true,
+      autoEnabled:
+        extras.autoEnabled ?? existing?.autoEnabled ?? source === "builtin",
       source,
       installedAt: existing?.installedAt ?? Date.now(),
       cachedVersion: extras.cachedVersion,
@@ -239,10 +238,13 @@ export class SkillRegistry {
     return entry;
   }
 
-  private async reconcileManifest(entries: SkillManifestEntry[]): Promise<void> {
+  private async reconcileManifest(
+    entries: SkillManifestEntry[],
+  ): Promise<void> {
     const currentIds = new Set(entries.map((entry) => entry.id));
     for (const existing of this.store.listAll()) {
-      if (existing.source !== "builtin" || currentIds.has(existing.id)) continue;
+      if (existing.source !== "builtin" || currentIds.has(existing.id))
+        continue;
       if (await this.fs.exists(existing.id)) {
         await this.fs.remove(existing.id, { recursive: true });
       }
@@ -337,7 +339,7 @@ export class SkillRegistry {
     try {
       const files = await downloadManifestSkillFiles(
         manifest,
-        this.platform,
+        this.platform === "desktop" ? "desktop" : "web",
         this.fetcher,
       );
       this.assertManifestMatches(manifest, files["SKILL.md"]);
@@ -356,7 +358,8 @@ export class SkillRegistry {
     manifest: SkillManifestEntry,
     raw: string | undefined,
   ): void {
-    if (!raw) throw new Error(`Built-in skill "${manifest.id}" has no SKILL.md.`);
+    if (!raw)
+      throw new Error(`Built-in skill "${manifest.id}" has no SKILL.md.`);
     const parsed = parseSkillMd(raw).frontmatter;
     if (
       parsed.name !== manifest.name ||

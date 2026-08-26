@@ -1,4 +1,12 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import {
+  lazy,
+  Suspense,
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useMemo,
+} from "react";
 import { X } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useT } from "../../i18n";
@@ -13,7 +21,6 @@ import {
 } from "./chat-input/SlashCommandMenu";
 import { AttachmentPreview } from "./chat-input/AttachmentPreview";
 import { ChatInputToolbar } from "./chat-input/ChatInputToolbar";
-import { SkillsPanel } from "../skills/SkillsPanel";
 import { isSkillsAvailable } from "../../lib/skills/fs";
 import { getSkillRegistry } from "../../lib/skills/instance";
 import {
@@ -22,11 +29,23 @@ import {
   isImageMime,
   validateAttachmentFile,
 } from "../../lib/utils/attachments";
+import {
+  deleteAttachment,
+  storeAttachmentFile,
+} from "../../lib/attachments/store";
 import type { Translations } from "../../i18n";
+
+const SkillsPanel = lazy(() =>
+  import("../skills/SkillsPanel").then((module) => ({
+    default: module.SkillsPanel,
+  })),
+);
+const McpPanel = lazy(() =>
+  import("../mcp/McpPanel").then((module) => ({ default: module.McpPanel })),
+);
 
 const NEEDS_MESSAGES = new Set([
   "fork",
-  "clear",
   "compact",
   "health",
   "review",
@@ -52,10 +71,7 @@ interface ChatInputProps {
 }
 
 function formatAttachmentError(
-  validation: Extract<
-    ReturnType<typeof validateAttachmentFile>,
-    { ok: false }
-  >,
+  validation: Extract<ReturnType<typeof validateAttachmentFile>, { ok: false }>,
   t: Translations,
 ): string {
   switch (validation.code) {
@@ -109,6 +125,7 @@ export function ChatInput({
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
+  const [mcpOpen, setMcpOpen] = useState(false);
   const [skillsInitializing, setSkillsInitializing] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const skillsAvailable = isSkillsAvailable();
@@ -230,21 +247,6 @@ export function ChatInput({
     }
   };
 
-  const readFile = useCallback(
-    (file: File, readAsDataUrl: boolean) =>
-      new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
-        reader.onload = () => {
-          if (typeof reader.result === "string") resolve(reader.result);
-          else reject(new Error(`Failed to read ${file.name}`));
-        };
-        if (readAsDataUrl) reader.readAsDataURL(file);
-        else reader.readAsText(file);
-      }),
-    [],
-  );
-
   const processFiles = useCallback(
     async (files: File[]) => {
       let next = [...attachments];
@@ -259,16 +261,10 @@ export function ChatInput({
         }
         try {
           const image = isImageMime(file.type);
-          const content = await readFile(
+          const attachment = await storeAttachmentFile(
             file,
-            image || file.type === "application/pdf",
+            image ? "image" : "file",
           );
-          const attachment: Attachment = {
-            type: image ? "image" : "file",
-            name: file.name || (image ? "pasted-image" : "pasted-file"),
-            content,
-            size: file.size,
-          };
           accepted.push(attachment);
           next = [...next, attachment];
         } catch {
@@ -286,7 +282,7 @@ export function ChatInput({
       }
       setAttachmentError(errors[0] ?? null);
     },
-    [attachments, onAttachmentsChange, readFile, t],
+    [attachments, onAttachmentsChange, t],
   );
 
   const handlePaste = (e: React.ClipboardEvent) => {
@@ -302,9 +298,9 @@ export function ChatInput({
       }
       const file = item.getAsFile();
       if (file && isAcceptedFileMime(item.type, file.name)) {
-          e.preventDefault();
-          void processFiles([file]);
-          return;
+        e.preventDefault();
+        void processFiles([file]);
+        return;
       }
     }
   };
@@ -358,6 +354,9 @@ export function ChatInput({
   };
 
   const removeAttachment = (index: number) => {
+    const removed = attachments[index];
+    if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+    if (removed?.id) void deleteAttachment(removed.id);
     onAttachmentsChange(attachments.filter((_, i) => i !== index));
   };
 
@@ -385,10 +384,7 @@ export function ChatInput({
                 key={skill.id}
                 type="button"
                 className="inline-flex h-6 items-center gap-1 rounded-md border border-primary/20 bg-primary/10 px-2 text-[11px] font-medium text-foreground transition-colors hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label={t.skills.removeForced.replace(
-                  "{name}",
-                  skill.name,
-                )}
+                aria-label={t.skills.removeForced.replace("{name}", skill.name)}
                 onClick={() =>
                   onForcedSkillIdsChange(
                     forcedSkillIds.filter((id) => id !== skill.id),
@@ -463,6 +459,12 @@ export function ChatInput({
               onManageSkills={
                 skillsAvailable ? () => setSkillsOpen(true) : undefined
               }
+              onManageMcp={() => setMcpOpen(true)}
+              onReconnectMcp={async () => {
+                const { getMcpConnectionManager } =
+                  await import("../../lib/mcp/connection-manager");
+                return getMcpConnectionManager().reconnectAll();
+              }}
               skillsAvailable={skillsAvailable}
               skillsInitializing={skillsInitializing}
               forcedSkillIds={forcedSkillIds}
@@ -478,8 +480,38 @@ export function ChatInput({
           </div>
         </div>
       </form>
-      {skillsAvailable && (
-        <SkillsPanel open={skillsOpen} onClose={() => setSkillsOpen(false)} />
+      {skillsAvailable && skillsOpen && (
+        <Suspense fallback={null}>
+          <SkillsPanel open onClose={() => setSkillsOpen(false)} />
+        </Suspense>
+      )}
+      {mcpOpen && (
+        <Suspense fallback={null}>
+          <McpPanel
+            open
+            onClose={() => setMcpOpen(false)}
+            onTestServer={async (id) => {
+              const { getMcpConnectionManager } =
+                await import("../../lib/mcp/connection-manager");
+              await getMcpConnectionManager().testServer(id);
+            }}
+            onReconnectServer={async (id) => {
+              const { getMcpConnectionManager } =
+                await import("../../lib/mcp/connection-manager");
+              await getMcpConnectionManager().reconnectServer(id);
+            }}
+            onAuthorizeServer={async (id) => {
+              const { getMcpConnectionManager } =
+                await import("../../lib/mcp/connection-manager");
+              return getMcpConnectionManager().authorizeServer(id);
+            }}
+            onReviewServer={async (id) => {
+              const { getMcpConnectionManager } =
+                await import("../../lib/mcp/connection-manager");
+              return getMcpConnectionManager().approveServer(id);
+            }}
+          />
+        </Suspense>
       )}
     </div>
   );

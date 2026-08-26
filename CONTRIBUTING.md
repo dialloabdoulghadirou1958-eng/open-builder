@@ -83,9 +83,12 @@ Visit `http://localhost:5173` and enter your API Key in settings to start debugg
 pnpm dev      # Start dev server (hot reload)
 pnpm build    # Build for production
 pnpm preview  # Preview production build
-pnpm lint     # TypeScript type checking
+pnpm typecheck # TypeScript type checking
+pnpm lint     # ESLint
+pnpm format:check # Prettier verification
+pnpm version:check # Package/Cargo/Tauri/MCP version contract
 pnpm test     # Unit tests
-pnpm test:ui  # UI smoke tests
+pnpm test:components # Component-level Vitest tests
 ```
 
 ---
@@ -96,9 +99,10 @@ Before contributing, familiarize yourself with the core modules:
 
 ```
 src/
-├── lib/generator.ts      # Core engine: WebAppGenerator (Tool Call loop)
-├── lib/tavily.ts         # Web search tool
-├── lib/settings.ts       # Settings persistence
+├── lib/ai/generator.ts   # Core engine: WebAppGenerator (Tool Call loop)
+├── lib/tools/            # Built-in project and network tools
+├── lib/mcp/              # MCP validation, transports, and runtime policy
+├── store/settings/       # Settings persistence
 ├── store/conversation.ts # Zustand session state management
 ├── hooks/useGenerator.ts # Hook connecting engine to UI
 └── components/           # UI components
@@ -122,15 +126,15 @@ This project follows [Conventional Commits](https://www.conventionalcommits.org/
 
 ### Commit Types
 
-| Type | Description |
-|------|-------------|
-| `feat` | New feature |
-| `fix` | Bug fix |
-| `docs` | Documentation changes |
-| `style` | Code formatting (no functional changes) |
+| Type       | Description                                 |
+| ---------- | ------------------------------------------- |
+| `feat`     | New feature                                 |
+| `fix`      | Bug fix                                     |
+| `docs`     | Documentation changes                       |
+| `style`    | Code formatting (no functional changes)     |
 | `refactor` | Refactoring (no new features, no bug fixes) |
-| `perf` | Performance optimization |
-| `chore` | Build process or tooling changes |
+| `perf`     | Performance optimization                    |
+| `chore`    | Build process or tooling changes            |
 
 ### Examples
 
@@ -160,8 +164,11 @@ refactor(store): migrate session persistence to Zustand middleware
 3. **Ensure code quality**
 
    ```bash
-   pnpm lint   # Ensure no TypeScript errors
-   pnpm build  # Ensure build succeeds
+   pnpm typecheck
+   pnpm lint
+   pnpm format:check
+   pnpm test
+   pnpm build
    ```
 
 4. **Push and create PR**
@@ -193,7 +200,7 @@ refactor(store): migrate session persistence to Zustand middleware
 - Use functional components with React Hooks
 - File naming: PascalCase for components, camelCase for utility functions
 - Keep code concise and avoid over-abstraction
-- When adding new tools, define them in the `BUILTIN_TOOLS` array in `generator.ts` and add handling logic in the `executeTool` switch
+- When adding a tool, define its capability in `src/lib/ai/tools-schema.ts`; schema visibility and execution authorization must derive from the same policy
 
 ---
 
