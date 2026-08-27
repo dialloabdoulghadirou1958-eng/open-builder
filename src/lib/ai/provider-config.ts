@@ -1,5 +1,13 @@
 export type ApiType = "openai-compatible" | "openai" | "anthropic" | "google";
 
+export const DEFAULT_OPENAI_MODEL = "gpt-5.6-sol";
+
+export function defaultModelForApiType(apiType: ApiType): string {
+  return apiType === "openai" || apiType === "openai-compatible"
+    ? DEFAULT_OPENAI_MODEL
+    : "";
+}
+
 /** Default API base URLs without version suffixes. */
 export const DEFAULT_BASE_URLS: Record<ApiType, string> = {
   "openai-compatible": "http://localhost:11434",

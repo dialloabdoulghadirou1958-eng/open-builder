@@ -6,7 +6,7 @@ import type {
   ThinkingBlock,
   ToolBlock,
 } from "../../types";
-import { getT } from "../../i18n";
+import { getT, type Translations } from "../../i18n";
 import { truncate } from "./truncate";
 import { TOOL_METADATA } from "../ai/tool-metadata";
 
@@ -68,8 +68,10 @@ function getFileAttachments(
     );
 }
 
-export function mergeMessages(messages: Message[]): MergedMessage[] {
-  const t = getT();
+export function mergeMessages(
+  messages: Message[],
+  t: Translations = getT(),
+): MergedMessage[] {
   const merged: MergedMessage[] = [];
 
   for (let i = 0; i < messages.length; i++) {
@@ -189,15 +191,20 @@ export function mergeMessages(messages: Message[]): MergedMessage[] {
                 : undefined;
               const toolName = tc.function.name as keyof typeof t.tool.names;
 
-              let title = t.tool.names[toolName] || tc.function.name;
+              const translatedName = t.tool.names[toolName];
+              let title = translatedName
+                ? translatedName
+                : tc.function.name.startsWith("mcp_")
+                  ? t.tool.mcpToolPending
+                  : `${t.tool.unknownTool} · ${tc.function.name}`;
               if (toolOutput?.source?.kind === "mcp") {
                 title = `${toolOutput.source.serverName} · ${toolOutput.source.toolTitle || toolOutput.source.toolName}`;
               } else if (isReadFiles) {
                 title = `${t.tool.found}${paths?.length ?? 0} ${t.tool.files}`;
               } else if (args.query) {
-                title = `${t.tool.names[toolName]}: ${args.query}`;
+                title = `${title}: ${args.query}`;
               } else if (args.packageName) {
-                title = `${t.tool.names[toolName]}: ${args.packageName}`;
+                title = `${title}: ${args.packageName}`;
               } else if (args.urls) {
                 title = `${t.tool.found}${(args.urls as string[])?.length ?? 0} ${t.tool.pages}`;
               } else if (tc.function.name === "dispatch_subagent") {

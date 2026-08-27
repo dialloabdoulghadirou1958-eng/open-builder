@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { diffLines, type Change } from "diff";
-import { ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronUp, ChevronDown, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -83,8 +83,11 @@ export function DiffModal({
   if (!snapshot) return null;
 
   return (
-    <Dialog open onOpenChange={() => onClose()}>
-      <DialogContent className="sm:max-w-4xl h-[70vh] flex flex-col p-0 gap-0 overflow-hidden">
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        className="sm:max-w-4xl h-[70vh] flex flex-col p-0 gap-0 overflow-hidden"
+        showCloseButton={false}
+      >
         <DialogHeader className="px-5 pt-5 pb-3 shrink-0 flex flex-row items-center justify-between gap-3">
           <DialogTitle className="flex-1 min-w-0 truncate" title={selectedFile}>
             {t.diff.title}
@@ -148,6 +151,15 @@ export function DiffModal({
               )}
             </div>
           </div>
+          <TooltipIconButton
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            onClick={onClose}
+            label={t.diff.close}
+          >
+            <X className="w-4 h-4" />
+          </TooltipIconButton>
         </DialogHeader>
 
         <div className="flex flex-col sm:flex-row flex-1 min-h-0 overflow-hidden">

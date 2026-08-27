@@ -11,6 +11,7 @@ import { ChatHeader } from "./chat/ChatHeader";
 import { ChatInput } from "./chat/ChatInput";
 import { EmptyState } from "./chat/EmptyState";
 import { MessageBubble } from "./chat/MessageBubble";
+import { AskUserQuestionCard } from "./chat/AskUserQuestionCard";
 import { GeneratingIndicator } from "./chat/GeneratingIndicator";
 import { SettingsWarning } from "./chat/SettingsWarning";
 import { SessionListOverlay } from "./chat/SessionListOverlay";
@@ -26,6 +27,7 @@ import {
   getMergedMessageStartIndex,
 } from "../lib/utils/message-navigation";
 import { useConversationStore } from "../store/conversation";
+import { useInteractiveStore } from "../store/interactive";
 import { useSnapshotStore } from "../store/snapshot";
 import { discardPendingSandpackFileChanges } from "./code-viewer/sandpack-file-changes";
 import {
@@ -38,8 +40,13 @@ import type {
   ProjectFiles,
   ProjectSnapshot,
   Attachment,
+  ProjectPreviewMode,
 } from "../types";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import type {
+  ProjectImportCommitResult,
+  StagedProjectImport,
+} from "../lib/utils/project-import";
 
 const EMPTY_SNAPSHOTS: ProjectSnapshot[] = [];
 const MobilePreview = lazy(() =>
@@ -68,8 +75,12 @@ interface ChatInterfaceProps {
   onStop: () => void;
   onOpenSettings: () => void;
   onSetFiles: (files: ProjectFiles) => void;
+  onImportProject: (
+    project: StagedProjectImport,
+  ) => Promise<ProjectImportCommitResult> | ProjectImportCommitResult;
   files: ProjectFiles;
   template: string;
+  previewMode: ProjectPreviewMode;
   sandpackKey: number;
   isProjectInitialized: boolean;
   showInlinePreview: boolean;
@@ -89,8 +100,10 @@ export function ChatInterface({
   onStop,
   onOpenSettings,
   onSetFiles,
+  onImportProject,
   files,
   template,
+  previewMode,
   sandpackKey,
   isProjectInitialized,
   showInlinePreview,
@@ -122,6 +135,15 @@ export function ChatInterface({
     scrollMargin: virtualScrollMargin,
   });
   const activeId = useConversationStore((s) => s.activeId);
+  const pendingQuestionnaire = useInteractiveStore((state) =>
+    state.pending.find(
+      (item) =>
+        item.kind === "question" && item.presentation === "questionnaire",
+    ),
+  );
+  const hasPendingInteraction = useInteractiveStore(
+    (state) => state.pending.length > 0,
+  );
   useEffect(() => {
     setForcedSkillIds([]);
   }, [activeId]);
@@ -439,23 +461,28 @@ export function ChatInterface({
           ))
         )}
 
-        {showInlinePreview && isProjectInitialized && !isGenerating && (
-          <Suspense
-            fallback={
-              <div className="flex min-h-40 items-center justify-center rounded-lg border bg-muted/30">
-                <p className="text-sm text-muted-foreground">{t.app.loading}</p>
-              </div>
-            }
-          >
-            <MobilePreview
-              files={files}
-              template={template}
-              sandpackKey={sandpackKey}
-            />
-          </Suspense>
-        )}
+        {showInlinePreview &&
+          previewMode !== "code-only" &&
+          isProjectInitialized &&
+          !isGenerating && (
+            <Suspense
+              fallback={
+                <div className="flex min-h-40 items-center justify-center rounded-lg border bg-muted/30">
+                  <p className="text-sm text-muted-foreground">
+                    {t.app.loading}
+                  </p>
+                </div>
+              }
+            >
+              <MobilePreview
+                files={files}
+                template={template}
+                sandpackKey={sandpackKey}
+              />
+            </Suspense>
+          )}
 
-        {isGenerating && <GeneratingIndicator />}
+        {isGenerating && !hasPendingInteraction && <GeneratingIndicator />}
 
         {rollbackInfo && !isGenerating && (
           <RollbackHint
@@ -487,19 +514,35 @@ export function ChatInterface({
         <div ref={messagesEndRef} />
       </div>
 
-      <ChatInput
-        input={input}
-        onChange={setInput}
-        onSubmit={handleSubmit}
-        onStop={onStop}
-        isGenerating={isGenerating}
-        messages={messages}
-        attachments={attachments}
-        onAttachmentsChange={setAttachments}
-        onSlashCommand={handleSlashCommand}
-        forcedSkillIds={forcedSkillIds}
-        onForcedSkillIdsChange={setForcedSkillIds}
-      />
+      <div className="relative shrink-0">
+        {pendingQuestionnaire?.kind === "question" && (
+          <div className="pointer-events-none absolute inset-x-2 bottom-full z-20 pb-2">
+            <div className="pointer-events-auto rounded-2xl shadow-lg">
+              <AskUserQuestionCard
+                key={pendingQuestionnaire.toolCallId}
+                toolCallId={pendingQuestionnaire.toolCallId}
+                questions={pendingQuestionnaire.questions}
+                presentation="questionnaire"
+              />
+            </div>
+          </div>
+        )}
+        <ChatInput
+          input={input}
+          onChange={setInput}
+          onSubmit={handleSubmit}
+          onStop={onStop}
+          isGenerating={isGenerating}
+          messages={messages}
+          attachments={attachments}
+          onAttachmentsChange={setAttachments}
+          onImportProject={onImportProject}
+          hasExistingProject={isProjectInitialized}
+          onSlashCommand={handleSlashCommand}
+          forcedSkillIds={forcedSkillIds}
+          onForcedSkillIdsChange={setForcedSkillIds}
+        />
+      </div>
 
       {diffMessageId && activeId && (
         <Suspense fallback={null}>

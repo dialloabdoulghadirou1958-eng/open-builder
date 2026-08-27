@@ -6,7 +6,6 @@ import {
   Loader2,
   Plus,
   Search,
-  ShieldAlert,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -526,20 +525,6 @@ export function McpPanel({
               )}
             </div>
           )}
-
-          <div className="flex gap-2 rounded-md border border-amber-500/25 bg-amber-500/10 p-2.5 text-[11px] text-amber-800 dark:text-amber-300">
-            <ShieldAlert
-              size={14}
-              className="mt-0.5 shrink-0"
-              aria-hidden="true"
-            />
-            <p>
-              <span className="font-medium">
-                {t.mcp.plaintextWarningTitle}:{" "}
-              </span>
-              {t.mcp.plaintextWarning}
-            </p>
-          </div>
         </DialogContent>
       </Dialog>
 

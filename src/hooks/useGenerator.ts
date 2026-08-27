@@ -57,6 +57,7 @@ import {
   messagesForConversationContinuation,
   removeErrorMessages,
 } from "../lib/ai/conversation-context";
+import { PLAN_MODE_SYSTEM_SUFFIX } from "../lib/ai/plan-mode";
 
 interface GeneratorConfigSnapshot {
   runtime: AISettings["runtime"];
@@ -154,16 +155,6 @@ function getLastForcedSkillIds(messages: readonly Message[]): string[] {
 async function getMessagesForAPI(conv: Conversation): Promise<Message[]> {
   return hydrateMessageAttachments(messagesForConversationContinuation(conv));
 }
-
-const PLAN_MODE_SYSTEM_SUFFIX = `
-
-## PLAN MODE ACTIVE
-Research and plan only. Every write tool (init_project, manage_dependencies, write_file, patch_file, delete_file, rename_file, move_file, manage_env, install_component, screenshot_to_code) is withheld until the user approves your plan.
-  1. Read the project with list_files / read_files / search_in_files until you understand what exists.
-  2. Call ask_user_question if a requirement is ambiguous enough that guessing wrong would invalidate the plan.
-  3. Write the plan in Markdown: files to add or change, dependencies to add, the overall approach, and how to verify it works.
-  4. Deliver it by calling exit_plan_mode as your final step — never as a normal reply. It must be the only tool call in that response.
-Approval unlocks the write tools; start implementing only then.`;
 
 const AUTO_QA_PROMPT =
   "Automatic QA round: call project_health_check with include_console=true. " +
@@ -270,7 +261,6 @@ interface UseGeneratorOptions {
   setIsGenerating: Dispatch<SetStateAction<boolean>>;
   setTemplate: Dispatch<SetStateAction<string>>;
   restartSandpack: () => void;
-  setIsProjectInitialized: Dispatch<SetStateAction<boolean>>;
 }
 
 export function useGenerator({
@@ -282,7 +272,6 @@ export function useGenerator({
   setIsGenerating,
   setTemplate,
   restartSandpack,
-  setIsProjectInitialized,
 }: UseGeneratorOptions) {
   const generatorRef = useRef<GenerationBackend | null>(null);
   const [runState, setRunState] = useState<GeneratorRunState>("idle");
@@ -608,6 +597,7 @@ export function useGenerator({
           });
           const answers = await useInteractiveStore.getState().askQuestion({
             toolCallId: context.toolCallId,
+            presentation: "approval",
             questions: [
               {
                 header: translations.approvals.registryHeader,
@@ -943,7 +933,6 @@ export function useGenerator({
           if (!isCurrentGeneratorRun(generatorConversationId)) return;
           setTemplate(tmpl);
           setFiles(newFiles);
-          setIsProjectInitialized(true);
           restartSandpack();
         },
         onDependenciesChange: (newFiles) => {
@@ -1190,7 +1179,6 @@ export function useGenerator({
     setMessages,
     setFiles,
     setTemplate,
-    setIsProjectInitialized,
     restartSandpack,
     flushThinkingBuffer,
     triggerSmartTitle,

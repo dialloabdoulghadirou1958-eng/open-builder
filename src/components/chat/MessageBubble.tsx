@@ -17,13 +17,13 @@ import {
 } from "lucide-react";
 import { ToolCallCard } from "./ToolCallCard";
 import { PlanApprovalCard } from "./PlanApprovalCard";
-import { AskUserQuestionCard } from "./AskUserQuestionCard";
+import {
+  AskUserAnswerSummary,
+  AskUserQuestionCard,
+} from "./AskUserQuestionCard";
 import { SubagentCallCard } from "./SubagentCallCard";
 import { useT } from "../../i18n";
-import {
-  useInteractiveStore,
-  type AskUserQuestion,
-} from "../../store/interactive";
+import { useInteractiveStore } from "../../store/interactive";
 import type {
   MergedMessage,
   TextBlock,
@@ -32,6 +32,7 @@ import type {
 } from "../../types";
 import { getAttachmentBlob } from "../../lib/attachments/store";
 import { LazyMarkdownContent } from "./LazyMarkdownContent";
+import { readAskUserAnswerSummary } from "../../lib/utils/tool-result";
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -218,12 +219,13 @@ export const MessageBubble = memo(function MessageBubble({
               item.toolCallId === block.toolCallId && item.kind === "question",
           );
           if (pending?.kind === "question") {
+            if (pending.presentation === "questionnaire") return null;
             return (
               <AskUserQuestionCard
                 key={block.id}
                 toolCallId={block.toolCallId}
                 questions={pending.questions}
-                result={block.result}
+                presentation="approval"
               />
             );
           }
@@ -242,18 +244,22 @@ export const MessageBubble = memo(function MessageBubble({
             );
           }
           if (block.toolName === "ask_user_question") {
-            const rawQuestions = block.rawArgs?.questions;
-            const questions = Array.isArray(rawQuestions)
-              ? (rawQuestions as AskUserQuestion[])
+            const rawQuestions = Array.isArray(block.rawArgs?.questions)
+              ? block.rawArgs.questions
               : [];
-            return (
-              <AskUserQuestionCard
-                key={block.id}
-                toolCallId={block.toolCallId}
-                questions={questions}
-                result={block.result}
-              />
+            const headers = rawQuestions.map((question) =>
+              question &&
+              typeof question === "object" &&
+              typeof (question as { header?: unknown }).header === "string"
+                ? ((question as { header: string }).header ?? "")
+                : "",
             );
+            const answers = readAskUserAnswerSummary(
+              block.toolOutput?.structuredContent,
+              block.result,
+              headers,
+            );
+            return <AskUserAnswerSummary key={block.id} answers={answers} />;
           }
           if (block.toolName === "dispatch_subagent") {
             return <SubagentCallCard key={block.id} {...block} />;

@@ -1,4 +1,9 @@
-export const SETTINGS_VERSION = 16;
+import {
+  DEFAULT_OPENAI_MODEL,
+  type ApiType,
+} from "../../lib/ai/provider-config";
+
+export const SETTINGS_VERSION = 17;
 
 export function migrateSettings(persisted: unknown, version: number): unknown {
   const state = persisted as Record<string, any>;
@@ -113,6 +118,16 @@ export function migrateSettings(persisted: unknown, version: number): unknown {
             : "",
       },
     };
+  }
+  if (version < 17) {
+    if (!state.ai) state.ai = {};
+    const apiType = state.ai.apiType as ApiType | undefined;
+    if (
+      (apiType === "openai" || apiType === "openai-compatible") &&
+      (typeof state.ai.model !== "string" || !state.ai.model.trim())
+    ) {
+      state.ai.model = DEFAULT_OPENAI_MODEL;
+    }
   }
   return state;
 }

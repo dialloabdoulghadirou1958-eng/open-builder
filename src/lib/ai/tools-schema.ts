@@ -6,6 +6,7 @@
 import { tool } from "ai";
 import type { ToolSet } from "ai";
 import { z } from "zod";
+import { PLAN_OUTPUT_CONTRACT } from "./plan-mode";
 
 export { TOOL_POLICY_VERSION } from "./tool-policy-version";
 
@@ -51,6 +52,7 @@ export const BUILTIN_TOOLS = {
     description:
       "Add, remove, or update project dependencies by modifying package.json. " +
       "This triggers a full project restart to install the new dependencies. " +
+      "Open Builder automatically preserves the current template's Sandpack/Nodebox-critical build dependencies, including verified Vite/esbuild-wasm and framework compiler pairings. " +
       "Provide the complete updated package.json content.",
     inputSchema: z.object({
       package_json: z
@@ -267,16 +269,16 @@ export const BUILTIN_TOOLS = {
       "Call this as the FINAL step of planning, only after you have thoroughly explored " +
       "the existing project (list_files / read_files / search_in_files) and resolved " +
       "any ambiguity (ask_user_question if needed). " +
-      "The plan must be clear Markdown that covers: what files will change, what dependencies " +
-      "will be added, and the overall approach. " +
-      "When this tool returns 'approved', proceed directly to implementation. " +
+      PLAN_OUTPUT_CONTRACT +
+      " " +
+      "When this tool returns 'approved', proceed to implementation in the next provider iteration. " +
       "When it returns 'rejected', revise based on the user's feedback and call exit_plan_mode again. " +
       "Do NOT output the plan as a normal text reply - it MUST be delivered via this tool.",
     inputSchema: z.object({
       plan: z
         .string()
         .describe(
-          "The complete implementation plan in Markdown. Include sections like Context, Approach, Files to change, and Verification.",
+          `The complete implementation plan in Markdown. ${PLAN_OUTPUT_CONTRACT}`,
         ),
     }),
   }),

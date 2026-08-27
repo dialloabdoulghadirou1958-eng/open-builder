@@ -40,6 +40,7 @@ export function createProjectTemplateFromConversation(
     description: normalizeOptionalText(input.description),
     files,
     template: conversation.template,
+    previewMode: conversation.previewMode ?? "sandpack",
     sourceConversationId: conversation.id,
     tags: normalizeTemplateTags(input.tags ?? []),
     createdAt: input.now,
@@ -57,6 +58,7 @@ export function createConversationFromProjectTemplate(
     messages: [],
     files: cloneProjectFiles(template.files),
     template: template.template,
+    previewMode: template.previewMode ?? "sandpack",
     isProjectInitialized: Object.keys(template.files).length > 0,
     createdAt: input.now,
     updatedAt: input.now,
@@ -69,7 +71,10 @@ export function getProjectTemplateStats(
   const files = Object.values(template.files);
   return {
     fileCount: files.length,
-    totalBytes: files.reduce((total, content) => total + byteLength(content), 0),
+    totalBytes: files.reduce(
+      (total, content) => total + byteLength(content),
+      0,
+    ),
   };
 }
 

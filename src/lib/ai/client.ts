@@ -6,6 +6,10 @@ import {
 } from "./generator";
 import type { ToolSet } from "ai";
 import type { ApiType } from "./provider";
+import {
+  defaultModelForApiType,
+  DEFAULT_OPENAI_MODEL,
+} from "./provider-config";
 
 export interface OpenAIClientConfig {
   apiType?: ApiType;
@@ -35,11 +39,13 @@ export function createOpenAIGenerator(
     | "initialSkillContext"
   >,
 ): WebAppGenerator {
+  const apiType = config.apiType ?? "openai-compatible";
   const options: GeneratorOptions = {
-    apiType: config.apiType ?? "openai-compatible",
+    apiType,
     apiBaseUrl: config.apiBaseUrl || "https://api.openai.com",
     apiKey: config.apiKey,
-    model: config.model || "gpt-5.3-codex",
+    model:
+      config.model || defaultModelForApiType(apiType) || DEFAULT_OPENAI_MODEL,
     stream: config.stream ?? true,
     initialFiles,
     customTools,

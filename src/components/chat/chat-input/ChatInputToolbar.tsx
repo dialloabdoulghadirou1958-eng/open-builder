@@ -4,6 +4,7 @@ import {
   Check,
   CodeXml,
   FileText,
+  FolderUp,
   Image,
   ListTodo,
   Loader2,
@@ -31,6 +32,7 @@ const McpMenu = lazy(() =>
 interface ChatInputToolbarProps {
   onPickImage: () => void;
   onPickFile: () => void;
+  onUploadProject: () => void;
   onManageSkills?: () => void;
   onManageMcp?: () => void;
   onReconnectMcp?: () => Promise<void> | void;
@@ -93,6 +95,7 @@ function DeferredMcpMenu({
 export function ChatInputToolbar({
   onPickImage,
   onPickFile,
+  onUploadProject,
   onManageSkills,
   onManageMcp,
   onReconnectMcp,
@@ -133,6 +136,13 @@ export function ChatInputToolbar({
             <DropdownMenuItem onSelect={onPickFile}>
               <FileText size={14} />
               {t.chat.uploadFile}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={isGenerating}
+              onSelect={onUploadProject}
+            >
+              <FolderUp size={14} />
+              {t.chat.uploadProject}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

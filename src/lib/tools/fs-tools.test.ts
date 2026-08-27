@@ -3,6 +3,7 @@ import {
   FS_TOOL_LIMITS,
   fsInitProject,
   fsListFiles,
+  fsManageDependencies,
   fsPatchFile,
   fsReadFiles,
   fsRenameFile,
@@ -42,6 +43,78 @@ describe("fsInitProject", () => {
     expect(result.result).toContain("nextjs");
   });
 
+  it.each([
+    "vite",
+    "vite-react",
+    "vite-react-ts",
+    "vite-preact",
+    "vite-preact-ts",
+    "vite-vue",
+    "vite-vue-ts",
+    "vite-svelte",
+    "vite-svelte-ts",
+  ])(
+    "keeps a direct esbuild-wasm dependency in the %s template",
+    async (template) => {
+      const result = await fsInitProject(template);
+      const packageJson = JSON.parse(result.newFiles?.["package.json"] ?? "{}");
+      const dependencies = {
+        ...(packageJson.dependencies ?? {}),
+        ...(packageJson.devDependencies ?? {}),
+      };
+
+      expect(dependencies.vite).toEqual(expect.any(String));
+      expect(dependencies["esbuild-wasm"]).toEqual(expect.any(String));
+    },
+  );
+
+  it("applies the Open Builder dependency profile to the default template", async () => {
+    const result = await fsInitProject("vite-react-ts");
+    const packageJson = JSON.parse(result.newFiles?.["package.json"] ?? "{}");
+
+    expect(result.result).toContain("stable dependency profile v1");
+    expect(packageJson.dependencies).toMatchObject({
+      react: "^19.2.8",
+      "react-dom": "^19.2.8",
+    });
+    expect(packageJson.devDependencies).toMatchObject({
+      "@types/react": "^19.2.18",
+      "@types/react-dom": "^19.2.5",
+      typescript: "^5.9.3",
+      vite: "4.2.0",
+      "esbuild-wasm": "^0.17.12",
+    });
+  });
+
+  it.each([
+    ["solid", "solid-js", "1.9.15"],
+    ["vite-preact", "preact", "^10.29.8"],
+    ["vite-vue", "vue", "^3.5.42"],
+  ])(
+    "refreshes %s application dependencies",
+    async (template, name, version) => {
+      const result = await fsInitProject(template);
+      const packageJson = JSON.parse(result.newFiles?.["package.json"] ?? "{}");
+
+      expect({
+        ...(packageJson.dependencies ?? {}),
+        ...(packageJson.devDependencies ?? {}),
+      }).toMatchObject({ [name]: version });
+    },
+  );
+
+  it("keeps the currently verified Next.js runtime profile", async () => {
+    const result = await fsInitProject("nextjs");
+    const packageJson = JSON.parse(result.newFiles?.["package.json"] ?? "{}");
+
+    expect(packageJson.dependencies).toMatchObject({
+      next: "12.1.6",
+      react: "18.2.0",
+      "react-dom": "18.2.0",
+      "@next/swc-wasm-nodejs": "12.1.6",
+    });
+  });
+
   describe("path safety", () => {
     it("rejects absolute paths and traversal", () => {
       expect(normalizeProjectPath("/etc/passwd")).toEqual({
@@ -66,6 +139,57 @@ describe("fsInitProject", () => {
       expect(result.changes).toEqual([]);
       expect(result.result).toContain("managed by manage_env");
     });
+  });
+});
+
+describe("fsManageDependencies", () => {
+  it("preserves the verified Vite and esbuild-wasm pair", () => {
+    const current = JSON.stringify({
+      scripts: { dev: "vite" },
+      devDependencies: {
+        vite: "4.2.0",
+        "esbuild-wasm": "^0.17.12",
+      },
+    });
+    const requested = JSON.stringify({
+      scripts: { dev: "vite" },
+      dependencies: { react: "19.0.0" },
+      devDependencies: { vite: "5.4.9", typescript: "5.6.0" },
+    });
+
+    const result = fsManageDependencies(requested, {
+      "package.json": current,
+    });
+    const packageJson = JSON.parse(result.newFiles?.["package.json"] ?? "{}");
+
+    expect(packageJson.devDependencies).toMatchObject({
+      vite: "4.2.0",
+      "esbuild-wasm": "^0.17.12",
+      typescript: "5.6.0",
+    });
+    expect(packageJson.dependencies.react).toBe("19.0.0");
+    expect(result.result).toContain("Preserved Sandpack/Nodebox-compatible");
+  });
+
+  it("allows a project to remove Vite entirely", () => {
+    const result = fsManageDependencies(
+      JSON.stringify({ dependencies: { express: "5.0.0" } }),
+      {
+        "package.json": JSON.stringify({
+          devDependencies: {
+            vite: "4.2.0",
+            "esbuild-wasm": "^0.17.12",
+          },
+        }),
+      },
+    );
+
+    expect(JSON.parse(result.newFiles?.["package.json"] ?? "{}")).toEqual({
+      dependencies: { express: "5.0.0" },
+    });
+    expect(result.result).not.toContain(
+      "Preserved Sandpack/Nodebox-compatible",
+    );
   });
 });
 

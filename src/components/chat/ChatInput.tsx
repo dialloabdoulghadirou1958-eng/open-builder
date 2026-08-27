@@ -34,6 +34,10 @@ import {
   storeAttachmentFile,
 } from "../../lib/attachments/store";
 import type { Translations } from "../../i18n";
+import type {
+  ProjectImportCommitResult,
+  StagedProjectImport,
+} from "../../lib/utils/project-import";
 
 const SkillsPanel = lazy(() =>
   import("../skills/SkillsPanel").then((module) => ({
@@ -42,6 +46,11 @@ const SkillsPanel = lazy(() =>
 );
 const McpPanel = lazy(() =>
   import("../mcp/McpPanel").then((module) => ({ default: module.McpPanel })),
+);
+const ProjectImportDialog = lazy(() =>
+  import("./ProjectImportDialog").then((module) => ({
+    default: module.ProjectImportDialog,
+  })),
 );
 
 const NEEDS_MESSAGES = new Set([
@@ -65,6 +74,10 @@ interface ChatInputProps {
   messages: Message[];
   attachments: Attachment[];
   onAttachmentsChange: (attachments: Attachment[]) => void;
+  onImportProject: (
+    project: StagedProjectImport,
+  ) => Promise<ProjectImportCommitResult> | ProjectImportCommitResult;
+  hasExistingProject: boolean;
   onSlashCommand: (cmd: string) => void;
   forcedSkillIds: readonly string[];
   onForcedSkillIdsChange: (ids: string[]) => void;
@@ -114,6 +127,8 @@ export function ChatInput({
   messages,
   attachments,
   onAttachmentsChange,
+  onImportProject,
+  hasExistingProject,
   onSlashCommand,
   forcedSkillIds,
   onForcedSkillIdsChange,
@@ -128,6 +143,7 @@ export function ChatInput({
   const [mcpOpen, setMcpOpen] = useState(false);
   const [skillsInitializing, setSkillsInitializing] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [projectImportOpen, setProjectImportOpen] = useState(false);
   const skillsAvailable = isSkillsAvailable();
   const skills = useSkillsStore((state) => state.skills);
 
@@ -456,6 +472,7 @@ export function ChatInput({
             <ChatInputToolbar
               onPickImage={() => imageInputRef.current?.click()}
               onPickFile={() => fileInputRef.current?.click()}
+              onUploadProject={() => setProjectImportOpen(true)}
               onManageSkills={
                 skillsAvailable ? () => setSkillsOpen(true) : undefined
               }
@@ -510,6 +527,17 @@ export function ChatInput({
                 await import("../../lib/mcp/connection-manager");
               return getMcpConnectionManager().approveServer(id);
             }}
+          />
+        </Suspense>
+      )}
+      {projectImportOpen && (
+        <Suspense fallback={null}>
+          <ProjectImportDialog
+            open
+            hasExistingProject={hasExistingProject}
+            isGenerating={isGenerating}
+            onClose={() => setProjectImportOpen(false)}
+            onImport={onImportProject}
           />
         </Suspense>
       )}

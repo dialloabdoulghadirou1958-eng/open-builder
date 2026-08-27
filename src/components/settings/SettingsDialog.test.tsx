@@ -30,7 +30,6 @@ describe("SettingsDialog", () => {
     expect(validateAISettingsDraft(aiDefaults, validationMessages)).toEqual({
       apiKey: "key required",
       apiBaseUrl: "URL required",
-      model: "model required",
     });
     expect(
       validateAISettingsDraft(
@@ -86,6 +85,7 @@ describe("SettingsDialog", () => {
       screen.getByLabelText("API Base URL"),
       "https://api.example.com",
     );
+    await user.clear(screen.getByLabelText("Model Name"));
     await user.type(screen.getByLabelText("Model Name"), "test-model");
 
     await user.click(screen.getByRole("tab", { name: "Advanced" }));

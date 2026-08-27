@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useConversationStore } from "./conversation";
+import { migrateConversationState, useConversationStore } from "./conversation";
 import { useSnapshotStore } from "./snapshot";
 import { PROJECT_FILE_LIMITS } from "../lib/utils/project-files";
 
@@ -195,6 +195,65 @@ describe("conversation store", () => {
     expect(useSnapshotStore.getState().snapshots[first]).toEqual([]);
   });
 
+  it("atomically replaces a project while preserving chat and clearing derived state", () => {
+    const id = useConversationStore.getState().createConversation();
+    useConversationStore.setState((state) => ({
+      conversations: {
+        ...state.conversations,
+        [id]: {
+          ...state.conversations[id],
+          messages: [{ role: "user", content: "Import the project" }],
+          files: { "src/old.ts": "old" },
+          localAgentSessions: {
+            codex: {
+              provider: "codex",
+              sessionId: "thread-1",
+              transcriptFingerprint: "fingerprint",
+              cliVersion: "1.0.0",
+              updatedAt: 1,
+            },
+          },
+        },
+      },
+    }));
+    useSnapshotStore.setState({
+      snapshots: {
+        [id]: [
+          {
+            id: "snapshot-old",
+            conversationId: id,
+            messageId: "assistant-old",
+            patches: {},
+            addedFiles: { "src/old.ts": "old" },
+            deletedFiles: [],
+            createdAt: 1,
+          },
+        ],
+      },
+    });
+
+    const result = useConversationStore.getState().replaceProject({
+      files: { "README.md": "imported" },
+      template: "static",
+      previewMode: "code-only",
+      activeFile: "README.md",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(useConversationStore.getState().conversations[id]).toMatchObject({
+      messages: [{ role: "user", content: "Import the project" }],
+      files: { "README.md": "imported" },
+      template: "static",
+      previewMode: "code-only",
+      activeFile: "README.md",
+      isProjectInitialized: true,
+    });
+    expect(
+      useConversationStore.getState().conversations[id].localAgentSessions,
+    ).toBeUndefined();
+    expect(useSnapshotStore.getState().snapshots[id]).toBeUndefined();
+  });
+
   it("can persist a delayed edit to a conversation that is no longer active", () => {
     const first = useConversationStore.getState().createConversation();
     const second = useConversationStore.getState().createConversation();
@@ -208,7 +267,109 @@ describe("conversation store", () => {
     expect(state.conversations[first].files).toEqual({
       "src/App.tsx": "saved edit",
     });
+    expect(state.conversations[first].isProjectInitialized).toBe(true);
+    expect(state.conversations[first].activeFile).toBe("src/App.tsx");
     expect(state.conversations[second].files).toEqual({});
+  });
+
+  it("derives project initialization atomically from the file tree", () => {
+    const id = useConversationStore.getState().createConversation();
+
+    useConversationStore.getState().setFiles({ "index.html": "<main />" });
+    expect(useConversationStore.getState().conversations[id]).toMatchObject({
+      activeFile: "index.html",
+      isProjectInitialized: true,
+    });
+
+    useConversationStore.getState().setFiles({});
+    expect(useConversationStore.getState().conversations[id]).toMatchObject({
+      activeFile: undefined,
+      isProjectInitialized: false,
+    });
+  });
+
+  it("normalizes imported and forked project state", () => {
+    const imported = useConversationStore.getState().addConversation({
+      id: "imported",
+      title: "Imported",
+      messages: [],
+      files: { "src/App.tsx": "app" },
+      activeFile: "missing.ts",
+      template: "vite-react-ts",
+      isProjectInitialized: false,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    expect(
+      useConversationStore.getState().conversations[imported],
+    ).toMatchObject({
+      activeFile: "src/App.tsx",
+      isProjectInitialized: true,
+    });
+
+    useConversationStore.setState((state) => ({
+      conversations: {
+        ...state.conversations,
+        [imported]: {
+          ...state.conversations[imported],
+          isProjectInitialized: false,
+        },
+      },
+    }));
+    const fork = useConversationStore.getState().forkConversation();
+    expect(useConversationStore.getState().conversations[fork]).toMatchObject({
+      activeFile: "src/App.tsx",
+      isProjectInitialized: true,
+    });
+  });
+
+  it("repairs stale v1 project flags without changing other persisted fields", () => {
+    const persisted = {
+      activeId: "with-files",
+      untouched: "value",
+      conversations: {
+        "with-files": {
+          id: "with-files",
+          title: "With files",
+          messages: [],
+          files: { "src/App.tsx": "app" },
+          activeFile: "missing.ts",
+          template: "vite-react-ts",
+          isProjectInitialized: false,
+          createdAt: 1,
+          updatedAt: 2,
+        },
+        empty: {
+          id: "empty",
+          title: "Empty",
+          messages: [],
+          files: {},
+          activeFile: "missing.ts",
+          template: "vite-react-ts",
+          isProjectInitialized: true,
+          createdAt: 3,
+          updatedAt: 4,
+        },
+      },
+    };
+
+    const migrated = migrateConversationState(persisted, 1);
+
+    expect(migrated.activeId).toBe("with-files");
+    expect(migrated.untouched).toBe("value");
+    expect(migrated.conversations["with-files"]).toMatchObject({
+      activeFile: "src/App.tsx",
+      previewMode: "sandpack",
+      isProjectInitialized: true,
+      updatedAt: 2,
+    });
+    expect(migrated.conversations.empty).toMatchObject({
+      activeFile: undefined,
+      previewMode: "sandpack",
+      isProjectInitialized: false,
+      updatedAt: 4,
+    });
   });
 
   it("persists an active file and falls back when that file is removed", () => {

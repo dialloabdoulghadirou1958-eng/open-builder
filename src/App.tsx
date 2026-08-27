@@ -12,6 +12,8 @@ import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 import { useCommandPaletteActions } from "./hooks/useCommandPaletteActions";
 import { useConversationStore } from "./store/conversation";
 import { useT } from "./i18n";
+import { discardPendingSandpackFileChanges } from "./components/code-viewer/sandpack-file-changes";
+import type { StagedProjectImport } from "./lib/utils/project-import";
 
 const CodeViewer = lazy(() =>
   import("./components/CodeViewer").then((module) => ({
@@ -34,6 +36,7 @@ export default function App() {
   const setFilesForConversation = useConversationStore(
     (s) => s.setFilesForConversation,
   );
+  const replaceProject = useConversationStore((s) => s.replaceProject);
   const layout = useAppLayout();
   const isMobile = layout === "mobile";
   const isTablet = layout === "tablet";
@@ -129,11 +132,11 @@ export default function App() {
     systemSettings,
     handleSaveSystemSettings,
     template,
+    previewMode,
     setTemplate,
     sandpackKey,
     restartSandpack,
     isProjectInitialized,
-    setIsProjectInitialized,
   } = useAppState();
 
   const {
@@ -158,7 +161,6 @@ export default function App() {
     setIsGenerating,
     setTemplate,
     restartSandpack,
-    setIsProjectInitialized,
   });
 
   const handleCodeFileChange = useCallback(
@@ -173,6 +175,37 @@ export default function App() {
       }));
     },
     [setFilesForConversation, updateFiles],
+  );
+
+  const handleImportProject = useCallback(
+    (project: StagedProjectImport) => {
+      if (!activeId)
+        return { ok: false as const, error: "No active conversation." };
+      if (isGenerating) {
+        return {
+          ok: false as const,
+          error: "Stop generation before importing a project.",
+        };
+      }
+      discardPendingSandpackFileChanges(activeId);
+      const result = replaceProject({
+        files: project.files,
+        template: project.template,
+        previewMode: project.previewMode,
+        activeFile: project.activeFile,
+      });
+      if (!result.ok) return result;
+      invalidateGenerator();
+      restartSandpack();
+      return result;
+    },
+    [
+      activeId,
+      invalidateGenerator,
+      isGenerating,
+      replaceProject,
+      restartSandpack,
+    ],
   );
 
   useEffect(() => {
@@ -218,8 +251,10 @@ export default function App() {
       onStop={stop}
       onOpenSettings={() => setIsSettingsOpen(true)}
       onSetFiles={(nextFiles) => setFiles(nextFiles)}
+      onImportProject={handleImportProject}
       files={files}
       template={template}
+      previewMode={previewMode}
       sandpackKey={sandpackKey}
       isProjectInitialized={isProjectInitialized}
       showInlinePreview={isMobile}
@@ -250,6 +285,7 @@ export default function App() {
         onDeleteFile={deleteFile}
         onMoveFile={moveFile}
         template={template}
+        previewMode={previewMode}
         sandpackKey={sandpackKey}
       />
     </Suspense>

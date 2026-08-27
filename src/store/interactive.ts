@@ -12,10 +12,13 @@ export type {
   PlanDecision,
 } from "../types/api";
 
+export type QuestionPresentation = "questionnaire" | "approval";
+
 interface PendingQuestion {
   kind: "question";
   toolCallId: string;
   questions: AskUserQuestion[];
+  presentation: QuestionPresentation;
   resolve: (answer: AskUserAnswers) => void;
   reject: (err: Error) => void;
 }
@@ -36,6 +39,7 @@ interface InteractiveState {
   askQuestion: (input: {
     toolCallId: string;
     questions: AskUserQuestion[];
+    presentation?: QuestionPresentation;
   }) => Promise<AskUserAnswers>;
 
   askPlanApproval: (input: {
@@ -53,12 +57,19 @@ interface InteractiveState {
 export const useInteractiveStore = create<InteractiveState>((set, get) => ({
   pending: [],
 
-  askQuestion: ({ toolCallId, questions }) =>
+  askQuestion: ({ toolCallId, questions, presentation = "questionnaire" }) =>
     new Promise<AskUserAnswers>((resolve, reject) => {
       set((state) => ({
         pending: [
           ...state.pending,
-          { kind: "question", toolCallId, questions, resolve, reject },
+          {
+            kind: "question",
+            toolCallId,
+            questions,
+            presentation,
+            resolve,
+            reject,
+          },
         ],
       }));
     }),
@@ -87,8 +98,7 @@ export const useInteractiveStore = create<InteractiveState>((set, get) => ({
 
   resolvePlan: (toolCallId, decision) => {
     const item = get().pending.find(
-      (p): p is PendingPlan =>
-        p.kind === "plan" && p.toolCallId === toolCallId,
+      (p): p is PendingPlan => p.kind === "plan" && p.toolCallId === toolCallId,
     );
     if (!item) return;
     item.resolve(decision);

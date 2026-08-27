@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  defaultModelForApiType,
+  DEFAULT_OPENAI_MODEL,
   fetchModelList,
   MODEL_LIST_LIMITS,
   resolveBaseURL,
@@ -17,6 +19,15 @@ describe("provider config helpers", () => {
     expect(resolveBaseURL("https://api.example.com/v1", "openai")).toBe(
       "https://api.example.com/v1",
     );
+  });
+
+  it("defaults only OpenAI-family API providers to the unified model", () => {
+    expect(defaultModelForApiType("openai")).toBe(DEFAULT_OPENAI_MODEL);
+    expect(defaultModelForApiType("openai-compatible")).toBe(
+      DEFAULT_OPENAI_MODEL,
+    );
+    expect(defaultModelForApiType("anthropic")).toBe("");
+    expect(defaultModelForApiType("google")).toBe("");
   });
 
   it("bounds and deduplicates OpenAI-compatible model ids", async () => {
@@ -60,7 +71,11 @@ describe("provider config helpers", () => {
     );
 
     await expect(
-      fetchModelList("google", "https://generativelanguage.googleapis.com", "key"),
+      fetchModelList(
+        "google",
+        "https://generativelanguage.googleapis.com",
+        "key",
+      ),
     ).resolves.toEqual(["gemini-flash", "gemini-pro"]);
   });
 

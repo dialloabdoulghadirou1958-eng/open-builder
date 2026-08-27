@@ -159,6 +159,14 @@
   }
 }
 
+@layer components {
+  .ask-question-custom-row:focus-within,
+  .ask-question-custom-row[data-active="true"] {
+    border-color: #38bdf8;
+    box-shadow: 0 0 0 2px #38bdf833;
+  }
+}
+
 body {
   width: 100%;
   height: 100vh;

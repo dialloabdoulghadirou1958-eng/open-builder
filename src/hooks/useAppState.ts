@@ -16,14 +16,12 @@ export function useAppState() {
   const files = activeConv?.files ?? EMPTY_FILES;
   const messages = activeConv?.messages ?? EMPTY_MESSAGES;
   const template = activeConv?.template ?? DEFAULT_TEMPLATE;
+  const previewMode = activeConv?.previewMode ?? "sandpack";
   const isProjectInitialized = activeConv?.isProjectInitialized ?? false;
 
   const setMessages = useConversationStore((s) => s.setMessages);
   const setFiles = useConversationStore((s) => s.setFiles);
   const setTemplate = useConversationStore((s) => s.setTemplate);
-  const setIsProjectInitialized = useConversationStore(
-    (s) => s.setIsProjectInitialized,
-  );
   const setCurrentFile = useConversationStore((s) => s.setActiveFile);
   const currentFile =
     activeConv?.activeFile && activeConv.activeFile in files
@@ -99,10 +97,10 @@ export function useAppState() {
     systemSettings,
     handleSaveSystemSettings,
     template,
+    previewMode,
     setTemplate,
     sandpackKey,
     restartSandpack,
     isProjectInitialized,
-    setIsProjectInitialized,
   };
 }

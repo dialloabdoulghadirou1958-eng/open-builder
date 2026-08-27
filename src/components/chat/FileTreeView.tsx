@@ -1,4 +1,5 @@
 import { Folder, File } from "lucide-react";
+import { useT } from "../../i18n";
 
 type TreeNode = { [key: string]: TreeNode | null };
 
@@ -61,7 +62,9 @@ export function buildTree(paths: string[]): TreeNode {
   return root;
 }
 
-function sortEntries(entries: [string, TreeNode | null][]): [string, TreeNode | null][] {
+function sortEntries(
+  entries: [string, TreeNode | null][],
+): [string, TreeNode | null][] {
   return entries.sort(([, a], [, b]) => {
     if (a !== null && b === null) return -1;
     if (a === null && b !== null) return 1;
@@ -69,19 +72,37 @@ function sortEntries(entries: [string, TreeNode | null][]): [string, TreeNode | 
   });
 }
 
-function TreeNodeRow({ name, node, depth }: { name: string; node: TreeNode | null; depth: number }) {
+function TreeNodeRow({
+  name,
+  node,
+  depth,
+}: {
+  name: string;
+  node: TreeNode | null;
+  depth: number;
+}) {
   const isDir = node !== null;
   return (
     <>
-      <div className="flex items-center gap-1.5 py-0.5" style={{ paddingLeft: depth * 14 }}>
-        {isDir
-          ? <Folder size={12} className="text-yellow-500 shrink-0" />
-          : <File size={12} className="text-muted-foreground shrink-0" />}
+      <div
+        className="flex items-center gap-1.5 py-0.5"
+        style={{ paddingLeft: depth * 14 }}
+      >
+        {isDir ? (
+          <Folder size={12} className="text-yellow-500 shrink-0" />
+        ) : (
+          <File size={12} className="text-muted-foreground shrink-0" />
+        )}
         <span className="text-xs font-mono text-foreground/80">{name}</span>
       </div>
       {isDir &&
         sortEntries(Object.entries(node!)).map(([childName, childNode]) => (
-          <TreeNodeRow key={childName} name={childName} node={childNode} depth={depth + 1} />
+          <TreeNodeRow
+            key={childName}
+            name={childName}
+            node={childNode}
+            depth={depth + 1}
+          />
         ))}
     </>
   );
@@ -92,10 +113,15 @@ interface FileTreeViewProps {
 }
 
 export function FileTreeView({ content }: FileTreeViewProps) {
+  const t = useT();
   const { paths, omitted } = normalizeFileTreePaths(content);
 
   if (paths.length === 0) {
-    return <span className="text-xs text-muted-foreground">（空）</span>;
+    return (
+      <span className="text-xs text-muted-foreground">
+        {t.tool.emptyFileTree}
+      </span>
+    );
   }
 
   const tree = buildTree(paths);
@@ -107,7 +133,7 @@ export function FileTreeView({ content }: FileTreeViewProps) {
       ))}
       {omitted > 0 && (
         <div className="px-1 py-0.5 text-xs text-muted-foreground">
-          … {omitted} more paths omitted
+          … {t.tool.morePathsOmitted.replace("{count}", String(omitted))}
         </div>
       )}
     </div>

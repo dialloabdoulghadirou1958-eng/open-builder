@@ -29,11 +29,14 @@ const TOOL_ICONS: Record<string, React.ReactNode> = Object.fromEntries(
   }),
 );
 
-function truncateToolCardText(value: string): string {
+function truncateToolCardText(
+  value: string,
+  truncatedMessage?: string,
+): string {
   if (value.length <= TOOL_CARD_LIMITS.maxResultDisplayChars) return value;
   return (
     value.slice(0, TOOL_CARD_LIMITS.maxResultDisplayChars) +
-    `\n\n[truncated in UI after ${TOOL_CARD_LIMITS.maxResultDisplayChars} chars]`
+    `\n\n[${truncatedMessage ?? `truncated in UI after ${TOOL_CARD_LIMITS.maxResultDisplayChars} chars`}]`
   );
 }
 
@@ -46,50 +49,77 @@ function parseToolJson(result: string): any | null {
   }
 }
 
-export function countSearchResults(result: string): {
+export function countSearchResults(
+  result: string,
+  truncatedMessage?: string,
+): {
   ok: boolean;
   count: number;
   error?: string;
 } {
   const d = parseToolJson(result);
   if (!d) {
-    return { ok: false, count: 0, error: truncateToolCardText(result) };
+    return {
+      ok: false,
+      count: 0,
+      error: truncateToolCardText(result, truncatedMessage),
+    };
   }
   return { ok: d.ok, count: d.results?.length ?? 0, error: d.error };
 }
 
-export function countImageResults(result: string): {
+export function countImageResults(
+  result: string,
+  truncatedMessage?: string,
+): {
   ok: boolean;
   count: number;
   error?: string;
 } {
   const d = parseToolJson(result);
   if (!d) {
-    return { ok: false, count: 0, error: truncateToolCardText(result) };
+    return {
+      ok: false,
+      count: 0,
+      error: truncateToolCardText(result, truncatedMessage),
+    };
   }
   return { ok: d.ok, count: d.images?.length ?? 0, error: d.error };
 }
 
-export function parseNpmSearchResult(result: string): {
+export function parseNpmSearchResult(
+  result: string,
+  truncatedMessage?: string,
+): {
   success: boolean;
   count: number;
   error?: string;
 } {
   const d = parseToolJson(result);
   if (!d) {
-    return { success: false, count: 0, error: truncateToolCardText(result) };
+    return {
+      success: false,
+      count: 0,
+      error: truncateToolCardText(result, truncatedMessage),
+    };
   }
   return { success: d.success, count: d.data?.length ?? 0, error: d.error };
 }
 
-export function parseNpmDetailResult(result: string): {
+export function parseNpmDetailResult(
+  result: string,
+  truncatedMessage?: string,
+): {
   success: boolean;
   name?: string;
   error?: string;
 } {
   const d = parseToolJson(result);
   if (!d) {
-    return { success: false, error: truncateToolCardText(result) };
+    return {
+      success: false,
+      error: truncateToolCardText(result, truncatedMessage),
+    };
   }
   return { success: d.success, name: d.data?.name, error: d.error };
 }
@@ -119,6 +149,40 @@ export function parseConsoleIssues(
     }));
 }
 
+export type ToolCardStatus = "running" | "completed" | "failed" | "attention";
+
+export function classifyToolCardStatus(
+  toolName: string,
+  result: string,
+  toolOutput?: ToolBlock["toolOutput"],
+): ToolCardStatus {
+  if (!result && !toolOutput) return "running";
+  if (toolOutput?.isError || result.startsWith("Error")) return "failed";
+
+  if (toolName === "get_console_logs") {
+    const issues = parseConsoleIssues(result);
+    if (issues.length > 0) return "attention";
+    return "completed";
+  }
+
+  const structured = parseToolJson(result);
+  if (structured && typeof structured === "object") {
+    if (toolName === "project_health_check") {
+      if (
+        structured.ok === false ||
+        (Array.isArray(structured.issues) && structured.issues.length > 0)
+      ) {
+        return "attention";
+      }
+      return "completed";
+    }
+    if (structured.ok === false || structured.success === false)
+      return "failed";
+  }
+
+  return "completed";
+}
+
 type ToolCallCardProps = Omit<ToolBlock, "type" | "id">;
 
 export const ToolCallCard = memo(function ToolCallCard({
@@ -131,22 +195,36 @@ export const ToolCallCard = memo(function ToolCallCard({
 }: ToolCallCardProps) {
   const t = useT();
   const [expanded, setExpanded] = useState(false);
-  const displayResult = result ? truncateToolCardText(result) : result;
-  const isSuccess = result?.startsWith("OK") ?? false;
-  const isError = toolOutput?.isError ?? result?.startsWith("Error") ?? false;
+  const truncatedMessage = t.tool.truncatedInUi.replace(
+    "{count}",
+    String(TOOL_CARD_LIMITS.maxResultDisplayChars),
+  );
+  const displayResult = result
+    ? truncateToolCardText(result, truncatedMessage)
+    : result;
+  const status = classifyToolCardStatus(toolName, result, toolOutput);
+  const statusLabel = t.tool.status[status];
 
-  const searchResultCount =
-    toolName === "web_search" && result ? countSearchResults(result).count : 0;
-  const imageResultCount =
-    toolName === "image_search" && result ? countImageResults(result).count : 0;
-  const npmSearchCount =
+  const searchSummary =
+    toolName === "web_search" && result
+      ? countSearchResults(result, truncatedMessage)
+      : undefined;
+  const imageSummary =
+    toolName === "image_search" && result
+      ? countImageResults(result, truncatedMessage)
+      : undefined;
+  const npmSearchSummary =
     toolName === "search_npm_packages" && result
-      ? parseNpmSearchResult(result).count
-      : 0;
-  const npmDetailName =
+      ? parseNpmSearchResult(result, truncatedMessage)
+      : undefined;
+  const npmDetailSummary =
     toolName === "get_npm_package_detail" && result
-      ? parseNpmDetailResult(result).name
-      : "";
+      ? parseNpmDetailResult(result, truncatedMessage)
+      : undefined;
+  const searchResultCount = searchSummary?.count ?? 0;
+  const imageResultCount = imageSummary?.count ?? 0;
+  const npmSearchCount = npmSearchSummary?.count ?? 0;
+  const npmDetailName = npmDetailSummary?.name ?? "";
   const readerUrls =
     toolName === "web_reader" && result ? countWebReaderUrls(result) : [];
   const consoleIssues =
@@ -223,27 +301,17 @@ export const ToolCallCard = memo(function ToolCallCard({
             {path.split("/").pop()}
           </Badge>
         ) : null}
-        {result ? (
-          <div
-            className={cn(
-              "w-1.5 h-1.5 rounded-full shrink-0",
-              toolName === "get_console_logs"
-                ? consoleErrorCount > 0
-                  ? "bg-red-500"
-                  : consoleWarnCount > 0
-                    ? "bg-yellow-400"
-                    : "bg-green-500"
-                : isSuccess && "bg-green-500",
-              toolName !== "get_console_logs" && isError && "bg-red-500",
-              toolName !== "get_console_logs" &&
-                !isSuccess &&
-                !isError &&
-                "bg-green-500",
-            )}
-          />
-        ) : (
-          <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse shrink-0" />
-        )}
+        <span
+          className={cn(
+            "w-1.5 h-1.5 rounded-full shrink-0",
+            status === "running" && "bg-yellow-400 animate-pulse",
+            status === "completed" && "bg-green-500",
+            status === "failed" && "bg-red-500",
+            status === "attention" && "bg-yellow-400",
+          )}
+          aria-hidden="true"
+        />
+        <span className="sr-only">{statusLabel}</span>
         <ChevronRight
           size={13}
           className={cn(
@@ -295,26 +363,26 @@ export const ToolCallCard = memo(function ToolCallCard({
             )
           ) : toolName === "web_search" ? (
             <p className="text-xs text-muted-foreground">
-              {result.startsWith("Error")
-                ? `${t.tool.failed}${result}`
+              {!searchSummary?.ok
+                ? `${t.tool.failed}${searchSummary?.error ?? result}`
                 : `${t.tool.found}${searchResultCount} ${t.tool.searchResults}`}
             </p>
           ) : toolName === "image_search" ? (
             <p className="text-xs text-muted-foreground">
-              {result.startsWith("Error")
-                ? `${t.tool.failed}${result}`
+              {!imageSummary?.ok
+                ? `${t.tool.failed}${imageSummary?.error ?? result}`
                 : `${t.tool.found}${imageResultCount} ${t.tool.imageResults}`}
             </p>
           ) : toolName === "search_npm_packages" ? (
             <p className="text-xs text-muted-foreground">
-              {result.includes('"success":false')
-                ? `${t.tool.failed}${parseNpmSearchResult(result).error}`
+              {!npmSearchSummary?.success
+                ? `${t.tool.failed}${npmSearchSummary?.error ?? result}`
                 : `${t.tool.found}${npmSearchCount} ${t.tool.npmPackages}`}
             </p>
           ) : toolName === "get_npm_package_detail" ? (
             <p className="text-xs text-muted-foreground">
-              {result.includes('"success":false')
-                ? `${t.tool.failed}${parseNpmDetailResult(result).error}`
+              {!npmDetailSummary?.success
+                ? `${t.tool.failed}${npmDetailSummary?.error ?? result}`
                 : `${t.tool.found}${npmDetailName}`}
             </p>
           ) : toolName === "web_reader" ? (
@@ -366,6 +434,11 @@ function RichToolResult({
   output: NonNullable<ToolBlock["toolOutput"]>;
   fallback: string;
 }) {
+  const t = useT();
+  const truncatedMessage = t.tool.truncatedInUi.replace(
+    "{count}",
+    String(TOOL_CARD_LIMITS.maxResultDisplayChars),
+  );
   const content = output.content ?? [];
   const hasVisibleContent = content.length > 0;
   let structured = "";
@@ -373,9 +446,10 @@ function RichToolResult({
     try {
       structured = truncateToolCardText(
         JSON.stringify(output.structuredContent, null, 2),
+        truncatedMessage,
       );
     } catch {
-      structured = "[Structured content could not be displayed]";
+      structured = `[${t.tool.structuredContentUnavailable}]`;
     }
   }
 
@@ -390,7 +464,7 @@ function RichToolResult({
                 key={key}
                 className="text-xs font-mono whitespace-pre-wrap text-muted-foreground leading-relaxed"
               >
-                {truncateToolCardText(part.text)}
+                {truncateToolCardText(part.text, truncatedMessage)}
               </pre>
             );
           case "image":
@@ -398,7 +472,7 @@ function RichToolResult({
               <img
                 key={key}
                 src={dataUrl(part.data, part.mimeType)}
-                alt="MCP tool result"
+                alt={t.tool.mcpResultAlt}
                 className="max-h-72 max-w-full rounded-md border border-border/60 object-contain"
               />
             );
@@ -461,10 +535,10 @@ function RichToolResult({
                 </p>
                 <pre className="text-xs font-mono whitespace-pre-wrap text-muted-foreground leading-relaxed">
                   {part.text
-                    ? truncateToolCardText(part.text)
+                    ? truncateToolCardText(part.text, truncatedMessage)
                     : part.blob
-                      ? `[Embedded ${part.mimeType || "binary"} resource]`
-                      : "[Empty embedded resource]"}
+                      ? `[${t.tool.embeddedResource.replace("{type}", part.mimeType || t.tool.binary)}]`
+                      : `[${t.tool.emptyEmbeddedResource}]`}
                 </pre>
               </div>
             );
@@ -479,7 +553,7 @@ function RichToolResult({
       {structured && (
         <details className="rounded-md border border-border/60 px-2.5 py-2">
           <summary className="cursor-pointer text-xs font-medium text-foreground">
-            Structured content
+            {t.tool.structuredContent}
           </summary>
           <pre className="mt-2 text-xs font-mono whitespace-pre-wrap text-muted-foreground leading-relaxed">
             {structured}

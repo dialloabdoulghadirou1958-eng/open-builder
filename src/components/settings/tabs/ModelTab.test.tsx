@@ -8,9 +8,14 @@ import { useSettingsStore } from "../../../store/settings";
 import { aiDefaults } from "../../../store/settings/ai";
 import { systemDefaults } from "../../../store/settings/system";
 import { ModelTab } from "./ModelTab";
+import { DEFAULT_OPENAI_MODEL } from "../../../lib/ai/provider-config";
 
 describe("ModelTab local-agent capability", () => {
   beforeEach(() => {
+    Element.prototype.hasPointerCapture = vi.fn(() => false);
+    Element.prototype.setPointerCapture = vi.fn();
+    Element.prototype.releasePointerCapture = vi.fn();
+    Element.prototype.scrollIntoView = vi.fn();
     useSettingsStore.setState({
       system: { ...systemDefaults, language: "en" },
     });
@@ -68,6 +73,38 @@ describe("ModelTab local-agent capability", () => {
     );
     expect(screen.getByRole("status")).toHaveTextContent(
       "Local CLI is desktop-only",
+    );
+  });
+
+  it("sets the OpenAI-family default when the API type changes", async () => {
+    const user = userEvent.setup();
+    const setFormData = vi.fn();
+    useSettingsStore.setState({ localAgentCapability: "unsupported" });
+    render(
+      <TooltipProvider>
+        <ModelTab
+          formData={{
+            ...aiDefaults,
+            apiType: "anthropic",
+            apiBaseUrl: "https://api.anthropic.com",
+            model: "claude-custom",
+          }}
+          setFormData={setFormData}
+        />
+      </TooltipProvider>,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "API Type" }));
+    await user.click(
+      screen.getByRole("option", { name: /OpenAI Compatible/i }),
+    );
+
+    expect(setFormData).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiType: "openai-compatible",
+        apiBaseUrl: "http://localhost:11434",
+        model: DEFAULT_OPENAI_MODEL,
+      }),
     );
   });
 });

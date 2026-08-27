@@ -30,6 +30,7 @@ interface ViewToolbarProps {
   deviceSize: DeviceSize;
   onDeviceSizeChange: (size: DeviceSize) => void;
   files: ProjectFiles;
+  previewEnabled?: boolean;
   previewScale?: number;
   onPreviewZoomIn?: () => void;
   onPreviewZoomOut?: () => void;
@@ -84,6 +85,7 @@ export function ViewToolbar({
   deviceSize,
   onDeviceSizeChange,
   files,
+  previewEnabled = true,
   previewScale = 1,
   onPreviewZoomIn,
   onPreviewZoomOut,
@@ -93,15 +95,17 @@ export function ViewToolbar({
   return (
     <div className="h-14 border-b bg-background px-4 flex items-center justify-between shrink-0 z-10">
       <div className="flex items-center gap-1 p-0.5 rounded-lg border">
-        <Button
-          variant={viewMode === "preview" ? "secondary" : "ghost"}
-          size="sm"
-          onClick={() => onViewModeChange("preview")}
-          className="gap-2"
-        >
-          <Eye size={16} />
-          {t.toolbar.preview}
-        </Button>
+        {previewEnabled && (
+          <Button
+            variant={viewMode === "preview" ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => onViewModeChange("preview")}
+            className="gap-2"
+          >
+            <Eye size={16} />
+            {t.toolbar.preview}
+          </Button>
+        )}
         <Button
           variant={viewMode === "code" ? "secondary" : "ghost"}
           size="sm"
@@ -114,7 +118,7 @@ export function ViewToolbar({
       </div>
 
       <div className="flex items-center gap-2">
-        {viewMode === "preview" && (
+        {previewEnabled && viewMode === "preview" && (
           <div className="flex items-center gap-1">
             {deviceSize !== "desktop" && (
               <div className="flex items-center gap-0.5 rounded-lg border p-0.5">

@@ -9,15 +9,74 @@ import type {
   LocalAgentProvider,
   LocalAgentSessionRef,
   Message,
+  ProjectPreviewMode,
   ProjectFiles,
 } from "../types";
 import { validateProjectFiles } from "../lib/utils/project-files";
 import { deleteAttachmentsForMessages } from "../lib/attachments/store";
 import { normalizeCompressedSummary } from "../lib/utils/compress-context";
 
-const CONVERSATION_STORE_VERSION = 1;
-const conversationMigrations: MigrationStep[] = [];
+const CONVERSATION_STORE_VERSION = 3;
 const DEFAULT_PROJECT_TEMPLATE = "vite-react-ts";
+
+export function normalizeConversationProjectState<T extends Conversation>(
+  conversation: T,
+): T {
+  const paths = Object.keys(conversation.files);
+  const activeFile =
+    conversation.activeFile && conversation.activeFile in conversation.files
+      ? conversation.activeFile
+      : paths[0];
+  const isProjectInitialized = paths.length > 0;
+  const previewMode: ProjectPreviewMode =
+    conversation.previewMode === "code-only" ? "code-only" : "sandpack";
+
+  if (
+    conversation.activeFile === activeFile &&
+    conversation.isProjectInitialized === isProjectInitialized &&
+    conversation.previewMode === previewMode
+  ) {
+    return conversation;
+  }
+
+  return {
+    ...conversation,
+    activeFile,
+    previewMode,
+    isProjectInitialized,
+  } as T;
+}
+
+export function normalizePersistedConversationProjects<T>(state: T): T {
+  if (!state || typeof state !== "object") return state;
+  const conversations = (state as { conversations?: unknown }).conversations;
+  if (!conversations || typeof conversations !== "object") return state;
+
+  return {
+    ...state,
+    conversations: Object.fromEntries(
+      Object.entries(conversations).map(([id, conversation]) => [
+        id,
+        normalizeConversationProjectState(conversation as Conversation),
+      ]),
+    ),
+  };
+}
+
+const conversationMigrations: MigrationStep[] = [
+  (state) => state,
+  normalizePersistedConversationProjects,
+  normalizePersistedConversationProjects,
+];
+
+export function migrateConversationState<T>(persisted: T, version: number): T {
+  return runMigrations(
+    conversationMigrations,
+    persisted,
+    version,
+    CONVERSATION_STORE_VERSION,
+  );
+}
 
 function normalizeStoredCompressedContext(
   context: CompressedContext | undefined,
@@ -79,9 +138,14 @@ interface ConversationState {
   setMessages: (updater: Updater<Message[]>) => void;
   setFiles: (updater: Updater<ProjectFiles>) => void;
   setFilesForConversation: (id: string, updater: Updater<ProjectFiles>) => void;
+  replaceProject: (input: {
+    files: ProjectFiles;
+    template: string;
+    previewMode: ProjectPreviewMode;
+    activeFile?: string;
+  }) => { ok: true } | { ok: false; error: string };
   setActiveFile: (path: string) => void;
   setTemplate: (updater: Updater<string>) => void;
-  setIsProjectInitialized: (updater: Updater<boolean>) => void;
   clearContext: () => void;
   resetProject: () => void;
   setCompressedContext: (ctx: CompressedContext) => void;
@@ -118,6 +182,7 @@ export const useConversationStore = create<ConversationState>()(
           messages: [],
           files: {},
           template: DEFAULT_PROJECT_TEMPLATE,
+          previewMode: "sandpack",
           isProjectInitialized: false,
           createdAt: Date.now(),
           updatedAt: Date.now(),
@@ -136,7 +201,7 @@ export const useConversationStore = create<ConversationState>()(
         }
         const id = conversation.id || crypto.randomUUID();
         const now = Date.now();
-        const conv: Conversation = {
+        const conv = normalizeConversationProjectState<Conversation>({
           ...conversation,
           id,
           title: conversation.title || DEFAULT_TITLE,
@@ -147,7 +212,7 @@ export const useConversationStore = create<ConversationState>()(
           ),
           createdAt: conversation.createdAt || now,
           updatedAt: now,
-        };
+        });
         set((s) => ({
           conversations: { ...s.conversations, [id]: conv },
           activeId: id,
@@ -159,20 +224,21 @@ export const useConversationStore = create<ConversationState>()(
         const s = get();
         const src = s.activeId ? s.conversations[s.activeId] : null;
         const id = crypto.randomUUID();
-        const conv: Conversation = {
+        const conv = normalizeConversationProjectState<Conversation>({
           id,
           title: src ? src.title : DEFAULT_TITLE,
           messages: src ? [...src.messages] : [],
           files: src ? { ...src.files } : {},
           activeFile: src?.activeFile,
           template: src?.template ?? DEFAULT_PROJECT_TEMPLATE,
+          previewMode: src?.previewMode ?? "sandpack",
           isProjectInitialized: src?.isProjectInitialized ?? false,
           compressedContext: normalizeStoredCompressedContext(
             src?.compressedContext,
           ),
           createdAt: Date.now(),
           updatedAt: Date.now(),
-        };
+        });
         set({
           conversations: { ...s.conversations, [id]: conv },
           activeId: id,
@@ -246,21 +312,53 @@ export const useConversationStore = create<ConversationState>()(
             );
             return s;
           }
+          const nextConversation = normalizeConversationProjectState({
+            ...conv,
+            files,
+            updatedAt: Date.now(),
+          });
           return {
             conversations: {
               ...s.conversations,
-              [id]: {
-                ...conv,
-                files,
-                activeFile:
-                  conv.activeFile && conv.activeFile in files
-                    ? conv.activeFile
-                    : Object.keys(files)[0],
+              [id]: nextConversation,
+            },
+          };
+        });
+      },
+
+      replaceProject: ({ files, template, previewMode, activeFile }) => {
+        const activeId = get().activeId;
+        if (!activeId || !get().conversations[activeId]) {
+          return { ok: false, error: "No active conversation." };
+        }
+        const validation = validateProjectFiles(files);
+        if (!validation.ok) {
+          return { ok: false, error: validation.error };
+        }
+        const paths = Object.keys(files);
+        const nextActiveFile =
+          activeFile && activeFile in files ? activeFile : paths[0];
+        useSnapshotStore.getState().deleteSnapshotsForConversation(activeId);
+        set((state) => {
+          const conversation = state.conversations[activeId];
+          if (!conversation) return state;
+          return {
+            conversations: {
+              ...state.conversations,
+              [activeId]: {
+                ...conversation,
+                files: { ...files },
+                template,
+                previewMode,
+                activeFile: nextActiveFile,
+                isProjectInitialized: paths.length > 0,
+                localAgentSessions: undefined,
                 updatedAt: Date.now(),
               },
             },
           };
         });
+        return { ok: true };
       },
 
       setActiveFile: (path) => {
@@ -313,6 +411,7 @@ export const useConversationStore = create<ConversationState>()(
                 messages: [],
                 files: {},
                 template: DEFAULT_PROJECT_TEMPLATE,
+                previewMode: "sandpack",
                 isProjectInitialized: false,
                 compressedContext: undefined,
                 localAgentSessions: undefined,
@@ -334,26 +433,6 @@ export const useConversationStore = create<ConversationState>()(
               [s.activeId]: {
                 ...conv,
                 template: applyUpdater(updater, conv.template),
-                updatedAt: Date.now(),
-              },
-            },
-          };
-        });
-      },
-
-      setIsProjectInitialized: (updater) => {
-        set((s) => {
-          if (!s.activeId || !s.conversations[s.activeId]) return s;
-          const conv = s.conversations[s.activeId];
-          return {
-            conversations: {
-              ...s.conversations,
-              [s.activeId]: {
-                ...conv,
-                isProjectInitialized: applyUpdater(
-                  updater,
-                  conv.isProjectInitialized,
-                ),
                 updatedAt: Date.now(),
               },
             },
@@ -497,12 +576,7 @@ export const useConversationStore = create<ConversationState>()(
         activeId: state.activeId,
       }),
       migrate: (persisted, version) =>
-        runMigrations(
-          conversationMigrations,
-          persisted,
-          version,
-          CONVERSATION_STORE_VERSION,
-        ),
+        migrateConversationState(persisted, version),
       onRehydrateStorage: () => (state) => {
         if (state) {
           // Migrate old hardcoded default titles to sentinel value

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   redactSensitiveText,
+  sanitizeToolExecutionOutputForHistory,
   sanitizeToolResultForHistory,
   serializeToolArgumentsForHistory,
 } from "./message-security";
@@ -38,5 +39,35 @@ describe("message security", () => {
 
     expect(result).not.toContain(sentinel);
     expect(result).toContain("Protected tool result omitted");
+  });
+
+  it("redacts ask-user answers in text, structured content, and model output", () => {
+    const sentinel = "ask-user-secret-sentinel";
+    const output = sanitizeToolExecutionOutputForHistory(
+      "ask_user_question",
+      {},
+      {
+        text: `Q1 [Token] Value?\n→ API_TOKEN=${sentinel}`,
+        structuredContent: {
+          kind: "ask_user_answers_v1",
+          selections: [[`API_TOKEN=${sentinel}`]],
+        },
+        modelOutput: {
+          type: "text",
+          value: `API_TOKEN=${sentinel}`,
+        },
+      },
+    );
+
+    expect(JSON.stringify(output)).not.toContain(sentinel);
+    expect(output?.text).toContain("[REDACTED]");
+    expect(output?.structuredContent).toEqual({
+      kind: "ask_user_answers_v1",
+      selections: [["API_TOKEN=[REDACTED]"]],
+    });
+    expect(output?.modelOutput).toEqual({
+      type: "text",
+      value: output?.text,
+    });
   });
 });

@@ -45,7 +45,7 @@ Tauri 桌面版（macOS / Windows / Linux）提供 stdio MCP 等本机运行能�
 
 - **自然语言生成代码** — 描述你的想法，AI 自动规划并生成完整项目结构
 - **实时预览** — 基于 Sandpack 的浏览器内沙箱，代码变更即时渲染
-- **多框架支持** — 支持 React、Vue、Svelte、Angular、SolidJS、Astro 等 20+ 模板
+- **多框架支持** — 支持 React、Vue、Svelte、Angular、SolidJS、Astro 等 20+ 模板，并由 Open Builder 维护依赖配置及经过验证的 Sandpack/Nodebox 运行时锁定
 - **智能文件操作** — AI 通过 `patch_file` 精确修改文件，避免不必要的全量重写
 - **依赖管理** — AI 可自动修改 `package.json` 并触发依赖重装
 - **构建加速工具** — 通过专用工具安装 shadcn 组件、将截图转换为组件、应用设计规范，并管理类型安全的环境变量 schema
@@ -189,7 +189,7 @@ pnpm tauri:android:build
 | API 类型     | 服务商协议适配器                          | OpenAI、Anthropic、Google、兼容接口 |
 | API Key      | 服务商需要时使用的凭据                    | `sk-...`                            |
 | API Base URL | 服务商域名或基础路径                      | `https://api.openai.com`            |
-| 模型名称     | 模型 ID；受支持的服务商可动态读取模型列表 | `gpt-5.3-codex`、`deepseek-chat`    |
+| 模型名称     | 模型 ID；受支持的服务商可动态读取模型列表 | `gpt-5.6-sol`、`deepseek-chat`      |
 | 联网搜索     | 可选的 Tavily 或 Firecrawl 凭据           | `tvly-...`                          |
 | 图片搜索     | 可选的 Pixabay 或 Unsplash 凭据           | 对应服务商 API Key                  |
 

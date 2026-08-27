@@ -9,6 +9,13 @@ import {
   projectFilesForModel,
   redactProjectFileSecrets,
 } from "../utils/project-file-policy";
+import {
+  applyOpenBuilderTemplateProfile,
+  isOpenBuilderTemplateName,
+  OPEN_BUILDER_TEMPLATE_MANIFEST_VERSION,
+  OPEN_BUILDER_TEMPLATE_NAMES,
+  preserveTemplateRuntimeDependencies,
+} from "./sandpack-template-manifest";
 
 type SandboxTemplateFile = string | { code: string };
 type SandboxTemplate = {
@@ -203,6 +210,17 @@ async function loadSandboxTemplates(): Promise<SandboxTemplates> {
   return sandboxTemplatesPromise;
 }
 
+function isPackageJsonRecord(content: string): boolean {
+  try {
+    const parsed = JSON.parse(content);
+    return Boolean(
+      parsed && typeof parsed === "object" && !Array.isArray(parsed),
+    );
+  } catch {
+    return false;
+  }
+}
+
 export interface FsToolResult {
   result: string;
   changes: FileChange[];
@@ -216,11 +234,17 @@ export interface FsToolResult {
 }
 
 export async function fsInitProject(template: string): Promise<FsToolResult> {
+  if (!isOpenBuilderTemplateName(template)) {
+    return {
+      result: `Error: unknown template "${template}". Use one of: ${OPEN_BUILDER_TEMPLATE_NAMES.join(", ")}`,
+      changes: [],
+    };
+  }
   const templates = await loadSandboxTemplates();
   const tmpl = templates[template];
   if (!tmpl) {
     return {
-      result: `Error: unknown template "${template}". Use one of: ${Object.keys(templates).join(", ")}`,
+      result: `Error: template "${template}" is unavailable in the installed Sandpack runtime`,
       changes: [],
     };
   }
@@ -233,8 +257,17 @@ export async function fsInitProject(template: string): Promise<FsToolResult> {
     newFiles[normalizedPath] = code;
     changes.push({ path: normalizedPath, action: "created" });
   }
+  const appliedProfile = applyOpenBuilderTemplateProfile(template, newFiles);
+  if (!appliedProfile.ok) {
+    return {
+      result: `Error: ${appliedProfile.error}`,
+      changes: [],
+    };
+  }
   return {
-    result: `OK — initialized project with template "${template}" (${Object.keys(newFiles).length} files)`,
+    result:
+      `OK — initialized project with template "${template}" (${Object.keys(newFiles).length} files); ` +
+      `applied Open Builder ${appliedProfile.status} dependency profile v${OPEN_BUILDER_TEMPLATE_MANIFEST_VERSION}`,
     changes,
     newFiles,
     templateChange: { template },
@@ -252,20 +285,26 @@ export function fsManageDependencies(
       changes: [],
     };
   }
-  try {
-    JSON.parse(checkedContent.content);
-  } catch {
+  if (!isPackageJsonRecord(checkedContent.content)) {
     return { result: "Error: invalid JSON in package_json", changes: [] };
   }
   const pkgPath =
     Object.keys(files).find((p) => p.endsWith("package.json")) ||
     "package.json";
+  const guarded = preserveTemplateRuntimeDependencies(
+    files[pkgPath],
+    checkedContent.content,
+  );
   const action: FileChange["action"] =
     pkgPath in files ? "modified" : "created";
   return {
-    result: `OK — ${action} ${pkgPath}, dependencies updated. Sandpack will restart.`,
+    result:
+      `OK — ${action} ${pkgPath}, dependencies updated. Sandpack will restart.` +
+      (guarded.preservedDependencies.length > 0
+        ? ` Preserved Sandpack/Nodebox-compatible runtime dependencies: ${guarded.preservedDependencies.join(", ")}.`
+        : ""),
     changes: [{ path: pkgPath, action }],
-    newFiles: { ...files, [pkgPath]: checkedContent.content },
+    newFiles: { ...files, [pkgPath]: guarded.content },
     dependenciesChanged: true,
   };
 }

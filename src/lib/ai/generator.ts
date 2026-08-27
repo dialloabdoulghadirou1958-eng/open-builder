@@ -26,7 +26,7 @@ import { isWriteToolName } from "./tools-schema";
 import { PLAN_APPROVED_PREFIX, PLAN_REJECTED_PREFIX } from "./plan-mode";
 import { dispatchFsTool } from "../tools/fs-tools";
 import {
-  formatAskUserAnswers,
+  createAskUserAnswersToolOutput,
   normalizeToolExecutionOutput,
   normalizeToolResultForModel,
 } from "../utils/tool-result";
@@ -887,7 +887,7 @@ export class WebAppGenerator implements GenerationBackend, AgentToolExecutor {
             toolCall.id,
             args.questions as AskUserQuestion[],
           );
-          result = formatAskUserAnswers(answers);
+          result = createAskUserAnswersToolOutput(answers);
         } catch (err: any) {
           if (err?.name === "AbortError") throw err;
           result = `User question was cancelled: ${err?.message ?? "unknown"}`;

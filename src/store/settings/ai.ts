@@ -1,5 +1,8 @@
 import type { StateCreator } from "zustand";
-import type { ApiType } from "../../lib/ai/provider-config";
+import {
+  DEFAULT_OPENAI_MODEL,
+  type ApiType,
+} from "../../lib/ai/provider-config";
 import {
   queryLocalAgentSupport,
   resetLocalAgentSupportCache,
@@ -35,7 +38,7 @@ export const aiDefaults: AISettings = {
   apiType: "openai-compatible",
   apiKey: "",
   apiBaseUrl: "",
-  model: "",
+  model: DEFAULT_OPENAI_MODEL,
   localAgent: {
     provider: "codex",
     codex: { model: "", effort: "" },

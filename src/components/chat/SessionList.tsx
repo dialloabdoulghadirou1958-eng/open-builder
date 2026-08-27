@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, PanelLeftClose, Search, Library } from "lucide-react";
+import {
+  LayoutTemplate,
+  MessageSquarePlus,
+  PanelLeftClose,
+  Search,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -335,7 +340,7 @@ export function SessionList({ onClose }: SessionListProps) {
                 onClick={() => openTemplates()}
                 aria-label={t.sessions.templates.title}
               >
-                <Library size={17} aria-hidden="true" />
+                <LayoutTemplate size={17} aria-hidden="true" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>{t.sessions.templates.title}</TooltipContent>
@@ -349,7 +354,7 @@ export function SessionList({ onClose }: SessionListProps) {
                 onClick={handleNew}
                 aria-label={t.commandPalette.actions.newConversation}
               >
-                <Plus size={18} aria-hidden="true" />
+                <MessageSquarePlus size={18} aria-hidden="true" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>

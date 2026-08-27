@@ -15,7 +15,7 @@ import { SandpackListener } from "./code-viewer/SandpackListener";
 import { ViewToolbar } from "./code-viewer/ViewToolbar";
 import { FileExplorer } from "./code-viewer/FileExplorer";
 import type { ViewMode, DeviceSize } from "./code-viewer/ViewToolbar";
-import type { ProjectFiles } from "../types";
+import type { ProjectFiles, ProjectPreviewMode } from "../types";
 import {
   hasSensitiveProjectFileContent,
   projectFilesForPreview,
@@ -32,6 +32,7 @@ interface CodeViewerProps {
   onDeleteFile: (path: string) => void;
   onMoveFile: (sourcePath: string, targetFolder: string) => void;
   template: string;
+  previewMode?: ProjectPreviewMode;
   sandpackKey: number;
 }
 
@@ -45,16 +46,21 @@ export function CodeViewer({
   onDeleteFile,
   onMoveFile,
   template,
+  previewMode = "sandpack",
   sandpackKey,
 }: CodeViewerProps) {
   const t = useT();
-  const [viewMode, setViewMode] = useState<ViewMode>("preview");
+  const previewEnabled = previewMode !== "code-only";
+  const [viewMode, setViewMode] = useState<ViewMode>(
+    previewEnabled ? "preview" : "code",
+  );
   const [deviceSize, setDeviceSize] = useState<DeviceSize>("desktop");
   const [showConsole, setShowConsole] = useState(false);
   const [requestedScale, setRequestedScale] = useState<number | null>(null);
   const [fitScale, setFitScale] = useState(1);
   const previewHostRef = useRef<HTMLDivElement>(null);
   const isDark = useTheme();
+  const effectiveViewMode = previewEnabled ? viewMode : "code";
 
   const deviceDimensions =
     deviceSize === "tablet"
@@ -62,6 +68,10 @@ export function CodeViewer({
       : { width: 375, height: 667 };
   const previewScale =
     deviceSize === "desktop" ? 1 : (requestedScale ?? fitScale);
+
+  useEffect(() => {
+    if (!previewEnabled) setViewMode("code");
+  }, [previewEnabled]);
 
   useEffect(() => {
     if (deviceSize === "desktop") return;
@@ -94,7 +104,14 @@ export function CodeViewer({
     setRequestedScale(null);
   };
 
-  const previewFiles = useMemo(() => projectFilesForPreview(files), [files]);
+  const previewFiles = useMemo(
+    () =>
+      projectFilesForPreview(
+        files,
+        previewMode === "code-only" ? { includeServerFiles: true } : undefined,
+      ),
+    [files, previewMode],
+  );
   const handleSandpackFileChange = useCallback(
     (targetConversationId: string, path: string, content: string) => {
       const canonical = files[path];
@@ -143,11 +160,12 @@ export function CodeViewer({
   return (
     <div className="editor w-full h-full flex flex-col bg-background">
       <ViewToolbar
-        viewMode={viewMode}
+        viewMode={effectiveViewMode}
         onViewModeChange={setViewMode}
         deviceSize={deviceSize}
         onDeviceSizeChange={handleDeviceSizeChange}
         files={files}
+        previewEnabled={previewEnabled}
         previewScale={previewScale}
         onPreviewZoomIn={() =>
           setRequestedScale(Math.min(1.5, previewScale + 0.1))
@@ -161,7 +179,9 @@ export function CodeViewer({
       <div className="flex-1 overflow-hidden relative bg-muted/50">
         <SandpackProvider
           key={sandpackKey}
-          template={template as SandpackPredefinedTemplate}
+          template={
+            (previewEnabled ? template : "static") as SandpackPredefinedTemplate
+          }
           theme={isDark ? "dark" : "light"}
           files={sandpackFiles}
           options={{ activeFile: sandpackCurrentFile }}
@@ -173,87 +193,91 @@ export function CodeViewer({
           />
           <SandpackLayout>
             {/* Preview */}
-            <div
-              ref={previewHostRef}
-              className={cn(
-                "h-full w-full",
-                viewMode === "preview" ? "block" : "hidden",
-                deviceSize === "desktop"
-                  ? "overflow-hidden"
-                  : "overflow-auto p-4",
-              )}
-            >
+            {previewEnabled && (
               <div
+                ref={previewHostRef}
                 className={cn(
-                  "mx-auto",
-                  deviceSize !== "desktop" && "relative",
-                )}
-                style={
+                  "h-full w-full",
+                  effectiveViewMode === "preview" ? "block" : "hidden",
                   deviceSize === "desktop"
-                    ? { width: "100%", height: "100%" }
-                    : {
-                        width: deviceDimensions.width * previewScale,
-                        height: deviceDimensions.height * previewScale,
-                      }
-                }
+                    ? "overflow-hidden"
+                    : "overflow-auto p-4",
+                )}
               >
                 <div
                   className={cn(
-                    "grid grid-rows-3 h-full",
-                    deviceSize !== "desktop" &&
-                      "absolute left-0 top-0 overflow-hidden rounded-lg border bg-background shadow-lg",
+                    "mx-auto",
+                    deviceSize !== "desktop" && "relative",
                   )}
                   style={
                     deviceSize === "desktop"
-                      ? undefined
+                      ? { width: "100%", height: "100%" }
                       : {
-                          width: deviceDimensions.width,
-                          height: deviceDimensions.height,
-                          transform: `scale(${previewScale})`,
-                          transformOrigin: "top left",
+                          width: deviceDimensions.width * previewScale,
+                          height: deviceDimensions.height * previewScale,
                         }
                   }
                 >
                   <div
                     className={cn(
-                      "transition-[width,height,transform,opacity] duration-300 ease-in-out",
-                      showConsole ? "row-span-2" : "row-span-3",
+                      "grid grid-rows-3 h-full",
+                      deviceSize !== "desktop" &&
+                        "absolute left-0 top-0 overflow-hidden rounded-lg border bg-background shadow-lg",
                     )}
+                    style={
+                      deviceSize === "desktop"
+                        ? undefined
+                        : {
+                            width: deviceDimensions.width,
+                            height: deviceDimensions.height,
+                            transform: `scale(${previewScale})`,
+                            transformOrigin: "top left",
+                          }
+                    }
                   >
-                    <SandpackPreview
-                      showNavigator
-                      showOpenInCodeSandbox={false}
-                      showRefreshButton
-                      actionsChildren={
-                        <TooltipIconButton
-                          label={showConsole ? t.console.hide : t.console.show}
-                          type="button"
-                          size="icon-sm"
-                          variant="ghost"
-                          onClick={() => setShowConsole(!showConsole)}
-                        >
-                          <Terminal size={16} />
-                        </TooltipIconButton>
-                      }
-                    />
-                  </div>
-                  <div
-                    className={cn(
-                      "overflow-hidden border-t",
-                      showConsole ? "row-span-1" : "max-h-0 border-t-0",
-                    )}
-                  >
-                    <SandpackConsole showSyntaxError={true} />
+                    <div
+                      className={cn(
+                        "transition-[width,height,transform,opacity] duration-300 ease-in-out",
+                        showConsole ? "row-span-2" : "row-span-3",
+                      )}
+                    >
+                      <SandpackPreview
+                        showNavigator
+                        showOpenInCodeSandbox={false}
+                        showRefreshButton
+                        actionsChildren={
+                          <TooltipIconButton
+                            label={
+                              showConsole ? t.console.hide : t.console.show
+                            }
+                            type="button"
+                            size="icon-sm"
+                            variant="ghost"
+                            onClick={() => setShowConsole(!showConsole)}
+                          >
+                            <Terminal size={16} />
+                          </TooltipIconButton>
+                        }
+                      />
+                    </div>
+                    <div
+                      className={cn(
+                        "overflow-hidden border-t",
+                        showConsole ? "row-span-1" : "max-h-0 border-t-0",
+                      )}
+                    >
+                      <SandpackConsole showSyntaxError={true} />
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Code editor */}
             <div
               className={cn(
                 "h-full w-full overflow-hidden",
-                viewMode === "code" ? "flex" : "hidden",
+                effectiveViewMode === "code" ? "flex" : "hidden",
               )}
             >
               <div className="w-56 border-r h-full shrink-0 overflow-hidden flex flex-col">

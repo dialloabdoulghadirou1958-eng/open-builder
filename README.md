@@ -45,7 +45,7 @@ The Tauri desktop build (macOS / Windows / Linux) provides local runtime capabil
 
 - **Natural Language to Code** — Describe your idea, AI plans and generates the complete project structure
 - **Live Preview** — Browser-based sandbox powered by Sandpack, instant rendering on code changes
-- **Multi-Framework Support** — 20+ templates including React, Vue, Svelte, Angular, SolidJS, Astro, etc.
+- **Multi-Framework Support** — 20+ templates including React, Vue, Svelte, Angular, SolidJS, and Astro, with Open Builder-managed dependency profiles and verified Sandpack/Nodebox runtime locks
 - **Smart File Operations** — AI uses `patch_file` for precise modifications, avoiding unnecessary full rewrites
 - **Dependency Management** — AI can modify `package.json` and trigger dependency reinstallation
 - **Build Accelerators** — Install shadcn components, translate screenshots into components, apply design specifications, and manage typed environment schemas through dedicated tools
@@ -189,7 +189,7 @@ Click the settings button in the top-right corner and fill in:
 | API Type     | Provider protocol adapter                     | OpenAI, Anthropic, Google, compatible |
 | API Key      | Provider credential, when required            | `sk-...`                              |
 | API Base URL | Provider origin or base path                  | `https://api.openai.com`              |
-| Model Name   | Model ID; supported providers can list models | `gpt-5.3-codex`, `deepseek-chat`      |
+| Model Name   | Model ID; supported providers can list models | `gpt-5.6-sol`, `deepseek-chat`        |
 | Web Search   | Optional Tavily or Firecrawl credential       | `tvly-...`                            |
 | Image Search | Optional Pixabay or Unsplash credential       | Provider API key                      |
 

@@ -1,6 +1,18 @@
 import type { AskUserAnswers } from "../../types/api";
 import type { ToolExecutionOutput } from "../ai/generator-types";
 
+export const ASK_USER_ANSWERS_KIND = "ask_user_answers_v1" as const;
+
+export interface AskUserAnswersStructuredContent {
+  kind: typeof ASK_USER_ANSWERS_KIND;
+  selections: string[][];
+}
+
+export interface AskUserAnswerSummaryItem {
+  header: string;
+  selections: string[];
+}
+
 export const TOOL_RESULT_LIMITS = {
   maxModelResultChars: 160_000,
 } as const;
@@ -66,4 +78,60 @@ export function formatAskUserAnswers(answers: AskUserAnswers): string {
       return `Q${idx + 1} [${a.header}] ${a.question}\n→ ${picks}`;
     })
     .join("\n\n");
+}
+
+/** Build a model-compatible text result plus a selection-only UI payload. */
+export function createAskUserAnswersToolOutput(
+  answers: AskUserAnswers,
+): ToolExecutionOutput {
+  return {
+    text: formatAskUserAnswers(answers),
+    structuredContent: {
+      kind: ASK_USER_ANSWERS_KIND,
+      selections: answers.answers.map((answer) => [...answer.selected]),
+    } satisfies AskUserAnswersStructuredContent,
+  };
+}
+
+function isAskUserAnswersStructuredContent(
+  value: unknown,
+): value is AskUserAnswersStructuredContent {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<AskUserAnswersStructuredContent>;
+  return (
+    candidate.kind === ASK_USER_ANSWERS_KIND &&
+    Array.isArray(candidate.selections) &&
+    candidate.selections.every(
+      (selection) =>
+        Array.isArray(selection) &&
+        selection.every((answer) => typeof answer === "string"),
+    )
+  );
+}
+
+/** Pair each persisted selection with its short question header. */
+export function readAskUserAnswerSummary(
+  structuredContent: unknown,
+  legacyText: string,
+  headers: string[] = [],
+): AskUserAnswerSummaryItem[] {
+  const legacyAnswers = legacyText
+    .split(/\n\n(?=Q\d+ \[)/)
+    .map((entry) => {
+      const marker = entry.indexOf("\n→ ");
+      if (marker < 0) return null;
+      const answer = entry.slice(marker + 3).trim();
+      if (!answer || answer === "(no selection)") return null;
+      const header = /^Q\d+ \[([^\]]*)\]/.exec(entry)?.[1] ?? "";
+      return { header, selections: [answer] };
+    })
+    .filter((answer): answer is AskUserAnswerSummaryItem => answer !== null);
+
+  if (isAskUserAnswersStructuredContent(structuredContent)) {
+    return structuredContent.selections.map((selection, index) => ({
+      header: headers[index] ?? legacyAnswers[index]?.header ?? "",
+      selections: [...selection],
+    }));
+  }
+  return legacyAnswers;
 }

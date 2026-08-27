@@ -1,5 +1,9 @@
 import type { ToolExecutionOutput } from "../ai/generator-types";
 import {
+  ASK_USER_ANSWERS_KIND,
+  type AskUserAnswersStructuredContent,
+} from "./tool-result";
+import {
   isSensitiveProjectPath,
   redactProjectFileSecrets,
 } from "./project-file-policy";
@@ -115,6 +119,30 @@ export function shouldOmitRichToolOutput(
   );
 }
 
+function sanitizeAskUserAnswersStructuredContent(
+  value: unknown,
+): AskUserAnswersStructuredContent | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = value as Partial<AskUserAnswersStructuredContent>;
+  if (
+    candidate.kind !== ASK_USER_ANSWERS_KIND ||
+    !Array.isArray(candidate.selections) ||
+    !candidate.selections.every(
+      (selection) =>
+        Array.isArray(selection) &&
+        selection.every((answer) => typeof answer === "string"),
+    )
+  ) {
+    return undefined;
+  }
+  return {
+    kind: ASK_USER_ANSWERS_KIND,
+    selections: candidate.selections.map((selection) =>
+      selection.map(redactSensitiveText),
+    ),
+  };
+}
+
 export function sanitizeToolExecutionOutputForHistory(
   toolName: string,
   rawArguments: string | unknown,
@@ -131,6 +159,18 @@ export function sanitizeToolExecutionOutputForHistory(
       text,
       isError: output.isError,
       source: output.source,
+      modelOutput: { type: "text", value: text },
+    };
+  }
+  if (toolName === "ask_user_question") {
+    const structuredContent = sanitizeAskUserAnswersStructuredContent(
+      output.structuredContent,
+    );
+    const { structuredContent: _structuredContent, ...safeOutput } = output;
+    return {
+      ...safeOutput,
+      text,
+      ...(structuredContent ? { structuredContent } : {}),
       modelOutput: { type: "text", value: text },
     };
   }

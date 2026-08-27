@@ -205,12 +205,15 @@ export interface LocalAgentSessionRef {
   updatedAt: number;
 }
 
+export type ProjectPreviewMode = "sandpack" | "code-only";
+
 export interface Conversation {
   id: string;
   title: string;
   messages: _Message[];
   files: _ProjectFiles;
   template: string;
+  previewMode?: ProjectPreviewMode;
   isProjectInitialized: boolean;
   compressedContext?: CompressedContext;
   localAgentSessions?: Partial<
@@ -231,6 +234,7 @@ export interface ProjectTemplate {
   description?: string;
   files: _ProjectFiles;
   template: string;
+  previewMode?: ProjectPreviewMode;
   sourceConversationId?: string;
   tags: string[];
   createdAt: number;

@@ -1,7 +1,32 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_OPENAI_MODEL } from "../../lib/ai/provider-config";
 import { migrateSettings } from "./migrations";
 
 describe("migrateSettings", () => {
+  it("fills only empty OpenAI-family model settings", () => {
+    const compatible = migrateSettings(
+      { ai: { apiType: "openai-compatible", model: "" } },
+      16,
+    ) as Record<string, any>;
+    const openai = migrateSettings(
+      { ai: { apiType: "openai", model: "   " } },
+      16,
+    ) as Record<string, any>;
+    const custom = migrateSettings(
+      { ai: { apiType: "openai-compatible", model: "local-model" } },
+      16,
+    ) as Record<string, any>;
+    const anthropic = migrateSettings(
+      { ai: { apiType: "anthropic", model: "" } },
+      16,
+    ) as Record<string, any>;
+
+    expect(compatible.ai.model).toBe(DEFAULT_OPENAI_MODEL);
+    expect(openai.ai.model).toBe(DEFAULT_OPENAI_MODEL);
+    expect(custom.ai.model).toBe("local-model");
+    expect(anthropic.ai.model).toBe("");
+  });
+
   it("preserves plaintext API keys from older persisted settings", () => {
     const migrated = migrateSettings(
       {

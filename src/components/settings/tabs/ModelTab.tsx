@@ -15,6 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
   fetchModelList,
+  defaultModelForApiType,
   DEFAULT_BASE_URLS,
   resolveBaseURL,
 } from "@/lib/ai/provider-config";
@@ -165,7 +166,7 @@ export function ModelTab({
       ...formData,
       apiType,
       apiBaseUrl: DEFAULT_BASE_URLS[apiType],
-      model: "",
+      model: defaultModelForApiType(apiType),
     });
     setModels([]);
     setFetchFailed(true);
