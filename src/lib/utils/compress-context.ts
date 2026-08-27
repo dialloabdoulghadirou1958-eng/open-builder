@@ -160,7 +160,7 @@ export async function compressContext(
   }
 
   const instructions =
-    "Summarize the following conversation concisely. Focus on: what the user requested, what was built/modified, key tool operations (files read/written, searches run, results), key decisions, and current project state. Be brief but preserve all information needed to continue.";
+    "Summarize this development conversation for an agent that must continue the work without seeing the original. Cover: what the user asked for, what was built or changed, key tool operations (files read and written, searches and their results), decisions and their reasons, and the current project state. Preserve every detail needed to continue; drop everything else. Write compact prose, no preamble.";
   const generated = generateTextOverride
     ? await generateTextOverride(instructions, text)
     : await (async () => {

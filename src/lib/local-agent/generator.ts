@@ -44,18 +44,17 @@ import type {
 const LOCAL_RUNTIME_INSTRUCTIONS = `
 
 ## OPEN BUILDER LOCAL CLI RUNTIME
-The current working directory is an isolated empty runtime directory, not the user's project.
-Never use native shell, filesystem, hooks, plugins, or external MCP configuration for project work.
-The Open Builder host tools are the only authority for project files, preview state, Skills, memory, and approved MCP calls.
-When attachments are listed, read them with read_attachment using the opaque attachment id.
-The screenshot_to_code helper is intentionally unavailable here; inspect the attachment yourself and use the normal project tools.
+Your working directory is an isolated, empty scratch directory — not the user's project. Anything written there is invisible to the user and deleted when the run ends.
+The Open Builder host tools are the only authority for project files, preview state, Skills, memory, and approved MCP calls. Never route project work through the native shell, filesystem, hooks, plugins, or external MCP configuration.
+Read listed attachments with read_attachment, using the opaque attachment id.
+screenshot_to_code is deliberately unavailable here: inspect the attachment yourself and build with the normal project tools.
 `;
 
 const PLAN_CONTINUATION_PROMPT =
-  "The user approved the plan in Open Builder. Continue implementing it now with the newly available chat-mode tools. Do not repeat the plan or ask for approval again.";
+  "The user approved your plan in Open Builder. Implement it now with the chat-mode tools that just became available. Do not restate the plan or ask for approval again.";
 
 const RETRY_CONTINUATION_PROMPT =
-  "Continue the most recent unfinished request from the canonical Open Builder history and current project state. Do not repeat completed tool calls, native searches, or external side effects. Complete only the remaining work.";
+  "Resume the most recent unfinished request, using the canonical Open Builder history and current project state. Do only the remaining work. Do not repeat completed tool calls, native searches, or external side effects.";
 
 const DEFAULT_LOCAL_TOOL_BUDGET = 30;
 const MAX_DISPATCH_SUBAGENT_CALLS = 3;

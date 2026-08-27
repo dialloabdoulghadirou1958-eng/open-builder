@@ -213,9 +213,7 @@ export function buildSkillsPromptSection(enabled: SkillEntry[]): string {
   });
   return `\n\n<skills>
 ## Available skills
-You have access to the following installed skills. Each is a focused knowledge pack available for automatic matching.
-Before planning or acting, evaluate every skill below against the user's request. Call \`read_skill\` for each clearly relevant skill before doing the work. A request may require more than one skill.
-Call \`list_skills\` if you need a fresh listing.
+Each installed skill below is a focused knowledge pack. Weigh every one against the user's request before you plan or act, and \`read_skill\` each clear match before doing the work — a request may need more than one skill. Call \`list_skills\` for a fresh listing.
 
 ${lines.join("\n")}
 </skills>`;
@@ -230,7 +228,7 @@ export function buildForcedSkillsPromptSection(
       `<skill id="${entry.id}" name="${entry.name}">\n${content.trim()}\n</skill>`,
   );
   return `\n\n<mandatory_skills>
-The user explicitly selected the following skills for this request. Their instructions are mandatory for the entire request and for any subagents you dispatch. Apply all compatible instructions. If two selected skills conflict and the conflict changes the result, call ask_user_question instead of choosing silently. System instructions and the user's explicit request remain higher priority.
+The user selected these skills for this request. Their instructions bind the whole request and every subagent you dispatch. Apply all compatible instructions. When two selected skills conflict in a way that changes the result, call ask_user_question instead of choosing silently. System instructions and the user's explicit request still outrank them.
 
 ${blocks.join("\n\n")}
 </mandatory_skills>`;

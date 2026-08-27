@@ -104,16 +104,15 @@ function buildPrompt(framework: string, styleHints?: string): string {
   const style = styleHints?.trim() || "Tailwind CSS";
   return [
     `You are an expert UI developer.`,
-    `Analyze the provided UI screenshot and produce a single, complete, runnable ${framework} component`,
-    `using ${style}. The component must be self-contained and visually faithful to the screenshot.`,
+    `Rebuild the provided UI screenshot as one complete, runnable ${framework} component`,
+    `using ${style}. It must be self-contained and visually faithful to the screenshot.`,
     ``,
     `Output requirements:`,
-    `- Wrap the entire component in a single fenced code block (\`\`\`${framework === "react" ? "tsx" : framework}).`,
-    `- Do NOT include any explanation, prose, or commentary outside the code block.`,
-    `- Do NOT include placeholders or TODOs — produce working code.`,
-    `- For React: default-export a function component named GeneratedComponent.`,
-    `- For Vue: a single-file component with <script setup lang="ts"> and <template>.`,
-    `- For Svelte: a single .svelte file with <script lang="ts"> and markup.`,
+    `- Emit the component in a single fenced code block (\`\`\`${framework === "react" ? "tsx" : framework}) and nothing else — no prose before or after.`,
+    `- Working code only: no placeholders, no TODOs.`,
+    `- React: default-export a function component named GeneratedComponent.`,
+    `- Vue: one single-file component with <script setup lang="ts"> and <template>.`,
+    `- Svelte: one .svelte file with <script lang="ts"> and markup.`,
   ].join("\n");
 }
 

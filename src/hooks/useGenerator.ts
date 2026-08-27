@@ -158,19 +158,17 @@ async function getMessagesForAPI(conv: Conversation): Promise<Message[]> {
 const PLAN_MODE_SYSTEM_SUFFIX = `
 
 ## PLAN MODE ACTIVE
-You are in Plan Mode. You MUST NOT write, modify, or delete any project files.
-All write tools (init_project, manage_dependencies, write_file, patch_file, delete_file, rename_file, move_file, manage_env, install_component, screenshot_to_code) are NOT available right now.
-Workflow:
-  1. Use list_files / read_files / search_in_files to fully understand the existing project.
-  2. If a key requirement is ambiguous, call ask_user_question before continuing.
-  3. Synthesize a complete implementation plan in clear Markdown — what files to add/change, what dependencies to add, what the overall approach is, and how to verify it works.
-  4. Call exit_plan_mode with the plan as your FINAL step. Do NOT write the plan as a normal reply.
-After the user approves the plan, exit_plan_mode will return success and the write tools will become available — only then start implementing.`;
+Research and plan only. Every write tool (init_project, manage_dependencies, write_file, patch_file, delete_file, rename_file, move_file, manage_env, install_component, screenshot_to_code) is withheld until the user approves your plan.
+  1. Read the project with list_files / read_files / search_in_files until you understand what exists.
+  2. Call ask_user_question if a requirement is ambiguous enough that guessing wrong would invalidate the plan.
+  3. Write the plan in Markdown: files to add or change, dependencies to add, the overall approach, and how to verify it works.
+  4. Deliver it by calling exit_plan_mode as your final step — never as a normal reply. It must be the only tool call in that response.
+Approval unlocks the write tools; start implementing only then.`;
 
 const AUTO_QA_PROMPT =
   "Automatic QA round: call project_health_check with include_console=true. " +
-  "If the report contains errors or warnings that clearly break build/runtime behavior, fix them with the available file tools. " +
-  "Do not make broad redesigns or optional refactors. If only informational issues remain, summarize them and stop.";
+  "Fix issues that break the build or runtime, using the file tools. " +
+  "No redesigns, no optional refactors. If only informational issues remain, summarize them and stop.";
 
 interface GenerateRunOptions {
   skipAutoQa?: boolean;

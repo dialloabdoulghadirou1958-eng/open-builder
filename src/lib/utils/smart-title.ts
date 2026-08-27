@@ -36,10 +36,9 @@ export async function generateSmartTitle(
 
   try {
     const instructions =
-      "Generate a concise title (4-12 words) for this development conversation. " +
-      "The title should describe the app or task being built. " +
-      "Use the same language as the user's message. " +
-      "Return ONLY the title text, no quotes, no explanation, no punctuation at the end.";
+      "Title this development conversation in 4-12 words, naming the app or task being built. " +
+      "Write it in the language the user is using. " +
+      "Output the title alone — no quotes, no explanation, no trailing punctuation.";
     const title = generateTextOverride
       ? (await generateTextOverride(instructions, relevant)).trim()
       : (

@@ -339,9 +339,9 @@ export class WebAppGenerator implements GenerationBackend, AgentToolExecutor {
         const isLastIter = iter === this.maxIterations - 1;
         const instructions = isLastIter
           ? systemContent +
-            `\n\nTool call iteration budget exhausted (limit: ${this.maxIterations}). ` +
-            `This is your final iteration — do not call any more tools. ` +
-            `Summarize what has been accomplished, what is still pending, and stop so the user can resume in a follow-up message.`
+            `\n\nFinal iteration — the tool call budget of ${this.maxIterations} is exhausted. ` +
+            `Call no further tools. Summarize what you accomplished and what remains, ` +
+            `then stop so the user can resume in a follow-up message.`
           : systemContent;
 
         const assistantMsg = await this.requestWithRetry(

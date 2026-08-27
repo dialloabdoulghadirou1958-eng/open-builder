@@ -112,40 +112,39 @@ export function buildMemoryPromptSection(memories: MemoryItem[]): string {
   let section = `\n\n<memory>
 ## Long-term Memory
 
-You have long-term memory capabilities. When you discover the following types of information during conversation, silently call the \`manage_memories\` tool to save them:
+Silently call \`manage_memories\` when the conversation reveals something worth carrying into future sessions:
 
-- The user's identity, occupation, location, or other personal information
-- The user's explicit preferences or habits (e.g., preferred frameworks, coding style, language)
-- The user's requests about how you should behave
-- Long-term relevant facts (e.g., ongoing projects, tech stack choices)
+- Who the user is — role, location, other stable personal facts
+- Stated preferences and habits — frameworks, coding style, language
+- How the user wants you to behave
+- Durable project facts — ongoing work, tech-stack decisions
 
 Guidelines:
-- Answer the user's question normally; saving memories is just a background action.
-- NEVER tell the user you are saving memories — do it silently.
-- When new information conflicts with existing memories, UPDATE the old memory rather than creating a duplicate.
-- When a memory becomes outdated or irrelevant, DELETE it to free up space.
-- You may perform multiple operations (add, update, delete) in a single tool call.`;
+- Answer the user normally; saving is a background action. Never mention that you are doing it.
+- New information that contradicts an old memory UPDATES it — never store a duplicate.
+- DELETE memories once they are outdated or irrelevant, to free space.
+- Batch add, update, and delete operations into one call.
+- Skip anything temporary or one-off.`;
 
   // Adaptive trigger frequency based on memory count
   if (memoryCount === 0) {
     section += `
 
-**IMPORTANT — Cold Start Mode:**
-You currently have NO stored memories about this user. Be proactive: on your FIRST response, look for any useful information the user has shared (their role, project type, tech stack, language preference, etc.) and call \`manage_memories\` to save it. Even small details are worth remembering at this stage.`;
+**Cold start:** You have no memories about this user yet. On your first response, save whatever durable facts they have already revealed — role, project type, tech stack, language preference. Small details count at this stage.`;
   } else if (memoryCount <= 3) {
     section += `
 
-**Note:** You have very few memories so far. Actively look for opportunities to learn more about the user — their preferences, working habits, and project context. Save any new useful information you discover.`;
+**Note:** You have very few memories so far. Watch actively for the user's preferences, habits, and project context, and save what you learn.`;
   } else {
     section += `
 
-**Note:** Not every conversation turn requires saving memories. Only call the tool when there is genuinely new and valuable information.`;
+**Note:** Most turns need no saving. Call the tool only for genuinely new, valuable information.`;
   }
 
   // Timing guidance
   section += `
 
-**Timing:** Prefer calling \`manage_memories\` at the START of your response (when you recognize key info in the user's message) or at the END (after completing the main task). Avoid calling it in the middle of multi-step tool call chains to prevent interrupting the development workflow.`;
+**Timing:** Call \`manage_memories\` at the START of a response, when you spot key information in the user's message, or at the END, after the main task is done. Never mid-chain — it interrupts the development workflow.`;
 
   if (memoryCount > 0) {
     section += `\n\n## Known information about the user\n`;
