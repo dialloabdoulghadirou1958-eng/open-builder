@@ -44,6 +44,7 @@ export function WebSearchTab({ form, setForm, apiType }: WebSearchTabProps) {
             )}
             <SelectItem value="tavily">Tavily</SelectItem>
             <SelectItem value="firecrawl">Firecrawl</SelectItem>
+            <SelectItem value="exa">Exa</SelectItem>
           </SelectContent>
         </Select>
 
@@ -68,9 +69,7 @@ export function WebSearchTab({ form, setForm, apiType }: WebSearchTabProps) {
             id="tavilyApiKey"
             type="password"
             value={form.tavilyApiKey}
-            onChange={(e) =>
-              setForm({ ...form, tavilyApiKey: e.target.value })
-            }
+            onChange={(e) => setForm({ ...form, tavilyApiKey: e.target.value })}
             placeholder="tvly-..."
           />
           <p className="text-xs text-muted-foreground">
@@ -96,6 +95,25 @@ export function WebSearchTab({ form, setForm, apiType }: WebSearchTabProps) {
           />
           <p className="text-xs text-muted-foreground">
             {t.settings.firecrawlKey.hint}
+          </p>
+        </div>
+      )}
+
+      {form.engine === "exa" && (
+        <div className="space-y-2">
+          <Label htmlFor="exaApiKey">
+            <Key size={16} className="inline mr-1" />
+            Exa API Key
+          </Label>
+          <Input
+            id="exaApiKey"
+            type="password"
+            value={form.exaApiKey}
+            onChange={(e) => setForm({ ...form, exaApiKey: e.target.value })}
+            placeholder="Exa API Key"
+          />
+          <p className="text-xs text-muted-foreground">
+            {t.settings.exaKey.hint}
           </p>
         </div>
       )}

@@ -39,7 +39,7 @@ export const en: typeof zh = {
     refreshModels: "Refresh model list",
     connectionFailed: "Connection failed",
     validation: {
-      summary: "Fix the highlighted model settings before saving.",
+      summary: "Fix the highlighted settings before saving.",
       apiKeyRequired: "API Key is required.",
       apiBaseUrlRequired: "API Base URL is required.",
       apiBaseUrlInvalid: "Enter a valid HTTP or HTTPS base URL.",
@@ -103,7 +103,10 @@ export const en: typeof zh = {
       hint: "Optional. Enables web search and web reading after configuration",
     },
     firecrawlKey: {
-      hint: "Optional. Enables web search and web reading after configuration",
+      hint: "Optional. Without a key, Firecrawl uses an IP-limited free allowance; add one for higher limits.",
+    },
+    exaKey: {
+      hint: "Required. Add a key to enable Exa web search and page reading.",
     },
     assetSearch: {
       desc: "After configuration, AI will be able to search for high-quality images",
@@ -136,6 +139,11 @@ export const en: typeof zh = {
       off: "Disabled",
       hint: "Automatically checks and fixes obvious issues after generation.",
     },
+    customSystemPrompt: {
+      label: "Custom instructions",
+      placeholder: "Reusable instructions for Chat, Plan, and subagents…",
+      tooLong: "Custom instructions must be 32,000 characters or fewer.",
+    },
     skillScripts: {
       label: "Developer Skill scripts",
       on: "Enabled",
@@ -154,13 +162,6 @@ export const en: typeof zh = {
       refreshLog: "Refresh log",
       clearLog: "Clear log",
       emptyLog: "No proxy requests yet.",
-    },
-    permissionActivity: {
-      label: "Permission activity",
-      refresh: "Refresh",
-      clear: "Clear",
-      empty: "No permission decisions yet.",
-      hint: "Stored locally with bounded history and redacted targets. Credential values are never recorded.",
     },
     storage: {
       label: "Storage Governance",
@@ -198,9 +199,44 @@ export const en: typeof zh = {
       failed: "Clear failed",
     },
   },
+  permissionActivity: {
+    title: "Permission activity",
+    open: "View permission activity",
+    description:
+      "Shows only redacted permission decisions from the current conversation.",
+    empty: "No permission activity in this conversation.",
+    technicalDetails: "Technical details",
+    toolIdentifier: "Tool identifier",
+    target: "Target",
+    reason: "Reason",
+    decisions: {
+      allowed: "Allowed",
+      denied: "Denied",
+      requested: "Requested",
+    },
+    modes: {
+      chat: "Chat",
+      plan: "Plan",
+      auto_qa: "Automatic QA",
+      subagent: "Subagent",
+    },
+    sources: {
+      builtin: "Built-in tool",
+      project: "Project tool",
+      network: "Network tool",
+      mcp: "MCP",
+      skill: "Skill",
+      registry: "Component registry",
+      unknown: "Unknown source",
+    },
+    platforms: {
+      web: "Web",
+      desktop: "Desktop",
+      mobile: "Mobile",
+    },
+  },
   empty: {
-    title: "Start Creating Your App",
-    desc: "Tell me what kind of app you want, I'll help you generate complete code",
+    suggestionsLabel: "Quick suggestions",
     suggestions: {
       todo: "Create a todo app",
       weather: "Create a weather card",
@@ -341,7 +377,7 @@ export const en: typeof zh = {
     cancelEdit: "Cancel",
     searchPlaceholder: "Search conversations",
     emptySearch: "No conversations match.",
-    loadMore: "Show {count} more",
+    loadMore: "Show more",
   },
   diff: {
     title: "Code Changes",
@@ -372,23 +408,22 @@ export const en: typeof zh = {
   skills: {
     title: "Skills",
     description:
-      "Auto-matched skills inject metadata; you can also force skills for the next message.",
+      "Skills provide reusable expert instructions for AI. Skill files and settings stay local.",
+    menuHint:
+      "AI can discover Skills for a task, or you can select them here for the next message.",
+    emptyAutoEnabled: "No auto-discoverable skills enabled.",
     empty: "No skills installed yet.",
     import: "Add skill",
     manage: "Manage skills...",
     builtIn: "Built-in",
     imported: "Custom",
-    enableAutoMatch: "Allow automatic matching",
-    disableAutoMatch: "Disable automatic matching",
+    enableAutoMatch: "Allow metadata auto-discovery",
+    disableAutoMatch: "Disable metadata auto-discovery",
     updating: "Updating skill",
     updateAvailable: "Update available",
-    forceForNext: "Force for next message",
-    forceForNextHint:
-      "Selected skills load in full for the next message and clear after sending.",
-    autoMatchOff: "Auto-match off",
-    forcedSelection: "Selected forced skills",
-    forcedLabel: "Forced skills",
-    removeForced: "Remove forced skill {name}",
+    forcedSelection: "Selected Skills",
+    forcedLabel: "Selected Skills",
+    removeForced: "Remove selected Skill {name}",
     delete: "Delete",
     cancel: "Cancel",
     builtinCantDelete: "Built-in skills cannot be deleted",
@@ -404,7 +439,7 @@ export const en: typeof zh = {
     market: {
       search: "Search skills, tags, permissions",
       emptySearch: "No matching skills.",
-      autoEnabled: "auto-matched",
+      autoEnabled: "auto-discoverable",
       withScripts: "with scripts",
       permissions: "permissions",
       scripts: "scripts",
@@ -414,7 +449,7 @@ export const en: typeof zh = {
       riskHigh: "High risk",
       filters: {
         all: "All",
-        auto: "Auto-match",
+        auto: "Auto-discovery",
         builtin: "Built-in",
         imported: "Imported",
         scripts: "Scripts",

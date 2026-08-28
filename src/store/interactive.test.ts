@@ -71,6 +71,44 @@ describe("interactive question store", () => {
     expect(useInteractiveStore.getState().pending).toEqual([]);
   });
 
+  it("waits and resumes for sequential questions in the same generation lifecycle", async () => {
+    const first = useInteractiveStore.getState().askQuestion({
+      toolCallId: "grill-1",
+      questions,
+    });
+    useInteractiveStore.getState().resolveQuestion("grill-1", {
+      answers: [
+        {
+          header: questions[0].header,
+          question: questions[0].question,
+          selected: ["Browser"],
+        },
+      ],
+    });
+    await expect(first).resolves.toMatchObject({
+      answers: [{ selected: ["Browser"] }],
+    });
+
+    const second = useInteractiveStore.getState().askQuestion({
+      toolCallId: "grill-2",
+      questions,
+    });
+    expect(useInteractiveStore.getState().pending).toHaveLength(1);
+    useInteractiveStore.getState().resolveQuestion("grill-2", {
+      answers: [
+        {
+          header: questions[0].header,
+          question: questions[0].question,
+          selected: ["Desktop"],
+        },
+      ],
+    });
+    await expect(second).resolves.toMatchObject({
+      answers: [{ selected: ["Desktop"] }],
+    });
+    expect(useInteractiveStore.getState().pending).toEqual([]);
+  });
+
   it("rejects a pending questionnaire when generation is cancelled", async () => {
     const answerPromise = useInteractiveStore.getState().askQuestion({
       toolCallId: "question-cancelled",

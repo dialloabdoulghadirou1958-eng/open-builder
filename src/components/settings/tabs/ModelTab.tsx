@@ -24,6 +24,7 @@ import { useT } from "../../../i18n";
 import type { ModelFieldErrors } from "../SettingsDialog";
 import { CapsuleGroup } from "@/components/ui/capsule-group";
 import { LocalAgentSettings } from "./LocalAgentSettings";
+import { isLocalAgentHost } from "../../../lib/local-agent/tauri";
 import {
   Tooltip,
   TooltipContent,
@@ -180,6 +181,10 @@ export function ModelTab({
       ? [formData.model, ...models]
       : models;
   const localAgentsSupported = localAgentCapability === "supported";
+  const showRuntimeSettings =
+    formData.runtime === "localCli" ||
+    localAgentsSupported ||
+    (isLocalAgentHost() && localAgentCapability !== "unsupported");
   const showCapabilityNotice =
     localAgentCapability === "loading" ||
     localAgentCapability === "error" ||
@@ -187,63 +192,65 @@ export function ModelTab({
 
   return (
     <>
-      <div className="space-y-2">
-        <Label>{t.settings.runtime.label}</Label>
-        <CapsuleGroup
-          label={t.settings.runtime.label}
-          value={formData.runtime}
-          onChange={(value) =>
-            setFormData({
-              ...formData,
-              runtime: value as AISettings["runtime"],
-            })
-          }
-          disabled={runtimeChangeLocked}
-          options={[
-            { value: "api", label: t.settings.runtime.api },
-            ...(localAgentsSupported || formData.runtime === "localCli"
-              ? [
-                  {
-                    value: "localCli",
-                    label: t.settings.runtime.localCli,
-                  },
-                ]
-              : []),
-          ]}
-        />
-        <p className="text-xs text-muted-foreground">
-          {runtimeChangeLocked
-            ? t.settings.runtime.stopFirst
-            : t.settings.runtime.hint}
-        </p>
-        {showCapabilityNotice ? (
-          <div
-            className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
-            role={localAgentCapability === "error" ? "alert" : "status"}
-            aria-live="polite"
-          >
-            <span>
-              {localAgentCapability === "loading"
-                ? t.settings.localCli.scanning
-                : localAgentCapability === "unsupported"
-                  ? t.settings.localCli.desktopOnly
-                  : t.settings.localCli.unavailable}
-            </span>
-            {localAgentCapability !== "loading" ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-7 shrink-0 px-2 text-xs"
-                onClick={() => void refreshLocalAgentCapability(true)}
-              >
-                <RefreshCw size={13} aria-hidden="true" />
-                {t.settings.localCli.rescan}
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+      {showRuntimeSettings ? (
+        <div className="space-y-2">
+          <Label>{t.settings.runtime.label}</Label>
+          <CapsuleGroup
+            label={t.settings.runtime.label}
+            value={formData.runtime}
+            onChange={(value) =>
+              setFormData({
+                ...formData,
+                runtime: value as AISettings["runtime"],
+              })
+            }
+            disabled={runtimeChangeLocked}
+            options={[
+              { value: "api", label: t.settings.runtime.api },
+              ...(localAgentsSupported || formData.runtime === "localCli"
+                ? [
+                    {
+                      value: "localCli",
+                      label: t.settings.runtime.localCli,
+                    },
+                  ]
+                : []),
+            ]}
+          />
+          <p className="text-xs text-muted-foreground">
+            {runtimeChangeLocked
+              ? t.settings.runtime.stopFirst
+              : t.settings.runtime.hint}
+          </p>
+          {showCapabilityNotice ? (
+            <div
+              className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+              role={localAgentCapability === "error" ? "alert" : "status"}
+              aria-live="polite"
+            >
+              <span>
+                {localAgentCapability === "loading"
+                  ? t.settings.localCli.scanning
+                  : localAgentCapability === "unsupported"
+                    ? t.settings.localCli.desktopOnly
+                    : t.settings.localCli.unavailable}
+              </span>
+              {localAgentCapability !== "loading" ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 shrink-0 px-2 text-xs"
+                  onClick={() => void refreshLocalAgentCapability(true)}
+                >
+                  <RefreshCw size={13} aria-hidden="true" />
+                  {t.settings.localCli.rescan}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {formData.runtime === "localCli" ? (
         localAgentsSupported ? (

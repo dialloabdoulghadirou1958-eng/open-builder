@@ -47,6 +47,12 @@ export default defineConfig(() => {
             includeDependenciesRecursively: false,
             groups: [
               {
+                name: "chat-input",
+                test: /src[\\/]components[\\/]chat[\\/](?:ChatInput\.tsx|chat-input[\\/](?!McpMenu\.tsx))/,
+                minSize: 5_000,
+                priority: 10,
+              },
+              {
                 name: "vendor-editor",
                 test: /node_modules[\\/](?:@codemirror|@lezer|codemirror)/,
                 priority: 30,

@@ -34,6 +34,10 @@ import {
   deleteAttachment,
   deleteAttachmentsForMessages,
 } from "../lib/attachments/store";
+import {
+  getPermissionActivity,
+  subscribePermissionActivity,
+} from "../lib/security/activity-log";
 import { useT } from "../i18n";
 import type {
   Message,
@@ -62,10 +66,16 @@ const SnapshotHistoryDialog = lazy(() =>
     default: module.SnapshotHistoryDialog,
   })),
 );
+const PermissionActivityDialog = lazy(() =>
+  import("./chat/PermissionActivityDialog").then((module) => ({
+    default: module.PermissionActivityDialog,
+  })),
+);
 
 interface ChatInterfaceProps {
   messages: Message[];
   isGenerating: boolean;
+  isThinkingStreaming?: boolean;
   hasValidSettings: boolean;
   onGenerate: (
     prompt: string,
@@ -95,6 +105,7 @@ interface ChatInterfaceProps {
 export function ChatInterface({
   messages,
   isGenerating,
+  isThinkingStreaming = false,
   hasValidSettings,
   onGenerate,
   onStop,
@@ -160,8 +171,24 @@ export function ChatInterface({
     [snapshots],
   );
   const [diffMessageId, setDiffMessageId] = useState<string | null>(null);
+  const [showPermissionActivity, setShowPermissionActivity] = useState(false);
+  const [permissionActivityCount, setPermissionActivityCount] = useState(0);
   const [showSnapshotHistory, setShowSnapshotHistory] = useState(false);
   const [showResetProjectConfirm, setShowResetProjectConfirm] = useState(false);
+
+  useEffect(() => {
+    setShowPermissionActivity(false);
+    if (!activeId) {
+      setPermissionActivityCount(0);
+      return;
+    }
+
+    const refresh = () => {
+      setPermissionActivityCount(getPermissionActivity(activeId).length);
+    };
+    refresh();
+    return subscribePermissionActivity(refresh);
+  }, [activeId]);
 
   const {
     rollbackConfirmId,
@@ -381,6 +408,7 @@ export function ChatInterface({
         <MessageBubble
           message={msg}
           isGenerating={isLast && isGenerating}
+          isThinkingStreaming={isLast && isThinkingStreaming}
           isLastAssistant={isLast}
           snapshotExists={snapshotMessageIds.has(msg.id)}
           onShowDiff={handleShowDiff}
@@ -407,7 +435,9 @@ export function ChatInterface({
         isGenerating={isGenerating}
         onOpenSettings={onOpenSettings}
         onToggleSessionList={() => setShowSessionList(true)}
+        onOpenPermissionActivity={() => setShowPermissionActivity(true)}
         onOpenSnapshotHistory={() => setShowSnapshotHistory(true)}
+        permissionActivityCount={permissionActivityCount}
         snapshotCount={snapshots.length}
       />
 
@@ -562,6 +592,16 @@ export function ChatInterface({
             onClose={() => setShowSnapshotHistory(false)}
             onShowDiff={handleShowDiffFromHistory}
             onRollback={handleRollbackFromHistory}
+          />
+        </Suspense>
+      )}
+
+      {showPermissionActivity && activeId && (
+        <Suspense fallback={null}>
+          <PermissionActivityDialog
+            open
+            conversationId={activeId}
+            onClose={() => setShowPermissionActivity(false)}
           />
         </Suspense>
       )}

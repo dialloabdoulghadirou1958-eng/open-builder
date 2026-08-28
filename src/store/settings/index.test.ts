@@ -99,4 +99,30 @@ describe("settings persistence", () => {
     expect(useSettingsStore.getState().isAIValid()).toBe(false);
     expect(localAgentSupportMocks.reset).toHaveBeenCalledTimes(3);
   });
+
+  it("defaults and resets to keyless Firecrawl while requiring a key for Exa", async () => {
+    const { storage } = createMemoryStorage();
+    vi.stubGlobal("localStorage", storage);
+
+    const { useSettingsStore } = await import("./index");
+    expect(useSettingsStore.getState().webSearch.engine).toBe("firecrawl");
+    expect(useSettingsStore.getState().isWebSearchConfigured()).toBe(true);
+
+    useSettingsStore.getState().setWebSearch({
+      engine: "exa",
+      tavilyApiKey: "",
+      firecrawlApiKey: "",
+      exaApiKey: "",
+    });
+    expect(useSettingsStore.getState().isWebSearchConfigured()).toBe(false);
+
+    useSettingsStore.getState().setWebSearch({
+      ...useSettingsStore.getState().webSearch,
+      exaApiKey: "exa-test-key",
+    });
+    expect(useSettingsStore.getState().isWebSearchConfigured()).toBe(true);
+
+    useSettingsStore.getState().resetAll();
+    expect(useSettingsStore.getState().webSearch.engine).toBe("firecrawl");
+  });
 });

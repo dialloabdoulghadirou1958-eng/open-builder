@@ -53,7 +53,7 @@ Tauri 桌面版（macOS / Windows / Linux）提供 stdio MCP 等本机运行能�
 - **项目快照** — 支持查看快照历史、命名快照、查看变更、导出 patch 并回滚到历史版本
 - **项目健康检查** — `/health` 可检查结构、依赖、运行日志、可访问性与响应式风险；隔离的自动 QA 只执行受限项目检查，不访问 MCP 或预览控制台
 - **上下文压缩** — 通过 `/compact` 或命令面板总结长对话，降低 Token 消耗
-- **Plan Mode** — 支持先探索代码并提交方案，用户批准后再写入文件
+- **Plan Mode** — 支持先探索代码并提交方案，用户批准后再写入文件；`ask_user_question` 既可批量确认独立问题，也可逐题进行依赖式压力访谈
 - **子代理协作** — 内置代码浏览、代码审查、依赖建议、Bug 调查、UI 审查等只读子代理
 - **内置搜索** — 支持启用模型内置的搜索服务
 - **桌面 API 代理** — Tauri 可转发经允许的 HTTP/HTTPS 模型请求，处理浏览器 CORS 限制；静态 Web 部署仍依赖服务商允许跨域访问
@@ -68,8 +68,9 @@ Tauri 桌面版（macOS / Windows / Linux）提供 stdio MCP 等本机运行能�
 - **Slash 指令** — 输入框支持 `/new`、`/fork`、`/clear`、`/reset`、`/compact`、`/health`、`/review`、`/continue`、`/retry`
 - **命令面板与快捷键** — 可通过 `Cmd/Ctrl+K` 打开命令面板，并使用键盘新建会话、打开设置、聚焦输入框或停止生成
 - **图片与文件输入** — 支持上传截图、文本文件或 PDF；支持 PDF 的模型会收到原生 PDF 文件输入，本地不抽取 PDF 文本
-- **技能系统** — 支持 metadata 匹配和手动指定；导入的 Skill 默认停用，桌面脚本还必须开启开发者开关并在每次调用时确认
-- **本地设置** — 服务商配置和 API Key 会持久化到浏览器本地存储
+- **技能系统** — 开启的 Skill 只提供 metadata 供 AI 自动发现；仅在调用 `read_skill` 或为下一条消息选择 Skill 时加载全文，选择结果会传给子代理并在发送后清空。内置 `design-taste-frontend`、`frontend-design`、`code-review` 与 `code-simplifier`，导入 Skill 默认关闭自动发现
+- **自定义指令** — 高级设置可安全追加最多 32,000 个字符，覆盖 Chat、Plan、重试与子代理，但不能授予工具或改变模式限制；自动 QA、智能标题与上下文压缩不会携带它
+- **本地设置** — 服务商配置、API Key 与自定义指令会持久化到浏览器本地存储
 - **存储治理** — 可查看本地数据占用，并安全清理归档会话、空会话和旧快照
 - **流式输出** — 实时展示 AI 思考过程和代码生成进度
 - **扩展思考** — 支持 Extended Thinking / Reasoning 模式（DeepSeek-R1、Claude 4.6 等）
@@ -112,10 +113,11 @@ Tauri 桌面版（macOS / Windows / Linux）提供 stdio MCP 等本机运行能�
 | 桌面端       | 支持           | 支持      | 开发者开关 + 每次调用批准 |
 | 实验性移动端 | 支持           | 不支持    | 不支持                    |
 
-### 联网搜索（可选）
+### 联网搜索
 
-- 集成 [Tavily](https://tavily.com)、[Firecrawl](https://www.firecrawl.dev) API，AI 可实时搜索网页获取最新信息
-- 支持网页内容读取，自动降级到 [Jina Reader](https://jina.ai/reader/) 作为备用方案
+- [Firecrawl](https://www.firecrawl.dev) 是新安装和重置设置的默认引擎，可在按 IP 限额下免 Key 搜索和读取网页；填写可选 API Key 后可提高限额
+- 支持使用服务商凭据配置 [Tavily](https://tavily.com) 和 [Exa](https://exa.ai)；受支持的模型服务商也可使用内置搜索
+- 配置的网页读取服务无法返回页面时，会自动降级到 [Jina Reader](https://jina.ai/reader/)
 
 ---
 
@@ -178,7 +180,7 @@ pnpm tauri:android:build
 
 项目仍保存在 Open Builder 的内存虚拟文件系统中。CLI 在隔离的空目录运行，只能通过每次运行独立的 loopback MCP 工具桥访问项目。附件使用不可猜测 ID，不暴露宿主文件路径；在发送用户内容前，应用会禁用或拒绝服务商配置、hooks、无关 MCP、shell 工具和 CLI 项目指令注入。
 
-联网搜索选择**模型内置**时，本地模式使用对应 CLI 的原生搜索；选择 Tavily 或 Firecrawl 时则只使用 Open Builder 现有工具，并关闭原生搜索。若状态显示未安装、未登录、版本不支持或隔离失败，可使用**重新检测**、**选择程序**、**恢复自动检测**或复制界面提供的登录命令。Web 与移动端会明确阻断本地 CLI，并要求切换回 API。
+联网搜索选择**模型内置**时，本地模式使用对应 CLI 的原生搜索；选择 Tavily、Firecrawl 或 Exa 时则只使用 Open Builder 现有工具，并关闭原生搜索。若状态显示未安装、未登录、版本不支持或隔离失败，可使用**重新检测**、**选择程序**、**恢复自动检测**或复制界面提供的登录命令。Web 与移动端会明确阻断本地 CLI，并要求切换回 API。
 
 ### 配置说明
 
@@ -190,12 +192,13 @@ pnpm tauri:android:build
 | API Key      | 服务商需要时使用的凭据                    | `sk-...`                            |
 | API Base URL | 服务商域名或基础路径                      | `https://api.openai.com`            |
 | 模型名称     | 模型 ID；受支持的服务商可动态读取模型列表 | `gpt-5.6-sol`、`deepseek-chat`      |
-| 联网搜索     | 可选的 Tavily 或 Firecrawl 凭据           | `tvly-...`                          |
+| 联网搜索     | 免 Key Firecrawl，或其他服务商凭据        | `fc-...`、`tvly-...` 或 Exa Key     |
 | 图片搜索     | 可选的 Pixabay 或 Unsplash 凭据           | 对应服务商 API Key                  |
+| 自定义指令   | 高级设置中的可复用指令                    | 最多 32,000 个字符                  |
 
-> 设置和 API Key 都保存在浏览器本地存储中。请将当前浏览器配置文件和设备视为凭据安全边界的一部分。
+> 设置和 API Key 都保存在浏览器本地存储中。自定义指令会在 Chat、Plan、重试与子代理工作时发送给当前模型服务商，且不能扩大工具权限；请勿在其中填写凭据或其他秘密。请将当前浏览器配置文件和设备视为凭据安全边界的一部分。
 
-MCP 服务与 Skills 可从对话工具栏管理；只有原生运行时报告具备对应能力时，界面才会显示桌面专属选项。
+MCP 服务与 Skills 可从对话工具栏管理。Skills 管理页开关只控制 metadata 自动发现；在工具栏选择 Skill 会为下一次请求加载完整正文，并在发送后清空。只有原生运行时报告具备对应能力时，界面才会显示桌面专属选项。
 
 ---
 
@@ -234,11 +237,11 @@ MCP 服务与 Skills 可从对话工具栏管理；只有原生运行时报告�
 | `search_in_files`                | 全局搜索文件内容                                                   |
 | `get_console_logs`               | 读取 Sandpack 预览控制台输出                                       |
 | `compact_context`                | 压缩长对话上下文                                                   |
-| `ask_user_question`              | 在关键需求不明确时向用户提问                                       |
+| `ask_user_question`              | 批量询问 1-4 个独立问题，或按决策依赖逐题进行压力访谈              |
 | `exit_plan_mode`                 | 提交实施方案并等待用户批准                                         |
 | `dispatch_subagent`              | 调用只读子代理进行探索、审查或诊断                                 |
 | `project_health_check`           | 检查项目结构、依赖文件、环境变量、控制台日志、可访问性和响应式风险 |
-| `web_search`                     | 联网搜索（支持模型内置、Tavily、Firecrawl）                        |
+| `web_search`                     | 联网搜索（支持模型内置、Tavily、Firecrawl、Exa）                   |
 | `web_reader`                     | 读取网页内容                                                       |
 | `image_search`                   | 图片搜索（支持 Pixabay、Unsplash）                                 |
 | `search_npm_packages`            | NPM 包搜索                                                         |
@@ -246,7 +249,7 @@ MCP 服务与 Skills 可从对话工具栏管理；只有原生运行时报告�
 | `install_component`              | 安装经允许的 shadcn registry 组件及其依赖                          |
 | `screenshot_to_code`             | 根据提供的 UI 图片生成并写入组件                                   |
 | `apply_design_style`             | 为项目写入选定的设计规范                                           |
-| `list_skills` / `read_skill`     | 发现并加载自动匹配或强制指定的技能                                 |
+| `list_skills` / `read_skill`     | 发现已启用的 Skill metadata，并按需加载全文与资源清单              |
 | `execute_skill_script`           | 仅在桌面端运行已激活技能的脚本                                     |
 | `read_env_schema` / `manage_env` | 安全读取与管理环境变量文件                                         |
 

@@ -58,6 +58,9 @@ import {
   removeErrorMessages,
 } from "../lib/ai/conversation-context";
 import { PLAN_MODE_SYSTEM_SUFFIX } from "../lib/ai/plan-mode";
+import { buildRunSystemPromptSuffix } from "../lib/ai/run-system-prompt";
+import { buildCustomSystemPromptSection } from "../lib/ai/custom-system-prompt";
+import { appendBufferedAssistantOutput } from "../lib/utils/stream-output";
 
 interface GeneratorConfigSnapshot {
   runtime: AISettings["runtime"];
@@ -71,6 +74,7 @@ interface GeneratorConfigSnapshot {
   searchEngine: string;
   tavilyKey: string;
   firecrawlKey: string;
+  exaKey: string;
   assetEngine: string;
   pixabayKey: string;
   unsplashKey: string;
@@ -98,6 +102,7 @@ function buildGeneratorConfigSnapshot(
     searchEngine: webSearch.engine,
     tavilyKey: webSearch.tavilyApiKey,
     firecrawlKey: webSearch.firecrawlApiKey,
+    exaKey: webSearch.exaApiKey,
     assetEngine: assetSearch.engine,
     pixabayKey: assetSearch.pixabayApiKey,
     unsplashKey: assetSearch.unsplashApiKey,
@@ -133,6 +138,7 @@ function sameGeneratorConfig(
     a.searchEngine === b.searchEngine &&
     a.tavilyKey === b.tavilyKey &&
     a.firecrawlKey === b.firecrawlKey &&
+    a.exaKey === b.exaKey &&
     a.assetEngine === b.assetEngine &&
     a.pixabayKey === b.pixabayKey &&
     a.unsplashKey === b.unsplashKey &&
@@ -278,6 +284,7 @@ export function useGenerator({
   const [lastError, setLastError] = useState<StructuredGenerationError | null>(
     null,
   );
+  const [isThinkingStreaming, setIsThinkingStreaming] = useState(false);
   const generatorConfigRef = useRef<GeneratorConfigSnapshot | null>(null);
   const generatorConstructionEpochRef = useRef(0);
   const activeId = useConversationStore((s) => s.activeId);
@@ -290,7 +297,8 @@ export function useGenerator({
   const lastThinkingTimeRef = useRef(0);
   const runConversationIdRef = useRef<string | null>(null);
   const forcedSkillsPromptRef = useRef("");
-  const trustedSkillsPromptRef = useRef("");
+  const customSystemPromptRef = useRef("");
+  const requestPromptContextRef = useRef("");
   const baseCustomToolSetRef = useRef<ToolSet>({});
   const mcpRuntimeRef = useRef<McpRuntimeBundle | null>(null);
 
@@ -322,7 +330,8 @@ export function useGenerator({
       generatorConstructionEpochRef.current += 1;
       clearOutputBuffers();
       forcedSkillsPromptRef.current = "";
-      trustedSkillsPromptRef.current = "";
+      customSystemPromptRef.current = "";
+      requestPromptContextRef.current = "";
       mcpRuntimeRef.current = null;
       generatorRef.current?.abort();
     },
@@ -336,10 +345,12 @@ export function useGenerator({
     generatorConfigRef.current = null;
     runConversationIdRef.current = null;
     forcedSkillsPromptRef.current = "";
-    trustedSkillsPromptRef.current = "";
+    customSystemPromptRef.current = "";
+    requestPromptContextRef.current = "";
     baseCustomToolSetRef.current = {};
     mcpRuntimeRef.current = null;
     clearOutputBuffers();
+    setIsThinkingStreaming(false);
     useInteractiveStore.getState().rejectAllPending("project reset");
     useSubagentStore.setState({ progress: {} });
   }, [clearOutputBuffers]);
@@ -352,7 +363,8 @@ export function useGenerator({
     generatorConfigRef.current = null;
     runConversationIdRef.current = null;
     forcedSkillsPromptRef.current = "";
-    trustedSkillsPromptRef.current = "";
+    customSystemPromptRef.current = "";
+    requestPromptContextRef.current = "";
     baseCustomToolSetRef.current = {};
     mcpRuntimeRef.current = null;
     clearOutputBuffers();
@@ -360,6 +372,7 @@ export function useGenerator({
     useInteractiveStore.getState().rejectAllPending("conversation switched");
     useSubagentStore.setState({ progress: {} });
     setIsGenerating(false);
+    setIsThinkingStreaming(false);
     setRunState("idle");
   }, [activeId, clearOutputBuffers, setIsGenerating]);
 
@@ -413,48 +426,30 @@ export function useGenerator({
     if (thinkingBufferRef.current) {
       const remaining = thinkingBufferRef.current;
       thinkingBufferRef.current = "";
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (last?.role === "assistant") {
-          return [
-            ...prev.slice(0, -1),
-            { ...last, thinking: (last.thinking || "") + remaining },
-          ];
-        }
-        return prev;
-      });
+      setMessages((prev) =>
+        appendBufferedAssistantOutput(prev, { thinking: remaining }),
+      );
     }
   }, [setMessages]);
 
-  const flushTextBuffer = useCallback(() => {
+  const flushOutputBuffers = useCallback(() => {
+    if (thinkingTimerRef.current) {
+      cancelAnimationFrame(thinkingTimerRef.current);
+      thinkingTimerRef.current = null;
+    }
     if (typewriterTimerRef.current) {
       cancelAnimationFrame(typewriterTimerRef.current);
       typewriterTimerRef.current = null;
     }
-    if (!textBufferRef.current) return;
-    const remainingText = textBufferRef.current;
+    const thinking = thinkingBufferRef.current;
+    const text = textBufferRef.current;
+    thinkingBufferRef.current = "";
     textBufferRef.current = "";
-    setMessages((prev) => {
-      const last = prev[prev.length - 1];
-      if (last?.role === "assistant") {
-        return [
-          ...prev.slice(0, -1),
-          {
-            ...last,
-            content:
-              ((typeof last.content === "string" ? last.content : "") || "") +
-              remainingText,
-          },
-        ];
-      }
-      return prev;
-    });
+    if (!thinking && !text) return;
+    setMessages((prev) =>
+      appendBufferedAssistantOutput(prev, { thinking, text }),
+    );
   }, [setMessages]);
-
-  const flushOutputBuffers = useCallback(() => {
-    flushThinkingBuffer();
-    flushTextBuffer();
-  }, [flushThinkingBuffer, flushTextBuffer]);
 
   const appendGenerationError = useCallback(
     (
@@ -462,6 +457,7 @@ export function useGenerator({
       options: { replaceExisting?: boolean } = {},
     ): StructuredGenerationError => {
       flushOutputBuffers();
+      setIsThinkingStreaming(false);
       const classified = classifyGenerationError(err);
       setLastError(classified);
       setRunState(classified.kind === "aborted" ? "aborted" : "error");
@@ -520,6 +516,7 @@ export function useGenerator({
       baseCustomToolSetRef.current = {};
       mcpRuntimeRef.current = null;
       clearOutputBuffers();
+      setIsThinkingStreaming(false);
       prevActiveIdRef.current = currentActiveId;
       useInteractiveStore.getState().rejectAllPending("conversation switched");
       useSubagentStore.setState({ progress: {} });
@@ -588,6 +585,7 @@ export function useGenerator({
           if (!isCurrentGeneratorRun(generatorConversationId)) return false;
           const translations = getT();
           recordPermissionActivity({
+            conversationId: context.run.conversationId,
             tool: "install_component",
             source: "registry",
             mode: context.run.mode,
@@ -623,6 +621,7 @@ export function useGenerator({
             translations.approvals.approveOnce,
           );
           recordPermissionActivity({
+            conversationId: context.run.conversationId,
             tool: "install_component",
             source: "registry",
             mode: context.run.mode,
@@ -673,6 +672,7 @@ export function useGenerator({
         getCustomToolSet: () =>
           generatorRef.current?.getCustomToolSet() ?? customToolSet,
         getCombinedToolHandler: () => combinedToolHandlerWithMcp,
+        getCustomSystemPrompt: () => customSystemPromptRef.current,
         getForcedSkillsPrompt: () => forcedSkillsPromptRef.current,
         getSkillContextSnapshot: () =>
           generatorRef.current?.getSkillContext().snapshot() ?? null,
@@ -688,12 +688,14 @@ export function useGenerator({
                   model: localPreferences.model,
                   effort: localPreferences.effort,
                   nativeSearch: false,
+                  conversationId: options.conversationId,
                 },
                 events,
                 options.initialFiles,
                 options.customTools,
                 options.customToolHandler,
                 {
+                  conversationId: options.conversationId,
                   tools: options.tools,
                   executionMode: options.executionMode,
                   runtimePlatform: options.runtimePlatform,
@@ -725,13 +727,14 @@ export function useGenerator({
         onText: (delta) => {
           if (!isCurrentGeneratorRun(generatorConversationId)) return;
           setRunState("streaming");
+          setIsThinkingStreaming(false);
           flushThinkingBuffer();
           textBufferRef.current += delta;
           if (!typewriterTimerRef.current) {
             const typeChar = (timestamp: number) => {
+              typewriterTimerRef.current = null;
               if (!isCurrentGeneratorRun(generatorConversationId)) {
                 textBufferRef.current = "";
-                typewriterTimerRef.current = null;
                 return;
               }
               if (timestamp - lastCharTimeRef.current >= 20) {
@@ -757,13 +760,8 @@ export function useGenerator({
                   lastCharTimeRef.current = timestamp;
                 }
               }
-              if (
-                textBufferRef.current.length > 0 ||
-                typewriterTimerRef.current
-              ) {
+              if (textBufferRef.current.length > 0) {
                 typewriterTimerRef.current = requestAnimationFrame(typeChar);
-              } else {
-                typewriterTimerRef.current = null;
               }
             };
             typewriterTimerRef.current = requestAnimationFrame(typeChar);
@@ -772,12 +770,13 @@ export function useGenerator({
         onThinking: (delta) => {
           if (!isCurrentGeneratorRun(generatorConversationId)) return;
           setRunState("streaming");
+          setIsThinkingStreaming(true);
           thinkingBufferRef.current += delta;
           if (!thinkingTimerRef.current) {
             const typeThinking = (timestamp: number) => {
+              thinkingTimerRef.current = null;
               if (!isCurrentGeneratorRun(generatorConversationId)) {
                 thinkingBufferRef.current = "";
-                thinkingTimerRef.current = null;
                 return;
               }
               if (timestamp - lastThinkingTimeRef.current >= 20) {
@@ -801,13 +800,8 @@ export function useGenerator({
                   lastThinkingTimeRef.current = timestamp;
                 }
               }
-              if (
-                thinkingBufferRef.current.length > 0 ||
-                thinkingTimerRef.current
-              ) {
+              if (thinkingBufferRef.current.length > 0) {
                 thinkingTimerRef.current = requestAnimationFrame(typeThinking);
-              } else {
-                thinkingTimerRef.current = null;
               }
             };
             thinkingTimerRef.current = requestAnimationFrame(typeThinking);
@@ -815,6 +809,7 @@ export function useGenerator({
         },
         onToolCall: (name, id) => {
           if (!isCurrentGeneratorRun(generatorConversationId)) return;
+          setIsThinkingStreaming(false);
           setRunState(
             name === "ask_user_question"
               ? "waitingUser"
@@ -822,30 +817,7 @@ export function useGenerator({
                 ? "awaitingPlanApproval"
                 : "executingTool",
           );
-          flushThinkingBuffer();
-          if (typewriterTimerRef.current) {
-            cancelAnimationFrame(typewriterTimerRef.current);
-            typewriterTimerRef.current = null;
-          }
-          if (textBufferRef.current) {
-            const remainingText = textBufferRef.current;
-            textBufferRef.current = "";
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              if (last?.role === "assistant") {
-                return [
-                  ...prev.slice(0, -1),
-                  {
-                    ...last,
-                    content:
-                      ((typeof last.content === "string" ? last.content : "") ||
-                        "") + remainingText,
-                  },
-                ];
-              }
-              return prev;
-            });
-          }
+          flushOutputBuffers();
 
           const actualId =
             id || `call_${Math.random().toString(36).substring(2, 11)}`;
@@ -942,48 +914,22 @@ export function useGenerator({
         },
         onComplete: () => {
           if (!isCurrentGeneratorRun(generatorConversationId)) return;
+          setIsThinkingStreaming(false);
           setRunState("completed");
-          if (typewriterTimerRef.current) {
-            cancelAnimationFrame(typewriterTimerRef.current);
-            typewriterTimerRef.current = null;
-          }
-          flushThinkingBuffer();
-          if (textBufferRef.current) {
-            const remainingText = textBufferRef.current;
-            textBufferRef.current = "";
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              if (last?.role === "assistant") {
-                return [
-                  ...prev.slice(0, -1),
-                  {
-                    ...last,
-                    content:
-                      ((typeof last.content === "string" ? last.content : "") ||
-                        "") + remainingText,
-                  },
-                ];
-              }
-              return prev;
-            });
-          }
+          flushOutputBuffers();
           createSnapshotForCurrentState();
-
-          triggerSmartTitle({
-            apiType: currentApiType,
-            apiBaseUrl: currentApiBaseUrl,
-            apiKey: currentApiKey,
-            model: currentModel,
-          });
         },
         onError: (error) => {
           if (!isCurrentGeneratorRun(generatorConversationId)) return;
+          setIsThinkingStreaming(false);
           setLastError(classifyGenerationError(error));
           setRunState("error");
           console.error("Generation error:", error);
         },
         onRetry: (attempt, maxAttempts, error) => {
           if (!isCurrentGeneratorRun(generatorConversationId)) return;
+          setIsThinkingStreaming(false);
+          clearOutputBuffers();
           console.warn(
             `Retrying API request (${attempt}/${maxAttempts}):`,
             error.message,
@@ -1020,6 +966,7 @@ export function useGenerator({
         },
       } satisfies GeneratorEvents;
       const generatorExtras = {
+        conversationId: generatorConversationId,
         tools: initialTools,
         askUserQuestion: (toolCallId, questions) => {
           if (!isCurrentGeneratorRun(generatorConversationId)) {
@@ -1068,7 +1015,7 @@ export function useGenerator({
           generatorRef.current?.setSystemPromptSuffix(
             runtime.buildMemoryPromptSection(
               useMemoryStore.getState().getAll(),
-            ) + trustedSkillsPromptRef.current,
+            ) + requestPromptContextRef.current,
           );
           return runtime.buildToolSet({
             custom,
@@ -1086,6 +1033,7 @@ export function useGenerator({
         runtimePlatform,
       } satisfies Pick<
         import("../lib/ai/generator").GeneratorOptions,
+        | "conversationId"
         | "tools"
         | "askUserQuestion"
         | "requestPlanApproval"
@@ -1180,13 +1128,14 @@ export function useGenerator({
     setFiles,
     setTemplate,
     restartSandpack,
+    clearOutputBuffers,
     flushThinkingBuffer,
-    triggerSmartTitle,
+    flushOutputBuffers,
     generateLocalUtilityText,
   ]);
 
-  // Apply state that can change between generations: tool set (plan mode toggle),
-  // system prompt suffix (memory + plan mode addendum). Called at the start of every run.
+  // Apply state that can change between generations: tool policy and the
+  // request-scoped memory, Skill, custom-prompt, and Plan context.
   const applyDynamicGeneratorState = useCallback(
     async (
       generator: GenerationBackend,
@@ -1194,6 +1143,7 @@ export function useGenerator({
       dynamicOptions: {
         includeMcp?: boolean;
         mode?: ExecutionMode;
+        customSystemPromptSnapshot?: string;
       } = {},
     ) => {
       const runtime = await loadGeneratorRuntime();
@@ -1238,6 +1188,9 @@ export function useGenerator({
         mode === "chat"
           ? runtime.buildMemoryPromptSection(useMemoryStore.getState().getAll())
           : "";
+      const customSystemPromptSnapshot =
+        dynamicOptions.customSystemPromptSnapshot ??
+        useSettingsStore.getState().system.customSystemPrompt;
       const skillContext = generator.getSkillContext();
       skillContext.clear();
       let skillsSuffix = "";
@@ -1255,16 +1208,28 @@ export function useGenerator({
           "Forced skills cannot be loaded because skill storage is unavailable.",
         );
       }
+      const promptSuffix = buildRunSystemPromptSuffix({
+        mode,
+        memory: memorySuffix,
+        autoSkills: skillsSuffix,
+        mandatorySkills: forcedSkillsSuffix,
+        customSystemPrompt: customSystemPromptSnapshot,
+        planMode: PLAN_MODE_SYSTEM_SUFFIX,
+      });
+      const customSystemPromptSuffix =
+        mode === "chat" || mode === "plan"
+          ? buildCustomSystemPromptSection(customSystemPromptSnapshot)
+          : "";
       forcedSkillsPromptRef.current = forcedSkillsSuffix;
-      trustedSkillsPromptRef.current = skillsSuffix + forcedSkillsSuffix;
+      customSystemPromptRef.current = customSystemPromptSuffix;
+      // Keep the exact request-start snapshot for an approved Plan's next
+      // provider iteration, even if settings change while approval is pending.
+      requestPromptContextRef.current =
+        skillsSuffix + customSystemPromptSuffix + forcedSkillsSuffix;
       generator.setUntrustedReferenceContext(
         mode === "auto_qa" ? "" : mcpRuntime.instructions,
       );
-      generator.setSystemPromptSuffix(
-        memorySuffix +
-          trustedSkillsPromptRef.current +
-          (mode === "plan" ? PLAN_MODE_SYSTEM_SUFFIX : ""),
-      );
+      generator.setSystemPromptSuffix(promptSuffix);
     },
     [],
   );
@@ -1320,9 +1285,12 @@ export function useGenerator({
     ) => {
       const runConversationId = useConversationStore.getState().activeId;
       if (!runConversationId) return;
+      const customSystemPromptSnapshot =
+        useSettingsStore.getState().system.customSystemPrompt;
       runConversationIdRef.current = runConversationId;
       setRunState("preparing");
       setLastError(null);
+      setIsThinkingStreaming(false);
       setIsGenerating(true);
 
       const content = prompt;
@@ -1346,6 +1314,7 @@ export function useGenerator({
           await applyDynamicGeneratorState(
             generator,
             options.forcedSkillIds ?? [],
+            { customSystemPromptSnapshot },
           );
         }
         if (!isCurrentGeneratorRun(runConversationId)) return;
@@ -1367,6 +1336,25 @@ export function useGenerator({
         userMessageAdded = true;
         if (generator) {
           const result = await generator.generate(prompt, resolvedAttachments);
+          if (
+            isCurrentGeneratorRun(runConversationId) &&
+            !result.aborted &&
+            !result.maxIterationsReached
+          ) {
+            const completedMessages =
+              useConversationStore.getState().conversations[runConversationId]
+                ?.messages ?? result.messages;
+            void triggerSmartTitle({
+              conversationId: runConversationId,
+              completedMessages: [...completedMessages],
+              config: {
+                apiType: settings.apiType,
+                apiBaseUrl: settings.apiBaseUrl,
+                apiKey: settings.apiKey,
+                model: settings.model,
+              },
+            });
+          }
           if (!options.skipAutoQa) {
             await runAutomaticQa(generator, result);
           }
@@ -1394,10 +1382,13 @@ export function useGenerator({
         if (isCurrentGeneratorRun(runConversationId)) {
           setMessages((prev) => filterMemoryMessages(prev));
           setIsGenerating(false);
+          setIsThinkingStreaming(false);
           setRunState((state) =>
             state === "error" || state === "aborted" ? state : "idle",
           );
           forcedSkillsPromptRef.current = "";
+          customSystemPromptRef.current = "";
+          requestPromptContextRef.current = "";
           runConversationIdRef.current = null;
         }
       }
@@ -1410,56 +1401,37 @@ export function useGenerator({
       runAutomaticQa,
       appendGenerationError,
       isCurrentGeneratorRun,
+      settings.apiType,
+      settings.apiBaseUrl,
+      settings.apiKey,
+      settings.model,
+      triggerSmartTitle,
     ],
   );
 
   const stop = useCallback(() => {
-    if (typewriterTimerRef.current) {
-      cancelAnimationFrame(typewriterTimerRef.current);
-      typewriterTimerRef.current = null;
-    }
-    if (thinkingTimerRef.current) {
-      cancelAnimationFrame(thinkingTimerRef.current);
-      thinkingTimerRef.current = null;
-    }
-    if (textBufferRef.current || thinkingBufferRef.current) {
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (last?.role === "assistant") {
-          return [
-            ...prev.slice(0, -1),
-            {
-              ...last,
-              content: textBufferRef.current
-                ? ((typeof last.content === "string" ? last.content : "") ||
-                    "") + textBufferRef.current
-                : last.content,
-              thinking: thinkingBufferRef.current
-                ? (last.thinking || "") + thinkingBufferRef.current
-                : last.thinking,
-            },
-          ];
-        }
-        return prev;
-      });
-      textBufferRef.current = "";
-      thinkingBufferRef.current = "";
-    }
+    setIsThinkingStreaming(false);
+    flushOutputBuffers();
     generatorRef.current?.abort();
     forcedSkillsPromptRef.current = "";
+    customSystemPromptRef.current = "";
+    requestPromptContextRef.current = "";
     runConversationIdRef.current = null;
     useInteractiveStore.getState().rejectAllPending("user stopped");
     setRunState("aborted");
     setIsGenerating(false);
     createSnapshotForCurrentState();
-  }, [setIsGenerating, setMessages]);
+  }, [flushOutputBuffers, setIsGenerating]);
 
   const retry = useCallback(async () => {
     const runConversationId = useConversationStore.getState().activeId;
     if (!runConversationId) return;
+    const customSystemPromptSnapshot =
+      useSettingsStore.getState().system.customSystemPrompt;
     runConversationIdRef.current = runConversationId;
     setRunState("preparing");
     setLastError(null);
+    setIsThinkingStreaming(false);
     setIsGenerating(true);
     setMessages((prev) => {
       const toolResultIds = new Set(
@@ -1487,6 +1459,7 @@ export function useGenerator({
         await applyDynamicGeneratorState(
           generator,
           getLastForcedSkillIds(activeConv?.messages ?? []),
+          { customSystemPromptSnapshot },
         );
         if (!isCurrentGeneratorRun(runConversationId)) return;
         await generator.retry();
@@ -1501,10 +1474,13 @@ export function useGenerator({
       if (isCurrentGeneratorRun(runConversationId)) {
         setMessages((prev) => filterMemoryMessages(prev));
         setIsGenerating(false);
+        setIsThinkingStreaming(false);
         setRunState((state) =>
           state === "error" || state === "aborted" ? state : "idle",
         );
         forcedSkillsPromptRef.current = "";
+        customSystemPromptRef.current = "";
+        requestPromptContextRef.current = "";
         runConversationIdRef.current = null;
       }
     }
@@ -1536,9 +1512,12 @@ export function useGenerator({
   const continueTask = useCallback(async () => {
     const runConversationId = useConversationStore.getState().activeId;
     if (!runConversationId) return;
+    const customSystemPromptSnapshot =
+      useSettingsStore.getState().system.customSystemPrompt;
     runConversationIdRef.current = runConversationId;
     setRunState("preparing");
     setLastError(null);
+    setIsThinkingStreaming(false);
     setIsGenerating(true);
     try {
       const generator = await getGenerator();
@@ -1551,7 +1530,9 @@ export function useGenerator({
         if (activeConv) {
           generator.syncMessages(await getMessagesForAPI(activeConv));
         }
-        await applyDynamicGeneratorState(generator);
+        await applyDynamicGeneratorState(generator, [], {
+          customSystemPromptSnapshot,
+        });
         if (!isCurrentGeneratorRun(runConversationId)) return;
         await generator.generate(
           "Please continue where you left off and complete any unfinished tasks.",
@@ -1567,10 +1548,13 @@ export function useGenerator({
       if (isCurrentGeneratorRun(runConversationId)) {
         setMessages((prev) => filterMemoryMessages(prev));
         setIsGenerating(false);
+        setIsThinkingStreaming(false);
         setRunState((state) =>
           state === "error" || state === "aborted" ? state : "idle",
         );
         forcedSkillsPromptRef.current = "";
+        customSystemPromptRef.current = "";
+        requestPromptContextRef.current = "";
         runConversationIdRef.current = null;
       }
     }
@@ -1598,5 +1582,6 @@ export function useGenerator({
     invalidateGenerator,
     runState,
     lastError,
+    isThinkingStreaming,
   };
 }

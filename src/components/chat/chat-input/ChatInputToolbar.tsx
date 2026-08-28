@@ -22,6 +22,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useT } from "../../../i18n";
 import { SkillsMenu } from "./SkillsMenu";
 
@@ -65,7 +70,7 @@ function DeferredMcpMenu({
       type="button"
       size="icon"
       variant="ghost"
-      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+      className="size-7 text-muted-foreground hover:text-foreground"
       onClick={() => {
         setRequested(true);
         setOpen(true);
@@ -117,17 +122,24 @@ export function ChatInputToolbar({
     <div className="flex items-center justify-between gap-1 px-1.5 py-1 border-t border-border/40">
       <div className="flex items-center gap-0.5">
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              className="w-7 h-7 text-muted-foreground hover:text-foreground"
-              aria-label={t.chat.attachment}
-            >
-              <Paperclip size={16} />
-            </Button>
-          </DropdownMenuTrigger>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex shrink-0">
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="size-7 text-muted-foreground hover:text-foreground"
+                    aria-label={t.chat.attachment}
+                  >
+                    <Paperclip size={16} />
+                  </Button>
+                </DropdownMenuTrigger>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{t.chat.attachment}</TooltipContent>
+          </Tooltip>
           <DropdownMenuContent side="top" align="start" className="min-w-36">
             <DropdownMenuItem onSelect={onPickImage}>
               <Image size={14} />
@@ -164,20 +176,31 @@ export function ChatInputToolbar({
 
       <div className="flex items-center gap-1">
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
-              aria-label={t.chat.planMode.modeMenuLabel}
-            >
-              {planModeEnabled ? <ListTodo size={14} /> : <CodeXml size={14} />}
-              {planModeEnabled
-                ? t.chat.planMode.planLabel
-                : t.chat.planMode.autoLabel}
-            </Button>
-          </DropdownMenuTrigger>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex shrink-0">
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                    aria-label={t.chat.planMode.modeMenuLabel}
+                  >
+                    {planModeEnabled ? (
+                      <ListTodo size={14} />
+                    ) : (
+                      <CodeXml size={14} />
+                    )}
+                    {planModeEnabled
+                      ? t.chat.planMode.planLabel
+                      : t.chat.planMode.autoLabel}
+                  </Button>
+                </DropdownMenuTrigger>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{t.chat.planMode.modeMenuLabel}</TooltipContent>
+          </Tooltip>
           <DropdownMenuContent side="top" align="end" className="min-w-64">
             <DropdownMenuLabel>
               {t.chat.planMode.modeMenuLabel}
@@ -232,7 +255,7 @@ export function ChatInputToolbar({
             size="icon"
             onClick={onStop}
             variant={isHoveringStop ? "destructive" : "secondary"}
-            className="w-7 h-7 transition-[opacity,transform,color,background-color,border-color] duration-200 rounded-full relative"
+            className="relative size-7 rounded-full transition-[opacity,transform,color,background-color,border-color] duration-200"
             onMouseEnter={() => onHoveringStopChange(true)}
             onMouseLeave={() => onHoveringStopChange(false)}
           >
@@ -253,7 +276,7 @@ export function ChatInputToolbar({
             type="submit"
             size="icon"
             disabled={!hasContent}
-            className="w-7 h-7"
+            className="size-7"
           >
             <SendHorizonal size={16} />
           </TooltipIconButton>

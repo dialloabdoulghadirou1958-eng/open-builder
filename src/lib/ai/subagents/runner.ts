@@ -34,9 +34,11 @@ export interface RunSubagentOpts {
   files: ProjectFiles;
   signal: AbortSignal;
   toolCallId: string;
+  conversationId?: string;
   parentApiConfig: ParentApiConfig;
   parentCustomToolSet: ToolSet;
   parentCombinedToolHandler: NonNullable<GeneratorOptions["customToolHandler"]>;
+  parentCustomSystemPrompt: string;
   parentForcedSkillsPrompt: string;
   parentSkillContext: SkillActiveContext | null;
   additionalToolNames: ReadonlySet<string>;
@@ -52,11 +54,20 @@ export interface CreateDispatcherOpts {
   getCombinedToolHandler: () => NonNullable<
     GeneratorOptions["customToolHandler"]
   >;
+  getCustomSystemPrompt: () => string;
   getForcedSkillsPrompt: () => string;
   getSkillContextSnapshot?: () => SkillActiveContext | null;
   /** Explicitly approved read-only external tools (currently MCP). */
   getAdditionalToolNames?: () => ReadonlySet<string>;
   createGenerator?: RunSubagentOpts["createGenerator"];
+}
+
+export function buildSubagentSystemPrompt(
+  basePrompt: string,
+  customSystemPrompt: string,
+  mandatorySkillsPrompt: string,
+): string {
+  return basePrompt + customSystemPrompt + mandatorySkillsPrompt;
 }
 
 type WritePolicy = "readonly" | "fullWrite";
@@ -181,8 +192,11 @@ export async function runSubagent(
   );
   const apiConfig = resolveApiConfig(opts.parentApiConfig, def.modelOverride);
 
-  const effectiveSystemPrompt =
-    def.systemPrompt + opts.parentForcedSkillsPrompt;
+  const effectiveSystemPrompt = buildSubagentSystemPrompt(
+    def.systemPrompt,
+    opts.parentCustomSystemPrompt,
+    opts.parentForcedSkillsPrompt,
+  );
 
   const events: GeneratorEvents = {
     onText: (delta) => {
@@ -202,6 +216,7 @@ export async function runSubagent(
   };
 
   const generatorOptions: GeneratorOptions = {
+    conversationId: opts.conversationId,
     apiType: apiConfig.apiType,
     apiBaseUrl: apiConfig.apiBaseUrl,
     apiKey: apiConfig.apiKey,
@@ -302,16 +317,18 @@ export async function runSubagent(
 export function createSubagentDispatcher(
   opts: CreateDispatcherOpts,
 ): NonNullable<GeneratorOptions["dispatchSubagent"]> {
-  return (name, task, files, signal, toolCallId) =>
+  return (name, task, files, signal, toolCallId, conversationId) =>
     runSubagent({
       name,
       task,
       files,
       signal,
       toolCallId,
+      conversationId,
       parentApiConfig: opts.getApiConfig(),
       parentCustomToolSet: opts.getCustomToolSet(),
       parentCombinedToolHandler: opts.getCombinedToolHandler(),
+      parentCustomSystemPrompt: opts.getCustomSystemPrompt(),
       parentForcedSkillsPrompt: opts.getForcedSkillsPrompt(),
       parentSkillContext: opts.getSkillContextSnapshot?.() ?? null,
       additionalToolNames: opts.getAdditionalToolNames?.() ?? new Set(),

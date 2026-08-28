@@ -307,7 +307,7 @@ export function McpPanel({
   return (
     <>
       <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-        <DialogContent className="flex max-h-[86vh] flex-col sm:max-w-3xl">
+        <DialogContent className="flex max-h-[86vh] flex-col sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>{t.mcp.title}</DialogTitle>
             <DialogDescription>{t.mcp.description}</DialogDescription>

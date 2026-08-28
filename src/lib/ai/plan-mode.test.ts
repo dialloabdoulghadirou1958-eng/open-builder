@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { BUILTIN_TOOLS } from "./tools-schema";
+import { ASK_USER_QUESTION_CONTRACT } from "./ask-user-question-contract";
 import { PLAN_MODE_SYSTEM_SUFFIX, PLAN_OUTPUT_CONTRACT } from "./plan-mode";
 
 describe("Plan Mode prompt contract", () => {
@@ -15,6 +16,13 @@ describe("Plan Mode prompt contract", () => {
     expect(
       (exitSchema.properties?.plan as { description?: string }).description,
     ).toContain(PLAN_OUTPUT_CONTRACT);
+  });
+
+  it("shares the exploration-first and one-at-a-time grilling contract", () => {
+    expect(PLAN_MODE_SYSTEM_SUFFIX).toContain(ASK_USER_QUESTION_CONTRACT);
+    expect(PLAN_MODE_SYSTEM_SUFFIX).toContain(
+      "a completed interview leads to a decision-complete plan",
+    );
   });
 
   it.each([

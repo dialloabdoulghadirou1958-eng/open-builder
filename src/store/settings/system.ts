@@ -11,6 +11,7 @@ export interface SystemSettings {
   planModeEnabled: boolean;
   autoQaEnabled: boolean;
   developerSkillScriptsEnabled: boolean;
+  customSystemPrompt: string;
 }
 
 export const systemDefaults: SystemSettings = {
@@ -21,6 +22,7 @@ export const systemDefaults: SystemSettings = {
   planModeEnabled: false,
   autoQaEnabled: false,
   developerSkillScriptsEnabled: false,
+  customSystemPrompt: "",
 };
 
 export interface SystemSlice {

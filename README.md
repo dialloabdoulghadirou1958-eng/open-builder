@@ -53,7 +53,7 @@ The Tauri desktop build (macOS / Windows / Linux) provides local runtime capabil
 - **Project Snapshots** — Browse snapshot history, name snapshots, inspect diffs, export patches, and roll back to historical versions
 - **Project Health Check** — Run `/health` to inspect structure, dependencies, runtime logs, accessibility, and responsive risks; isolated Automatic QA performs a restricted project check without MCP or preview-console access
 - **Context Compression** — Use `/compact` or the command palette to summarize long conversations and reduce token usage
-- **Plan Mode** — Explore the code and submit an implementation plan for approval before writing files
+- **Plan Mode** — Explore the code and submit an implementation plan for approval before writing files; `ask_user_question` supports both independent clarification batches and one-question-at-a-time stress-test interviews
 - **Subagent Collaboration** — Built-in read-only subagents for code exploration, review, dependency advice, bug investigation, and UI critique
 - **Built-in Search** — Supports enabling the model's built-in search service
 - **Desktop API Proxy** — Tauri can forward approved HTTP/HTTPS provider requests that would otherwise be blocked by browser CORS; static Web deployments still depend on provider CORS support
@@ -68,8 +68,9 @@ The Tauri desktop build (macOS / Windows / Linux) provides local runtime capabil
 - **Slash Commands** — Input box supports `/new`, `/fork`, `/clear`, `/reset`, `/compact`, `/health`, `/review`, `/continue`, and `/retry`
 - **Command Palette & Shortcuts** — Open commands with `Cmd/Ctrl+K`, create sessions, open settings, focus input, or stop generation from the keyboard
 - **Image & File Input** — Upload screenshots, text files, or PDFs; PDF-capable models receive PDFs as native file input without local text extraction
-- **Skills System** — Auto-match installed skill metadata or force one or more skills for the next message; imported Skills are disabled by default, and desktop scripts require the developer switch plus approval for every invocation
-- **Local Settings** — Provider configuration and API keys persist in browser local storage
+- **Skills System** — Enabled Skills expose metadata for automatic discovery; full instructions load only after `read_skill` or when a Skill is selected for the next message, which also applies to subagents and clears after sending. Built-ins include `design-taste-frontend`, `frontend-design`, `code-review`, and `code-simplifier`; imported Skills start with discovery disabled
+- **Custom Instructions** — Advanced settings can safely append up to 32,000 characters to Chat, Plan, retry, and subagent requests without granting tools or changing mode restrictions; utility calls such as Automatic QA, titles, and compression exclude them
+- **Local Settings** — Provider configuration, API keys, and custom instructions persist in browser local storage
 - **Storage Governance** — Inspect local data usage and safely clean archived sessions, empty sessions, and old snapshots
 - **Streaming Output** — Real-time display of AI thinking process and code generation progress
 - **Extended Thinking** — Supports Extended Thinking / Reasoning mode (DeepSeek-R1, Claude 4.6, etc.)
@@ -112,10 +113,11 @@ The Tauri desktop build (macOS / Windows / Linux) provides local runtime capabil
 | Desktop             | Yes              | Yes       | Developer switch + per-call approval |
 | Experimental mobile | Yes              | No        | No                                   |
 
-### Web Search (Optional)
+### Web Search
 
-- Integrated [Tavily](https://tavily.com), [Firecrawl](https://www.firecrawl.dev) API for real-time web search
-- Web content reading with automatic fallback to [Jina Reader](https://jina.ai/reader/)
+- [Firecrawl](https://www.firecrawl.dev) is the default for new or reset settings and supports keyless search and page reading under IP-based limits; an optional API key raises those limits
+- [Tavily](https://tavily.com) and [Exa](https://exa.ai) are available with provider credentials; supported model providers can also use built-in search
+- Web content reading automatically falls back to [Jina Reader](https://jina.ai/reader/) when a configured reader cannot return a page
 
 ---
 
@@ -178,24 +180,25 @@ The local CLI is not an offline model. Prompts, attachments, web-search activity
 
 Projects remain in Open Builder's in-memory virtual file system. The CLI runs in an isolated empty directory and can interact with the project only through the per-run loopback MCP bridge. Attachment IDs are opaque; host file paths are not exposed. Provider configuration, hooks, unrelated MCP servers, shell tools, and CLI project-instruction injection are rejected or disabled before user content is sent.
 
-When Web Search is **Model Built-in**, local mode uses the selected CLI's native search. Tavily or Firecrawl selections instead use the existing Open Builder tools and keep native search disabled. If detection reports not installed, signed out, unsupported, or an isolation error, use **Rescan**, **Choose program**, **Use auto-detection**, or copy the displayed login command. Web and mobile builds show a blocking message and require switching back to API.
+When Web Search is **Model Built-in**, local mode uses the selected CLI's native search. Tavily, Firecrawl, or Exa selections instead use the existing Open Builder tools and keep native search disabled. If detection reports not installed, signed out, unsupported, or an isolation error, use **Rescan**, **Choose program**, **Use auto-detection**, or copy the displayed login command. Web and mobile builds show a blocking message and require switching back to API.
 
 ### Configuration
 
 Click the settings button in the top-right corner and fill in:
 
-| Option       | Description                                   | Example                               |
-| ------------ | --------------------------------------------- | ------------------------------------- |
-| API Type     | Provider protocol adapter                     | OpenAI, Anthropic, Google, compatible |
-| API Key      | Provider credential, when required            | `sk-...`                              |
-| API Base URL | Provider origin or base path                  | `https://api.openai.com`              |
-| Model Name   | Model ID; supported providers can list models | `gpt-5.6-sol`, `deepseek-chat`        |
-| Web Search   | Optional Tavily or Firecrawl credential       | `tvly-...`                            |
-| Image Search | Optional Pixabay or Unsplash credential       | Provider API key                      |
+| Option              | Description                                   | Example                               |
+| ------------------- | --------------------------------------------- | ------------------------------------- |
+| API Type            | Provider protocol adapter                     | OpenAI, Anthropic, Google, compatible |
+| API Key             | Provider credential, when required            | `sk-...`                              |
+| API Base URL        | Provider origin or base path                  | `https://api.openai.com`              |
+| Model Name          | Model ID; supported providers can list models | `gpt-5.6-sol`, `deepseek-chat`        |
+| Web Search          | Keyless Firecrawl, or provider credentials    | `fc-...`, `tvly-...`, or an Exa key   |
+| Image Search        | Optional Pixabay or Unsplash credential       | Provider API key                      |
+| Custom Instructions | Reusable instructions under Advanced settings | Up to 32,000 characters               |
 
-> Settings and API keys are stored in browser local storage. Treat the browser profile and device as part of your credential security boundary.
+> Settings and API keys are stored in browser local storage. Custom instructions are sent to the selected model provider for Chat, Plan, retry, and subagent work. They cannot expand tool permissions; do not place credentials or other secrets in them. Treat the browser profile and device as part of your credential security boundary.
 
-MCP servers and Skills are managed from the chat toolbar. Desktop-only options are shown only when the native runtime reports the required capability.
+MCP servers and Skills are managed from the chat toolbar. A Skills management switch controls metadata auto-discovery only. Selecting a Skill in the toolbar loads its full instructions for the next request and then clears the selection. Desktop-only options are shown only when the native runtime reports the required capability.
 
 ---
 
@@ -234,11 +237,11 @@ Built-in tools:
 | `search_in_files`                | Global file content search                                                                              |
 | `get_console_logs`               | Read Sandpack preview console output                                                                    |
 | `compact_context`                | Compress long conversation context                                                                      |
-| `ask_user_question`              | Ask the user for key clarifications                                                                     |
+| `ask_user_question`              | Ask 1-4 independent clarifications, or run a dependent stress-test interview one question at a time     |
 | `exit_plan_mode`                 | Submit a plan and wait for user approval                                                                |
 | `dispatch_subagent`              | Dispatch read-only subagents for exploration, review, or diagnosis                                      |
 | `project_health_check`           | Inspect project structure, package files, env schema, console logs, accessibility, and responsive risks |
-| `web_search`                     | Web search (supports Built-in, Tavily, Firecrawl)                                                       |
+| `web_search`                     | Web search (supports Built-in, Tavily, Firecrawl, Exa)                                                  |
 | `web_reader`                     | Read web page content                                                                                   |
 | `image_search`                   | Image search (supports Pixabay, Unsplash)                                                               |
 | `search_npm_packages`            | NPM package search                                                                                      |
@@ -246,7 +249,7 @@ Built-in tools:
 | `install_component`              | Install an approved shadcn registry component and its dependencies                                      |
 | `screenshot_to_code`             | Generate and write a component from a supplied UI image                                                 |
 | `apply_design_style`             | Add a selected design specification to the project                                                      |
-| `list_skills` / `read_skill`     | Discover and load auto-matched or forced skills                                                         |
+| `list_skills` / `read_skill`     | Discover enabled Skill metadata, then load full instructions and resource listings                      |
 | `execute_skill_script`           | Run an active skill script in the desktop app only                                                      |
 | `read_env_schema` / `manage_env` | Safely inspect and manage env files                                                                     |
 

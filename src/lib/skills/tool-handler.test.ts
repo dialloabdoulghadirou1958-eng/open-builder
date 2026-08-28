@@ -42,6 +42,38 @@ function activeScriptDeps(executor: ScriptExecutor) {
 }
 
 describe("createSkillToolHandler", () => {
+  it("loads the full body and resource listings only after read_skill", async () => {
+    const restrictedSkill = {
+      ...skill,
+      allowedTools: ["read_files", "search_in_files"],
+    };
+    const registry = {
+      getAutoEnabled: () => [restrictedSkill],
+      readSkillContent: vi.fn(async () => "Full body instructions"),
+      listReferences: vi.fn(async () => ["api/auth.md"]),
+      listScripts: vi.fn(async () => ["audit.js"]),
+    } as unknown as SkillRegistry;
+    const skillContext = createSkillActiveContext();
+    const handler = createSkillToolHandler({
+      getRegistry: async () => registry,
+      getExecutor: async () => ({
+        canExecute: () => false,
+        execute: vi.fn(),
+      }),
+      skillContext,
+    });
+
+    const result = await handler(SKILL_TOOL_NAMES.READ, {
+      name: "demo-skill",
+    });
+
+    expect(result).toContain("Full body instructions");
+    expect(result).toContain("api/auth.md");
+    expect(result).toContain("audit.js");
+    expect(result).toContain("allowed-tools: read_files, search_in_files");
+    expect(skillContext.isActive(skill.id)).toBe(true);
+  });
+
   it("reads a nested reference through read_skill", async () => {
     const registry = {
       getAutoEnabled: () => [skill],
@@ -278,6 +310,8 @@ describe("skills system prompts", () => {
     expect(prompt).toContain("id: skill-1");
     expect(prompt).toContain("version: 1.0.0");
     expect(prompt).toContain("more than one skill");
+    expect(prompt).toContain("metadata only");
+    expect(prompt).toContain("call `read_skill`");
     expect(prompt).not.toContain("Full body");
   });
 
@@ -288,5 +322,6 @@ describe("skills system prompts", () => {
     expect(prompt).toContain("<mandatory_skills>");
     expect(prompt).toContain("Full body");
     expect(prompt).toContain("ask_user_question");
+    expect(prompt).toContain("full instructions are already loaded");
   });
 });

@@ -214,6 +214,11 @@ describe("skill importer limits", () => {
     expect(result.entry.tags).toEqual(["react"]);
     expect(result.entry.autoEnabled).toBe(false);
     expect(store.getSkill("demo")).toEqual(result.entry);
+
+    await registry.setAutoEnabled("demo", true);
+    expect(registry.getAutoEnabled().map((skill) => skill.id)).toEqual([
+      "demo",
+    ]);
   });
 
   it.each([

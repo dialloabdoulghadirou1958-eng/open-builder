@@ -20,6 +20,7 @@ import { SearchServicesTab } from "./tabs/SearchServicesTab";
 import { SystemTab } from "./tabs/SystemTab";
 import { StorageTab } from "./tabs/StorageTab";
 import { AdvancedTab } from "./tabs/AdvancedTab";
+import { CUSTOM_SYSTEM_PROMPT_MAX_CHARS } from "../../lib/ai/custom-system-prompt";
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -102,6 +103,10 @@ export function SettingsDialog({
     () => validateAISettingsDraft(formData, t.settings.validation),
     [formData, t.settings.validation],
   );
+  const customSystemPromptError =
+    systemForm.customSystemPrompt.length > CUSTOM_SYSTEM_PROMPT_MAX_CHARS
+      ? t.settings.customSystemPrompt.tooLong
+      : undefined;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -120,7 +125,7 @@ export function SettingsDialog({
 
   const handleSave = () => {
     setShowValidation(true);
-    if (Object.keys(modelErrors).length > 0) return;
+    if (Object.keys(modelErrors).length > 0 || customSystemPromptError) return;
     onSave(formData);
     onSaveWebSearch(webSearchForm);
     onSaveAssetSearch(assetSearchForm);
@@ -215,16 +220,22 @@ export function SettingsDialog({
             value="advanced"
             className="min-h-0 overflow-y-auto py-4 pr-1 space-y-4"
           >
-            <AdvancedTab form={systemForm} setForm={setSystemForm} />
+            <AdvancedTab
+              form={systemForm}
+              setForm={setSystemForm}
+              customSystemPromptError={customSystemPromptError}
+            />
           </TabsContent>
         </Tabs>
 
         <DialogFooter className="sticky bottom-0 z-10 shrink-0 flex-row justify-end border-t bg-background px-4 py-3 sm:static sm:border-t-0 sm:px-0 sm:py-0">
-          {showValidation && Object.keys(modelErrors).length > 0 && (
-            <p className="mr-auto text-xs text-destructive" role="alert">
-              {t.settings.validation.summary}
-            </p>
-          )}
+          {showValidation &&
+            (Object.keys(modelErrors).length > 0 ||
+              customSystemPromptError) && (
+              <p className="mr-auto text-xs text-destructive" role="alert">
+                {t.settings.validation.summary}
+              </p>
+            )}
           <Button variant="outline" onClick={onClose}>
             {t.settings.cancel}
           </Button>

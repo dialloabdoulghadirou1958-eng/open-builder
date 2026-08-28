@@ -89,7 +89,18 @@ describe("SettingsDialog", () => {
     await user.type(screen.getByLabelText("Model Name"), "test-model");
 
     await user.click(screen.getByRole("tab", { name: "Advanced" }));
-    expect(screen.getByText("Permission activity")).toBeInTheDocument();
+    expect(screen.queryByText("Permission activity")).not.toBeInTheDocument();
+    const customPrompt = screen.getByLabelText("Custom instructions");
+    await user.type(customPrompt, "Keep changes concise.");
+    expect(customPrompt).toHaveAttribute("rows", "3");
+    expect(customPrompt).toHaveClass(
+      "field-sizing-fixed",
+      "resize-none",
+      "focus-visible:border-input",
+    );
+    expect(
+      screen.queryByText(/Appended safely to Chat/i),
+    ).not.toBeInTheDocument();
     const autoQa = screen.getByRole("group", { name: "Auto QA" });
     await user.click(within(autoQa).getByRole("button", { name: "Enabled" }));
 
@@ -110,6 +121,7 @@ describe("SettingsDialog", () => {
     expect(onSaveSystem).toHaveBeenCalledWith({
       ...systemDefaults,
       autoQaEnabled: true,
+      customSystemPrompt: "Keep changes concise.",
     });
     expect(onClose).toHaveBeenCalledOnce();
     expect(
@@ -119,6 +131,49 @@ describe("SettingsDialog", () => {
         })
       ).violations,
     ).toEqual([]);
+  });
+
+  it("blocks transactional save and links an accessible error above 32,000 characters", async () => {
+    const user = userEvent.setup();
+    const onSaveSystem = vi.fn();
+    render(
+      <TooltipProvider>
+        <SettingsDialog
+          isOpen
+          onClose={vi.fn()}
+          settings={{
+            ...aiDefaults,
+            apiKey: "test-key",
+            apiBaseUrl: "https://api.example.com",
+          }}
+          onSave={vi.fn()}
+          webSearchSettings={webSearchDefaults}
+          onSaveWebSearch={vi.fn()}
+          assetSearchSettings={assetSearchDefaults}
+          onSaveAssetSearch={vi.fn()}
+          systemSettings={{
+            ...systemDefaults,
+            customSystemPrompt: "x".repeat(32_001),
+          }}
+          onSaveSystem={onSaveSystem}
+        />
+      </TooltipProvider>,
+    );
+
+    await user.click(screen.getByRole("tab", { name: "Advanced" }));
+    const textarea = screen.getByLabelText("Custom instructions");
+    expect(textarea).toHaveValue("x".repeat(32_001));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onSaveSystem).not.toHaveBeenCalled();
+    expect(textarea).toHaveAttribute("aria-invalid", "true");
+    const error = screen.getByText(
+      "Custom instructions must be 32,000 characters or fewer.",
+    );
+    expect(textarea).toHaveAttribute(
+      "aria-describedby",
+      expect.stringContaining(error.id),
+    );
   });
 
   it("keeps the shared close control above the sticky header", async () => {

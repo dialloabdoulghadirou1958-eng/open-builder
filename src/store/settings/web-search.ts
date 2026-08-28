@@ -1,15 +1,17 @@
 import type { StateCreator } from "zustand";
 
 export interface WebSearchSettings {
-  engine: "tavily" | "firecrawl" | "builtin" | "disabled";
+  engine: "tavily" | "firecrawl" | "exa" | "builtin" | "disabled";
   tavilyApiKey: string;
   firecrawlApiKey: string;
+  exaApiKey: string;
 }
 
 export const webSearchDefaults: WebSearchSettings = {
-  engine: "disabled",
+  engine: "firecrawl",
   tavilyApiKey: "",
   firecrawlApiKey: "",
+  exaApiKey: "",
 };
 
 export interface WebSearchSlice {
@@ -31,7 +33,8 @@ export const createWebSearchSlice: StateCreator<
     if (webSearch.engine === "disabled") return false;
     if (webSearch.engine === "builtin") return true;
     if (webSearch.engine === "tavily") return !!webSearch.tavilyApiKey;
-    if (webSearch.engine === "firecrawl") return !!webSearch.firecrawlApiKey;
+    if (webSearch.engine === "firecrawl") return true;
+    if (webSearch.engine === "exa") return !!webSearch.exaApiKey;
     return false;
   },
 });

@@ -199,9 +199,8 @@ describe("SkillRegistry public catalog", () => {
     await registry.initialize();
 
     expect(fs.files.has("demo/SKILL.md")).toBe(true);
-    expect(fs.files.get("demo/scripts/run.js")).toBe(
-      "console.log('desktop')",
-    );
+    expect(fs.files.get("demo/scripts/run.js")).toBe("console.log('desktop')");
+    expect(store.getSkill("demo")?.autoEnabled).toBe(true);
   });
 
   it("keeps an enabled cached version until the skill is disabled and re-enabled", async () => {
@@ -240,6 +239,23 @@ describe("SkillRegistry public catalog", () => {
     expect(store.getSkill("demo")?.cachedVersion).toBe("2.0.0");
   });
 
+  it("uses the management toggle only for metadata discovery, not manual forcing", async () => {
+    const fs = new MemorySkillFs();
+    const store = createStore();
+    const registry = new SkillRegistry(fs, store, {
+      platform: "web",
+      fetcher: fetchManifest("1.0.0"),
+    });
+    await registry.initialize();
+
+    await registry.setAutoEnabled("demo", false);
+
+    expect(registry.getAutoEnabled()).toEqual([]);
+    await expect(registry.prepareForcedSkills(["demo"])).resolves.toMatchObject(
+      [{ entry: { id: "demo", autoEnabled: false } }],
+    );
+  });
+
   it("omits a built-in skill whose first download fails", async () => {
     const fs = new MemorySkillFs();
     const store = createStore();
@@ -276,9 +292,7 @@ describe("SkillRegistry public catalog", () => {
     await registry.registerSkillFromDir("custom", "imported");
 
     expect(await registry.listReferences("custom")).toEqual(["api/auth.md"]);
-    expect(await registry.listScripts("custom")).toEqual([
-      "reports/run.js",
-    ]);
+    expect(await registry.listScripts("custom")).toEqual(["reports/run.js"]);
     await expect(registry.prepareForcedSkills(["custom"])).rejects.toThrow(
       /128 KiB prompt limit/,
     );

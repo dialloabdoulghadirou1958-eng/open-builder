@@ -15,12 +15,11 @@ export function EmptyState({ onSelectSuggestion }: EmptyStateProps) {
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center py-12 text-center">
-      <img className="w-16 h-16 mb-4" src="/logo.svg" alt="logo" />
-      <h3 className="text-base font-semibold mb-2">{t.empty.title}</h3>
-      <p className="text-sm text-muted-foreground max-w-xs mb-6">
-        {t.empty.desc}
-      </p>
-      <div className="space-y-2 w-full max-w-xs">
+      <div
+        role="group"
+        aria-label={t.empty.suggestionsLabel}
+        className="space-y-2 w-full max-w-xs"
+      >
         {suggestions.map(({ icon, text }) => (
           <Button
             key={text}

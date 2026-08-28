@@ -199,6 +199,8 @@ export interface GeneratorEvent {
 
 /** Constructor options */
 export interface GeneratorOptions {
+  /** Conversation that owns this generator and its permission activity. */
+  conversationId?: string;
   apiType?: ApiType;
   apiBaseUrl: string;
   apiKey: string;
@@ -249,6 +251,7 @@ export interface GeneratorOptions {
     files: ProjectFiles,
     signal: AbortSignal,
     toolCallId: string,
+    conversationId?: string,
   ) => Promise<DispatchSubagentResult>;
 }
 

@@ -3,7 +3,7 @@ import {
   type ApiType,
 } from "../../lib/ai/provider-config";
 
-export const SETTINGS_VERSION = 17;
+export const SETTINGS_VERSION = 19;
 
 export function migrateSettings(persisted: unknown, version: number): unknown {
   const state = persisted as Record<string, any>;
@@ -127,6 +127,18 @@ export function migrateSettings(persisted: unknown, version: number): unknown {
       (typeof state.ai.model !== "string" || !state.ai.model.trim())
     ) {
       state.ai.model = DEFAULT_OPENAI_MODEL;
+    }
+  }
+  if (version < 18) {
+    if (!state.system) state.system = {};
+    if (typeof state.system.customSystemPrompt !== "string") {
+      state.system.customSystemPrompt = "";
+    }
+  }
+  if (version < 19) {
+    if (!state.webSearch) state.webSearch = {};
+    if (typeof state.webSearch.exaApiKey !== "string") {
+      state.webSearch.exaApiKey = "";
     }
   }
   return state;

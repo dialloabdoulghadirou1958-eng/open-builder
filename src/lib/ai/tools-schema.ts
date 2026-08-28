@@ -6,6 +6,7 @@
 import { tool } from "ai";
 import type { ToolSet } from "ai";
 import { z } from "zod";
+import { ASK_USER_QUESTION_CONTRACT } from "./ask-user-question-contract";
 import { PLAN_OUTPUT_CONTRACT } from "./plan-mode";
 
 export { TOOL_POLICY_VERSION } from "./tool-policy-version";
@@ -214,12 +215,10 @@ export const BUILTIN_TOOLS = {
 
   ask_user_question: tool({
     description:
-      "Ask the user 1-4 clarifying questions when the requirements are genuinely ambiguous, " +
-      "before making assumptions or starting implementation. " +
-      "Use this when a key product decision is unclear (which framework, which auth method, which layout style, etc.) " +
-      "and guessing would likely waste work. Do NOT use it for trivial confirmations. " +
-      "Each question must offer 2-4 distinct, mutually exclusive options. " +
-      "The user can also type a free-text 'Other' answer if no option fits.",
+      "Ask the user 1-4 questions for genuine clarification or a structured stress-test interview. " +
+      "Each question must offer 2-4 distinct options; the user can also type a free-text 'Other' answer. " +
+      "Do not use this tool for filler confirmations.\n\n" +
+      ASK_USER_QUESTION_CONTRACT,
     inputSchema: z.object({
       questions: z
         .array(
@@ -314,6 +313,7 @@ export interface ToolCapability {
 
 export interface ToolRunContext {
   readonly runId: string;
+  readonly conversationId?: string;
   readonly mode: ExecutionMode;
   readonly platform: RuntimePlatform;
   readonly allowedMcpAliases: ReadonlySet<string>;

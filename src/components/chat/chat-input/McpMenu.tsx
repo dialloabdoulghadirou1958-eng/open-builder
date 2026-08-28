@@ -16,6 +16,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useT } from "../../../i18n";
 import { useMcpStore } from "../../../store/mcp";
 
@@ -73,6 +78,9 @@ export function McpMenu({
   const accessibleSummary = attentionCount
     ? `${statusSummary}; ${t.mcp.attentionSummary.replace("{count}", String(attentionCount))}`
     : statusSummary;
+  const triggerLabel = hydrated
+    ? `${t.mcp.title}: ${accessibleSummary}`
+    : `${t.mcp.title}: ${t.mcp.loading}`;
 
   const handleReconnectAll = async () => {
     if (!onReconnectAll || reconnecting) return;
@@ -89,32 +97,38 @@ export function McpMenu({
 
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="h-7 min-w-7 gap-1 px-1.5 text-muted-foreground hover:text-foreground"
-          aria-label={`${t.mcp.title}: ${accessibleSummary}`}
-        >
-          {!hydrated || connecting ? (
-            <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-          ) : attentionCount > 0 ? (
-            <AlertTriangle
-              size={16}
-              className="text-amber-600 dark:text-amber-400"
-              aria-hidden="true"
-            />
-          ) : (
-            <Cable size={16} aria-hidden="true" />
-          )}
-          {entries.length > 0 && (
-            <span className="min-w-7 text-center text-[10px] font-medium tabular-nums">
-              {readyCount}/{enabledEntries.length}
-            </span>
-          )}
-        </Button>
-      </DropdownMenuTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex shrink-0">
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-7 text-muted-foreground hover:text-foreground"
+                aria-label={triggerLabel}
+              >
+                {!hydrated || connecting ? (
+                  <Loader2
+                    size={16}
+                    className="animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : attentionCount > 0 ? (
+                  <AlertTriangle
+                    size={16}
+                    className="text-amber-600 dark:text-amber-400"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Cable size={16} aria-hidden="true" />
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>{triggerLabel}</TooltipContent>
+      </Tooltip>
       <DropdownMenuContent
         side="top"
         align="start"

@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useConversationStore, DEFAULT_TITLE } from "../store/conversation";
 import type { ProviderConfig } from "../lib/ai/provider-config";
@@ -15,33 +15,61 @@ interface UseTitleAndCompressionArgs {
   ) => Promise<string>;
 }
 
+interface SmartTitleRequest {
+  conversationId: string;
+  completedMessages: Message[];
+  config: ProviderConfig;
+}
+
 export function useTitleAndCompression({
   resolveConfig,
   setIsGenerating,
   setMessages,
   generateTextOverride,
 }: UseTitleAndCompressionArgs) {
-  const triggerSmartTitle = useCallback(
-    (cfg: ProviderConfig) => {
-      const convState = useConversationStore.getState();
-      const conv = convState.activeId
-        ? convState.conversations[convState.activeId]
-        : null;
-      if (!conv || conv.title !== DEFAULT_TITLE) return;
+  const titleTasksRef = useRef(new Set<string>());
 
-      import("../lib/utils/smart-title")
-        .then(({ generateSmartTitle }) =>
-          generateSmartTitle(conv.messages, cfg, generateTextOverride),
-        )
-        .then((title) => {
-          if (!title) return;
-          const current = useConversationStore.getState();
-          const currentConv = current.conversations[conv.id];
-          if (currentConv && currentConv.title === DEFAULT_TITLE) {
-            useConversationStore.getState().renameConversation(conv.id, title);
-          }
-        })
-        .catch(() => {});
+  const triggerSmartTitle = useCallback(
+    async ({
+      conversationId,
+      completedMessages,
+      config,
+    }: SmartTitleRequest): Promise<void> => {
+      const conversation =
+        useConversationStore.getState().conversations[conversationId];
+      if (
+        !conversation ||
+        conversation.title !== DEFAULT_TITLE ||
+        titleTasksRef.current.has(conversationId)
+      ) {
+        return;
+      }
+
+      titleTasksRef.current.add(conversationId);
+      try {
+        const { generateSmartTitle } = await import("../lib/utils/smart-title");
+        const title = await generateSmartTitle(
+          completedMessages,
+          config,
+          generateTextOverride,
+        );
+        if (!title) return;
+
+        const currentConversation =
+          useConversationStore.getState().conversations[conversationId];
+        if (currentConversation?.title === DEFAULT_TITLE) {
+          useConversationStore
+            .getState()
+            .renameConversation(conversationId, title);
+        }
+      } catch (error) {
+        console.warn(
+          "[smart-title] Failed to apply conversation title.",
+          error,
+        );
+      } finally {
+        titleTasksRef.current.delete(conversationId);
+      }
     },
     [generateTextOverride],
   );

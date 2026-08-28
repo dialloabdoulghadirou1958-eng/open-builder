@@ -851,6 +851,7 @@ export function createLocalAgentGenerator(
     | "dispatchSubagent"
     | "executionMode"
     | "runtimePlatform"
+    | "conversationId"
     | "allowedMcpAliases"
     | "initialSkillContext"
     | "systemPrompt"
@@ -863,6 +864,7 @@ export function createLocalAgentGenerator(
       apiKey: "local-cli-runtime",
       model: config.model || `${config.provider}-cli`,
       stream: true,
+      conversationId: config.conversationId ?? extras?.conversationId,
       initialFiles,
       customTools,
       customToolHandler,

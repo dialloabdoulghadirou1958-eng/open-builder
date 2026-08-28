@@ -8,6 +8,29 @@ Tagged versions use their Git tag date. Versions 1.4.0 through 1.7.0 were not ta
 
 ---
 
+## [v1.9.0]
+
+### Added
+
+- Added Open Builder 1.0.0 adaptations of the built-in `design-taste-frontend`, `frontend-design`, `code-review`, and `code-simplifier` Skills, including upstream source notes and license copies.
+- Added Advanced-settings custom instructions with transactional persistence, a 32,000-character limit, and request-start snapshots for Chat, Plan, retry, approved-plan continuation, API, Local CLI, and subagents; settings storage now migrates to version 19, initializing missing instruction and Exa-key fields without changing an existing search-engine selection.
+- Added Exa search and page-content reading through the existing `web_search` and `web_reader` contracts, with bounded output and Jina Reader fallback for failed page reads.
+
+### Changed
+
+- Skills now use progressive model-context loading: auto-discovery exposes metadata only, `read_skill` loads full instructions and resource listings, and toolbar selections inject full mandatory instructions for one request and its subagents before clearing.
+- Built-in Skills default to metadata auto-discovery, while imported Skills remain disabled until reviewed and enabled; the existing same-name import conflict policy and Skills Store version are unchanged.
+- Firecrawl is now the default search engine for new and reset settings, supports keyless requests without an empty authorization header, and uses bounded single-page scrape requests instead of batch scraping; existing users retain their saved engine.
+- Skills and MCP dialogs now share a 576 px desktop width limit, chat-input controls use fixed icon-button sizing and localized tooltips, and the initial chat state keeps only the accessible suggestion group.
+- Runtime settings are hidden when API is the only available choice. Custom instructions now use a fixed three-row field without helper copy or a live character count while retaining keyboard focus and over-limit error states.
+- Expanded `ask_user_question` with an exploration-first grilling contract: ordinary clarification can batch up to four independent questions, while stress-test or dependent interviews ask one recommended question at a time until the decision boundary is complete.
+- Distilled assumption disclosure, simplest-sufficient implementation, surgical changes, anti-speculation, and verifiable success criteria into the base prompt instead of shipping a separate `karpathy-guidelines` Skill.
+
+### Security
+
+- Custom instructions are boundary-escaped as internal system-prompt content, rejected before provider invocation when over limit, cannot expand tool or mode permissions, and are excluded from Automatic QA, smart-title, and context-compression calls.
+- Added third-party notices for the adapted Skills and the MIT-licensed grilling method; no standalone `grill-me` Skill is shipped.
+
 ## [v1.8.0]
 
 ### Added

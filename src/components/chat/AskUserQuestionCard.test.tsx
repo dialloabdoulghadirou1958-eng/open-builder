@@ -223,6 +223,52 @@ describe("AskUserQuestionCard", () => {
     });
   });
 
+  it("recognizes the Chinese recommendation suffix and preserves it in the answer", async () => {
+    useSettingsStore.setState((state) => ({
+      system: { ...state.system, language: "zh" },
+    }));
+    const answerPromise = useInteractiveStore.getState().askQuestion({
+      toolCallId: "questionnaire-recommended-zh",
+      questions: [
+        {
+          ...questions[0],
+          options: [
+            {
+              label: "浏览器（推荐）",
+              description: "使用浏览器运行时。",
+            },
+            { label: "桌面端", description: "使用桌面运行时。" },
+          ],
+        },
+      ],
+    });
+    render(
+      <AskUserQuestionCard
+        toolCallId="questionnaire-recommended-zh"
+        questions={[
+          {
+            ...questions[0],
+            options: [
+              {
+                label: "浏览器（推荐）",
+                description: "使用浏览器运行时。",
+              },
+              { label: "桌面端", description: "使用桌面运行时。" },
+            ],
+          },
+        ]}
+      />,
+      { wrapper: TooltipProvider },
+    );
+
+    expect(screen.getByText("推荐")).toBeVisible();
+    expect(screen.queryByText("浏览器（推荐）")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /浏览器/ }));
+    await expect(answerPromise).resolves.toMatchObject({
+      answers: [{ selected: ["浏览器（推荐）"] }],
+    });
+  });
+
   it("renders approvals inline without a custom answer", async () => {
     const user = userEvent.setup();
     const approvalQuestions = [questions[0]];

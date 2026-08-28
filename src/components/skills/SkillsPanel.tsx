@@ -52,13 +52,14 @@ export function SkillsPanel({ open, onClose }: SkillsPanelProps) {
   const t = useT();
   const skills = useSkillsStore((s) => s.skills);
   const [showImporter, setShowImporter] = useState(false);
-  const [detailsMap, setDetailsMap] = useState<Record<string, DetailsState>>({});
+  const [detailsMap, setDetailsMap] = useState<Record<string, DetailsState>>(
+    {},
+  );
   const [error, setError] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [lastImport, setLastImport] = useState<LastImport | null>(null);
   const [query, setQuery] = useState("");
-  const [catalogFilter, setCatalogFilter] =
-    useState<SkillCatalogFilter>("all");
+  const [catalogFilter, setCatalogFilter] = useState<SkillCatalogFilter>("all");
   const [catalogSort, setCatalogSort] =
     useState<SkillCatalogSort>("recommended");
   const [initializingRegistry, setInitializingRegistry] = useState(false);
@@ -256,9 +257,8 @@ export function SkillsPanel({ open, onClose }: SkillsPanelProps) {
 
   const handleRevealInFiles = async () => {
     try {
-      const { revealSkillsRoot } = await import(
-        "../../lib/skills/tauri-folder-import"
-      );
+      const { revealSkillsRoot } =
+        await import("../../lib/skills/tauri-folder-import");
       await revealSkillsRoot();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
@@ -268,7 +268,7 @@ export function SkillsPanel({ open, onClose }: SkillsPanelProps) {
   return (
     <>
       <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-        <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
+        <DialogContent className="max-h-[80vh] flex flex-col sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>{t.skills.title}</DialogTitle>
             <DialogDescription>{t.skills.description}</DialogDescription>
@@ -280,7 +280,11 @@ export function SkillsPanel({ open, onClose }: SkillsPanelProps) {
               aria-live="polite"
             >
               {initializingRegistry && (
-                <Loader2 size={12} className="animate-spin" aria-hidden="true" />
+                <Loader2
+                  size={12}
+                  className="animate-spin"
+                  aria-hidden="true"
+                />
               )}
               {initializingRegistry
                 ? t.app.loading
@@ -383,7 +387,10 @@ export function SkillsPanel({ open, onClose }: SkillsPanelProps) {
           {lastImport && (
             <div className="border border-green-500/20 bg-green-500/10 rounded-lg p-3 space-y-2">
               <p className="text-xs font-medium text-green-700 dark:text-green-400">
-                {t.skills.importer.successOne.replace("{name}", lastImport.name)}
+                {t.skills.importer.successOne.replace(
+                  "{name}",
+                  lastImport.name,
+                )}
               </p>
               {lastImport.warnings.length > 0 && (
                 <div className="space-y-1">

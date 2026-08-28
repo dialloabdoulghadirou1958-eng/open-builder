@@ -8,10 +8,7 @@
       "version": "1.0.1",
       "tags": ["react", "frontend", "best-practices"],
       "entry": "react-patterns/SKILL.md",
-      "files": [
-        "react-patterns/SKILL.md",
-        "react-patterns/scripts/hello.js"
-      ]
+      "files": ["react-patterns/SKILL.md", "react-patterns/scripts/hello.js"]
     },
     {
       "id": "debugging",
@@ -48,6 +45,58 @@
       "tags": ["typescript", "patterns"],
       "entry": "typescript-patterns/SKILL.md",
       "files": ["typescript-patterns/SKILL.md"]
+    },
+    {
+      "id": "design-taste-frontend",
+      "name": "design-taste-frontend",
+      "description": "Anti-slop frontend direction for landing pages, portfolios, editorial pages, and design-forward redesigns. Use after reading the brief to infer a fitting visual system, preserve existing product constraints, and run a strict pre-flight audit.",
+      "version": "1.0.0",
+      "tags": ["frontend", "design", "landing-page", "portfolio", "redesign"],
+      "entry": "design-taste-frontend/SKILL.md",
+      "files": [
+        "design-taste-frontend/SKILL.md",
+        "design-taste-frontend/SOURCE.md",
+        "design-taste-frontend/LICENSE.txt"
+      ]
+    },
+    {
+      "id": "frontend-design",
+      "name": "frontend-design",
+      "description": "Create distinctive, production-grade product interfaces and web components with strong hierarchy, accessibility, and a coherent visual direction. Use for dashboards, settings, forms, application flows, and general frontend styling.",
+      "version": "1.0.0",
+      "tags": ["frontend", "product-ui", "design", "accessibility"],
+      "entry": "frontend-design/SKILL.md",
+      "files": [
+        "frontend-design/SKILL.md",
+        "frontend-design/SOURCE.md",
+        "frontend-design/LICENSE.txt"
+      ]
+    },
+    {
+      "id": "code-review",
+      "name": "code-review",
+      "description": "Review a diff, file set, or current project changes for correctness, security, performance, reliability, and maintainability. Use project evidence, prioritize actionable findings, and report only unless the user explicitly asks for fixes.",
+      "version": "1.0.0",
+      "tags": ["review", "correctness", "security", "performance"],
+      "entry": "code-review/SKILL.md",
+      "files": [
+        "code-review/SKILL.md",
+        "code-review/SOURCE.md",
+        "code-review/LICENSE.txt"
+      ]
+    },
+    {
+      "id": "code-simplifier",
+      "name": "code-simplifier",
+      "description": "Simplify user-specified or newly modified code for clarity, consistency, and maintainability while preserving exact behavior. Follow AGENTS.md, CLAUDE.md, and established project conventions; avoid broad cleanup.",
+      "version": "1.0.0",
+      "tags": ["refactoring", "maintainability", "clarity"],
+      "entry": "code-simplifier/SKILL.md",
+      "files": [
+        "code-simplifier/SKILL.md",
+        "code-simplifier/SOURCE.md",
+        "code-simplifier/LICENSE.txt"
+      ]
     }
   ]
 }

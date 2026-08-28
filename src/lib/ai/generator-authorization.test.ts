@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { ToolSet } from "ai";
 import { WebAppGenerator } from "./generator";
 import { BUILTIN_TOOLS } from "./tools-schema";
+import { DISPATCH_SUBAGENT_TOOL } from "../tools/subagent-tool";
 import type {
   GeneratorEvents,
+  GeneratorOptions,
   Message,
   ToolCall,
   ToolExecutionContext,
@@ -41,7 +43,9 @@ function createGenerator(
     executionMode?: "chat" | "plan" | "auto_qa" | "subagent";
     allowedMcpAliases?: ReadonlySet<string>;
     runtimePlatform?: "web" | "desktop" | "mobile";
+    conversationId?: string;
     initialFiles?: Record<string, string>;
+    dispatchSubagent?: GeneratorOptions["dispatchSubagent"];
     requestPlanApproval?: (
       toolCallId: string,
       plan: string,
@@ -66,6 +70,29 @@ function createGenerator(
 }
 
 describe("generator execution authorization", () => {
+  it("propagates the owning conversation into tools and subagents", async () => {
+    const dispatchSubagent = vi.fn(
+      async (
+        ..._args: Parameters<NonNullable<GeneratorOptions["dispatchSubagent"]>>
+      ) => ({ text: "done" }),
+    );
+    const { generator } = createGenerator(DISPATCH_SUBAGENT_TOOL, vi.fn(), {
+      conversationId: "conversation-a",
+      dispatchSubagent,
+    });
+
+    expect(generator.getRunContext().conversationId).toBe("conversation-a");
+    await (generator as unknown as ToolInvoker).executeTool(
+      call("dispatch_subagent", {
+        subagent: "code-explorer",
+        task: "Inspect the current implementation.",
+      }),
+    );
+
+    expect(dispatchSubagent).toHaveBeenCalledOnce();
+    expect(dispatchSubagent.mock.calls[0][5]).toBe("conversation-a");
+  });
+
   it("rejects a forged tool call that is absent from the current run schema", async () => {
     const { generator, handler } = createGenerator({
       list_files: BUILTIN_TOOLS.list_files,

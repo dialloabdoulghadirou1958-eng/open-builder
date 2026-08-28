@@ -494,8 +494,21 @@ export class McpConnectionManager {
     args: unknown,
     context?: ToolExecutionContext,
   ): Promise<ToolExecutionOutput> {
+    const state = useMcpStore.getState();
+    const server = state.getServer(serverId);
+    const runtime = state.runtime[serverId];
+    const tool = server?.tools[toolName];
+    const activityContext = {
+      conversationId: context?.run.conversationId,
+      mcp: {
+        serverId,
+        serverName: server?.name,
+        toolTitle: tool?.title,
+      },
+    };
     if (!context) {
       recordPermissionActivity({
+        ...activityContext,
         tool: toolName,
         source: "mcp",
         mode: "chat",
@@ -508,10 +521,6 @@ export class McpConnectionManager {
         isError: true,
       };
     }
-    const state = useMcpStore.getState();
-    const server = state.getServer(serverId);
-    const runtime = state.runtime[serverId];
-    const tool = server?.tools[toolName];
     const alias = createMcpToolAlias(serverId, toolName);
     const allowedByMode =
       context.run.mode === "chat"
@@ -533,6 +542,7 @@ export class McpConnectionManager {
       runtime.drift?.status !== "clean"
     ) {
       recordPermissionActivity({
+        ...activityContext,
         tool: toolName,
         source: "mcp",
         mode: context.run.mode,
@@ -550,6 +560,7 @@ export class McpConnectionManager {
     const inputValidation = await validateMcpToolInput(tool.inputSchema, args);
     if (!inputValidation.success) {
       recordPermissionActivity({
+        ...activityContext,
         tool: toolName,
         source: "mcp",
         mode: context.run.mode,
@@ -564,6 +575,7 @@ export class McpConnectionManager {
       };
     }
     recordPermissionActivity({
+      ...activityContext,
       tool: toolName,
       source: "mcp",
       mode: context.run.mode,

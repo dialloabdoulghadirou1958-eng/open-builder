@@ -152,6 +152,7 @@ export default function App() {
     review,
     healthCheck,
     invalidateGenerator,
+    isThinkingStreaming,
   } = useGenerator({
     settings,
     webSearchSettings,
@@ -246,6 +247,7 @@ export default function App() {
     <ChatInterface
       messages={messages}
       isGenerating={isGenerating}
+      isThinkingStreaming={isThinkingStreaming}
       hasValidSettings={hasValidSettings}
       onGenerate={generate}
       onStop={stop}

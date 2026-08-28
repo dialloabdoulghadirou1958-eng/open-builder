@@ -48,6 +48,7 @@ function getFileExt(name: string): string {
 interface MessageBubbleProps {
   message: MergedMessage;
   isGenerating?: boolean;
+  isThinkingStreaming?: boolean;
   isLastAssistant?: boolean;
   snapshotExists?: boolean;
   onShowDiff?: (messageId: string) => void;
@@ -87,6 +88,7 @@ function StoredAttachmentImage({ block }: { block: ImageBlock }) {
 export const MessageBubble = memo(function MessageBubble({
   message,
   isGenerating = false,
+  isThinkingStreaming = false,
   isLastAssistant = false,
   snapshotExists = false,
   onShowDiff,
@@ -190,6 +192,10 @@ export const MessageBubble = memo(function MessageBubble({
     .map((b) => b.content)
     .join("\n\n")
     .trim();
+  const lastThinkingBlockId = message.blocks.reduce<string | null>(
+    (lastId, block) => (block.type === "thinking" ? block.id : lastId),
+    null,
+  );
 
   return (
     <div className="flex-1 min-w-0 space-y-2">
@@ -199,7 +205,11 @@ export const MessageBubble = memo(function MessageBubble({
             <ThinkingBlockCard
               key={block.id}
               content={block.content}
-              isStreaming={isGenerating && isLastAssistant}
+              isStreaming={
+                isThinkingStreaming &&
+                isLastAssistant &&
+                block.id === lastThinkingBlockId
+              }
             />
           );
         }
@@ -422,9 +432,10 @@ function ThinkingBlockCard({
   const t = useT();
   const [expanded, setExpanded] = useState(isStreaming);
 
-  // Auto-collapse when streaming ends
+  // A new thinking phase opens the panel. Manual collapse is preserved until
+  // that phase ends, and the next false -> true transition opens it again.
   useEffect(() => {
-    if (!isStreaming) setExpanded(false);
+    setExpanded(isStreaming);
   }, [isStreaming]);
 
   return (

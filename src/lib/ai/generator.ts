@@ -111,6 +111,7 @@ export class WebAppGenerator implements GenerationBackend, AgentToolExecutor {
   private readonly requestPlanApproval?: GeneratorOptions["requestPlanApproval"];
   private readonly onPlanApproved?: GeneratorOptions["onPlanApproved"];
   private readonly dispatchSubagent?: GeneratorOptions["dispatchSubagent"];
+  private readonly conversationId?: string;
   private systemPromptSuffix: string = "";
   private untrustedReferenceContext: string = "";
   private readOnlyMode = false;
@@ -142,6 +143,7 @@ export class WebAppGenerator implements GenerationBackend, AgentToolExecutor {
     this.requestPlanApproval = options.requestPlanApproval;
     this.onPlanApproved = options.onPlanApproved;
     this.dispatchSubagent = options.dispatchSubagent;
+    this.conversationId = options.conversationId;
     this.executionMode = options.executionMode ?? "chat";
     this.runtimePlatform = options.runtimePlatform ?? "web";
     this.allowedMcpAliases = new Set(options.allowedMcpAliases ?? []);
@@ -234,6 +236,7 @@ export class WebAppGenerator implements GenerationBackend, AgentToolExecutor {
     );
     return Object.freeze({
       runId: this.runId,
+      conversationId: this.conversationId,
       mode: this.executionMode,
       platform: this.runtimePlatform,
       allowedMcpAliases: new Set(this.allowedMcpAliases),
@@ -408,6 +411,7 @@ export class WebAppGenerator implements GenerationBackend, AgentToolExecutor {
               toolOutput: output,
             });
             recordPermissionActivity({
+              conversationId: barrierContext.conversationId,
               tool: siblingCall.function.name,
               source: barrierContext.allowedMcpAliases.has(
                 siblingCall.function.name,
@@ -722,6 +726,7 @@ export class WebAppGenerator implements GenerationBackend, AgentToolExecutor {
       reason?: string,
     ) => {
       recordPermissionActivity({
+        conversationId: this.conversationId,
         tool: name,
         source: this.allowedMcpAliases.has(name)
           ? "mcp"
@@ -815,11 +820,13 @@ export class WebAppGenerator implements GenerationBackend, AgentToolExecutor {
       return { result: output, changes: [] };
     }
 
-    logDecision(
-      getToolCapability(name)?.approval === "per_call"
-        ? "requested"
-        : "allowed",
-    );
+    if (!isAuthorizedMcpAlias) {
+      logDecision(
+        getToolCapability(name)?.approval === "per_call"
+          ? "requested"
+          : "allowed",
+      );
+    }
 
     // File-system tools go through the shared dispatcher.
     const fsOutcome = await dispatchFsTool(name, args, this.files);
@@ -921,6 +928,7 @@ export class WebAppGenerator implements GenerationBackend, AgentToolExecutor {
             projectFilesForModel(this.files),
             this.ctrl!.signal,
             toolCall.id,
+            this.conversationId,
           );
           result = dispatched.text;
           // A fullWrite subagent returns its inner file tree; reconcile by

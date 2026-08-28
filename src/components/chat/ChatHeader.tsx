@@ -1,4 +1,4 @@
-import { History, PanelLeftOpen, Settings } from "lucide-react";
+import { History, PanelLeftOpen, Settings, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -12,14 +12,18 @@ interface ChatHeaderProps {
   isGenerating: boolean;
   onOpenSettings: () => void;
   onToggleSessionList: () => void;
+  onOpenPermissionActivity: () => void;
   onOpenSnapshotHistory: () => void;
+  permissionActivityCount: number;
   snapshotCount: number;
 }
 
 export function ChatHeader({
   onOpenSettings,
   onToggleSessionList,
+  onOpenPermissionActivity,
   onOpenSnapshotHistory,
+  permissionActivityCount,
   snapshotCount,
 }: ChatHeaderProps) {
   const t = useT();
@@ -49,6 +53,23 @@ export function ChatHeader({
         {title}
       </h1>
       <div className="flex items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onOpenPermissionActivity}
+                disabled={permissionActivityCount === 0}
+                aria-label={t.permissionActivity.open}
+                className="h-8 w-8 shrink-0 disabled:text-muted-foreground"
+              >
+                <ShieldCheck size={18} aria-hidden="true" />
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{t.permissionActivity.open}</TooltipContent>
+        </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="inline-flex">

@@ -36,7 +36,7 @@ interface SessionListProps {
   onClose: () => void;
 }
 
-const SESSION_LIST_BATCH = 80;
+const SESSION_LIST_BATCH = 5;
 
 export function SessionList({ onClose }: SessionListProps) {
   const t = useT();
@@ -66,6 +66,7 @@ export function SessionList({ onClose }: SessionListProps) {
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [templateSourceId, setTemplateSourceId] = useState<string | null>(null);
+  const isSearching = query.trim().length > 0;
   const [visibleSessionCount, setVisibleSessionCount] =
     useState(SESSION_LIST_BATCH);
   const [visiblePinnedCount, setVisiblePinnedCount] =
@@ -120,20 +121,36 @@ export function SessionList({ onClose }: SessionListProps) {
   const hasGroups = pinned.length > 0 || archived.length > 0;
   const deleteDisabled = Object.keys(conversations).length <= 1;
   const sessionWindow = useMemo(
-    () => getVisibleListWindow(sorted, visibleSessionCount),
-    [sorted, visibleSessionCount],
+    () =>
+      getVisibleListWindow(
+        sorted,
+        isSearching ? sorted.length : visibleSessionCount,
+      ),
+    [isSearching, sorted, visibleSessionCount],
   );
   const pinnedWindow = useMemo(
-    () => getVisibleListWindow(pinned, visiblePinnedCount),
-    [pinned, visiblePinnedCount],
+    () =>
+      getVisibleListWindow(
+        pinned,
+        isSearching ? pinned.length : visiblePinnedCount,
+      ),
+    [isSearching, pinned, visiblePinnedCount],
   );
   const normalWindow = useMemo(
-    () => getVisibleListWindow(normal, visibleNormalCount),
-    [normal, visibleNormalCount],
+    () =>
+      getVisibleListWindow(
+        normal,
+        isSearching ? normal.length : visibleNormalCount,
+      ),
+    [isSearching, normal, visibleNormalCount],
   );
   const archivedWindow = useMemo(
-    () => getVisibleListWindow(archived, visibleArchivedCount),
-    [archived, visibleArchivedCount],
+    () =>
+      getVisibleListWindow(
+        archived,
+        isSearching ? archived.length : visibleArchivedCount,
+      ),
+    [archived, isSearching, visibleArchivedCount],
   );
 
   const handleNew = () => {
@@ -296,15 +313,15 @@ export function SessionList({ onClose }: SessionListProps) {
 
   const renderLoadMore = (hiddenCount: number, onClick: () => void) =>
     hiddenCount > 0 ? (
-      <div className="px-3 py-2">
+      <div className="px-3 py-1">
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          className="h-8 w-full text-xs text-muted-foreground"
+          className="h-7 w-full text-[11px] font-normal text-muted-foreground/60 hover:text-muted-foreground"
           onClick={onClick}
         >
-          {t.sessions.loadMore.replace("{count}", String(hiddenCount))}
+          {t.sessions.loadMore}
         </Button>
       </div>
     ) : null;
@@ -390,7 +407,7 @@ export function SessionList({ onClose }: SessionListProps) {
             <SessionGroup
               label={t.sessions.pinned}
               count={pinned.length}
-              open={pinnedOpen}
+              open={isSearching || pinnedOpen}
               onOpenChange={setPinnedOpen}
             >
               {pinnedWindow.visible.map(renderItem)}
@@ -403,7 +420,7 @@ export function SessionList({ onClose }: SessionListProps) {
             <SessionGroup
               label={t.sessions.normal}
               count={normal.length}
-              open={normalOpen}
+              open={isSearching || normalOpen}
               onOpenChange={setNormalOpen}
             >
               {normalWindow.visible.map(renderItem)}
@@ -416,7 +433,7 @@ export function SessionList({ onClose }: SessionListProps) {
             <SessionGroup
               label={t.sessions.archived}
               count={archived.length}
-              open={archivedOpen}
+              open={isSearching || archivedOpen}
               onOpenChange={setArchivedOpen}
             >
               {archivedWindow.visible.map(renderItem)}

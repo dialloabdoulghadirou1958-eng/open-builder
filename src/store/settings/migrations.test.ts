@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_OPENAI_MODEL } from "../../lib/ai/provider-config";
-import { migrateSettings } from "./migrations";
+import { migrateSettings, SETTINGS_VERSION } from "./migrations";
 
 describe("migrateSettings", () => {
   it("fills only empty OpenAI-family model settings", () => {
@@ -51,6 +51,7 @@ describe("migrateSettings", () => {
         planModeEnabled: boolean;
         autoQaEnabled: boolean;
         developerSkillScriptsEnabled: boolean;
+        customSystemPrompt: string;
       };
     };
 
@@ -58,6 +59,36 @@ describe("migrateSettings", () => {
     expect(migrated.system.planModeEnabled).toBe(false);
     expect(migrated.system.autoQaEnabled).toBe(false);
     expect(migrated.system.developerSkillScriptsEnabled).toBe(false);
+    expect(migrated.system.customSystemPrompt).toBe("");
+  });
+
+  it("adds custom prompts without overwriting an existing value", () => {
+    expect(SETTINGS_VERSION).toBe(19);
+    const missing = migrateSettings({ system: {} }, 17) as Record<string, any>;
+    const existing = migrateSettings(
+      { system: { customSystemPrompt: "Keep changes surgical." } },
+      17,
+    ) as Record<string, any>;
+
+    expect(missing.system.customSystemPrompt).toBe("");
+    expect(existing.system.customSystemPrompt).toBe("Keep changes surgical.");
+  });
+
+  it("adds the Exa key without changing existing search engine choices", () => {
+    const engines = ["disabled", "tavily", "firecrawl", "builtin"] as const;
+
+    for (const engine of engines) {
+      const migrated = migrateSettings(
+        { webSearch: { engine, firecrawlApiKey: "existing-key" } },
+        18,
+      ) as Record<string, any>;
+
+      expect(migrated.webSearch).toMatchObject({
+        engine,
+        firecrawlApiKey: "existing-key",
+        exaApiKey: "",
+      });
+    }
   });
 
   it("removes legacy server settings without changing local providers", () => {

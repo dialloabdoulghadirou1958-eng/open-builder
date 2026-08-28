@@ -21,6 +21,16 @@ import {
 
 const TAVILY_API_URL = "https://api.tavily.com";
 const FIRECRAWL_API_URL = "https://api.firecrawl.dev";
+const EXA_API_URL = "https://api.exa.ai";
+
+function firecrawlHeaders(apiKey: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  const key = apiKey.trim();
+  if (key) headers.Authorization = `Bearer ${key}`;
+  return headers;
+}
 
 // ═══════════════════════════════ 工具定义 ═══════════════════════════════════
 
@@ -126,11 +136,7 @@ async function tavilyExtract(
     });
     if (!res.ok) {
       throw new Error(
-        formatHttpError(
-          "Tavily extract failed",
-          res.status,
-          await res.text(),
-        ),
+        formatHttpError("Tavily extract failed", res.status, await res.text()),
       );
     }
     const data = await res.json();
@@ -223,14 +229,11 @@ async function firecrawlSearch(
   try {
     const res = await fetchWithTimeout(`${FIRECRAWL_API_URL}/v2/search`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${settings.firecrawlApiKey}`,
-      },
+      headers: firecrawlHeaders(settings.firecrawlApiKey),
       body: JSON.stringify({
         query: checkedQuery.query,
         limit: size,
-        scrapeOptions: { formats: ["markdown"] },
+        sources: ["web"],
       }),
     });
 
@@ -243,13 +246,18 @@ async function firecrawlSearch(
     }
 
     const data = await res.json();
-    const limited = limitArray(data.data ?? [], size);
+    const searchData = Array.isArray(data.data)
+      ? data.data
+      : Array.isArray(data.data?.web)
+        ? data.data.web
+        : [];
+    const limited = limitArray(searchData, size);
     return JSON.stringify({
       ok: true,
       answer: null,
       results: limited.items.map((r: any) => {
         const content = truncateText(
-          r.markdown || r.content || "",
+          r.description || r.markdown || r.content || "",
           SEARCH_SNIPPET_MAX_CHARS,
         );
         return {
@@ -270,6 +278,56 @@ async function firecrawlSearch(
   }
 }
 
+async function fetchSinglePageViaFirecrawl(
+  settings: WebSearchSettings,
+  url: string,
+): Promise<{
+  url: string;
+  ok: boolean;
+  content?: string;
+  contentTruncated?: boolean;
+  originalLength?: number;
+  error?: string;
+}> {
+  try {
+    const res = await fetchWithTimeout(`${FIRECRAWL_API_URL}/v2/scrape`, {
+      method: "POST",
+      headers: firecrawlHeaders(settings.firecrawlApiKey),
+      body: JSON.stringify({
+        url,
+        formats: ["markdown"],
+        onlyMainContent: true,
+      }),
+    });
+    if (!res.ok) {
+      throw new Error(
+        formatHttpError(
+          "Firecrawl scrape failed",
+          res.status,
+          await res.text(),
+        ),
+      );
+    }
+    const payload = await res.json();
+    const document = payload.data ?? payload;
+    const content = document.markdown ?? document.content;
+    if (typeof content !== "string" || !content.trim()) {
+      throw new Error("Firecrawl returned empty page content");
+    }
+    return {
+      url: document.metadata?.sourceURL || document.url || url,
+      ok: true,
+      ...formatPageContent(content),
+    };
+  } catch (err) {
+    console.warn(
+      "Firecrawl scrape failed, falling back to Jina:",
+      safeErrorMessage(err),
+    );
+    return fetchSinglePageViaJina(url);
+  }
+}
+
 async function firecrawlScrape(
   settings: WebSearchSettings,
   urls: string[],
@@ -278,42 +336,159 @@ async function firecrawlScrape(
   if (!checkedUrls.ok) {
     return JSON.stringify({ ok: false, error: checkedUrls.error });
   }
+  const pages = await mapWithConcurrency(
+    checkedUrls.urls,
+    TOOL_MAX_CONCURRENCY,
+    (url) => fetchSinglePageViaFirecrawl(settings, url),
+  );
+  return JSON.stringify({
+    ok: pages.some((page) => page.ok),
+    pages,
+    meta: {
+      engine: "firecrawl",
+      timeoutMs: TOOL_FETCH_TIMEOUT_MS,
+      concurrency: TOOL_MAX_CONCURRENCY,
+      urlLimit: WEB_READER_MAX_URLS,
+      truncatedUrls: checkedUrls.truncated,
+    },
+  });
+}
+
+// ═══════════════════════════════ Exa API ═════════════════════════════════════
+
+async function exaSearch(
+  settings: WebSearchSettings,
+  query: string,
+  maxResults: number = 5,
+): Promise<string> {
+  const checkedQuery = normalizeToolQuery(query);
+  if (!checkedQuery.ok) {
+    return JSON.stringify({ ok: false, error: checkedQuery.error });
+  }
+  const size = clampInt(maxResults, 5, 1, WEB_SEARCH_MAX_RESULTS);
   try {
-    const res = await fetchWithTimeout(`${FIRECRAWL_API_URL}/v2/batch/scrape`, {
+    const res = await fetchWithTimeout(`${EXA_API_URL}/search`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${settings.firecrawlApiKey}`,
+        "x-api-key": settings.exaApiKey.trim(),
+      },
+      body: JSON.stringify({
+        query: checkedQuery.query,
+        type: "auto",
+        numResults: size,
+        contents: {
+          text: { maxCharacters: SEARCH_SNIPPET_MAX_CHARS },
+        },
+      }),
+    });
+    if (!res.ok) {
+      return JSON.stringify({
+        ok: false,
+        error: formatHttpError(
+          "Exa search failed",
+          res.status,
+          await res.text(),
+        ),
+      });
+    }
+    const data = await res.json();
+    const limited = limitArray(
+      Array.isArray(data.results) ? data.results : [],
+      size,
+    );
+    return JSON.stringify({
+      ok: true,
+      answer: null,
+      results: limited.items.map((result: any) => {
+        const content = truncateText(
+          result.text || result.highlights?.join("\n") || result.summary || "",
+          SEARCH_SNIPPET_MAX_CHARS,
+        );
+        return {
+          title: result.title || result.url,
+          url: result.url,
+          content: content.text,
+          contentTruncated: content.truncated,
+        };
+      }),
+      meta: {
+        engine: "exa",
+        maxResults: size,
+        truncatedResults: limited.truncated,
+      },
+    });
+  } catch (err) {
+    return JSON.stringify({ ok: false, error: safeErrorMessage(err) });
+  }
+}
+
+async function exaContents(
+  settings: WebSearchSettings,
+  urls: string[],
+): Promise<string> {
+  const checkedUrls = normalizeHttpUrlList(urls, WEB_READER_MAX_URLS);
+  if (!checkedUrls.ok) {
+    return JSON.stringify({ ok: false, error: checkedUrls.error });
+  }
+  try {
+    const res = await fetchWithTimeout(`${EXA_API_URL}/contents`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": settings.exaApiKey.trim(),
       },
       body: JSON.stringify({
         urls: checkedUrls.urls,
-        formats: ["markdown"],
+        text: { maxCharacters: WEB_PAGE_MAX_CHARS },
       }),
     });
-
     if (!res.ok) {
       throw new Error(
-        formatHttpError("Firecrawl failed", res.status, await res.text()),
+        formatHttpError("Exa contents failed", res.status, await res.text()),
       );
     }
-
     const data = await res.json();
+    const results = Array.isArray(data.results) ? data.results : [];
+    if (results.length === 0) throw new Error("Exa returned empty results");
+    const pages = await mapWithConcurrency(
+      checkedUrls.urls,
+      TOOL_MAX_CONCURRENCY,
+      async (url) => {
+        const result = results.find(
+          (item: any) => item?.url === url || item?.id === url,
+        );
+        if (typeof result?.text === "string" && result.text.trim()) {
+          return {
+            url: result.url || result.id || url,
+            ok: true,
+            ...formatPageContent(result.text),
+          };
+        }
+        console.warn(
+          "Exa contents did not return this page, falling back to Jina:",
+          url,
+        );
+        return fetchSinglePageViaJina(url);
+      },
+    );
     return JSON.stringify({
-      ok: true,
-      pages: (data.data ?? []).map((r: any) => ({
-        url: r.metadata?.sourceURL || r.url,
-        ok: r.success ?? true,
-        ...formatPageContent(r.markdown || r.content),
-      })),
+      ok: pages.some((page) => page.ok),
+      pages,
       meta: {
-        engine: "firecrawl",
+        engine: "exa",
+        timeoutMs: TOOL_FETCH_TIMEOUT_MS,
+        concurrency: TOOL_MAX_CONCURRENCY,
         urlLimit: WEB_READER_MAX_URLS,
         truncatedUrls: checkedUrls.truncated,
       },
     });
-  } catch (err: any) {
-    console.warn("Firecrawl scrape failed, falling back to Jina:", err?.message);
-    return jinaFallback(urls);
+  } catch (err) {
+    console.warn(
+      "Exa contents failed, falling back to Jina:",
+      safeErrorMessage(err),
+    );
+    return jinaFallback(checkedUrls.urls);
   }
 }
 
@@ -351,6 +526,13 @@ export function createSearchToolHandler(
           return firecrawlSearch(settings, query!.query, a.max_results);
         case "web_reader":
           return firecrawlScrape(settings, readerUrls!.urls);
+      }
+    } else if (engine === "exa") {
+      switch (name) {
+        case "web_search":
+          return exaSearch(settings, query!.query, a.max_results);
+        case "web_reader":
+          return exaContents(settings, readerUrls!.urls);
       }
     }
 

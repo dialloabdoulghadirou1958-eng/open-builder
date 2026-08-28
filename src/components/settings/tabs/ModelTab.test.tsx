@@ -107,4 +107,34 @@ describe("ModelTab local-agent capability", () => {
       }),
     );
   });
+
+  it("hides the runtime setting when web only supports API", () => {
+    useSettingsStore.setState({ localAgentCapability: "unsupported" });
+
+    render(
+      <TooltipProvider>
+        <ModelTab formData={aiDefaults} setFormData={vi.fn()} />
+      </TooltipProvider>,
+    );
+
+    expect(
+      screen.queryByRole("group", { name: "Runtime" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "API Type" })).toBeVisible();
+  });
+
+  it("keeps the runtime setting when local agents are supported", () => {
+    useSettingsStore.setState({ localAgentCapability: "supported" });
+
+    render(
+      <TooltipProvider>
+        <ModelTab formData={aiDefaults} setFormData={vi.fn()} />
+      </TooltipProvider>,
+    );
+
+    const runtime = screen.getByRole("group", { name: "Runtime" });
+    expect(runtime).toBeVisible();
+    expect(runtime).toHaveTextContent("API");
+    expect(runtime).toHaveTextContent("Local CLI");
+  });
 });

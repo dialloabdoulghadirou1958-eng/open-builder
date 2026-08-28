@@ -35,6 +35,7 @@ export function createOpenAIGenerator(
     | "dispatchSubagent"
     | "executionMode"
     | "runtimePlatform"
+    | "conversationId"
     | "allowedMcpAliases"
     | "initialSkillContext"
   >,

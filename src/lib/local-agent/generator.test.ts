@@ -8,6 +8,7 @@ import { DISPATCH_SUBAGENT_TOOL } from "../tools/subagent-tool";
 import { computeConversationFingerprint } from "./context";
 import { createLocalAgentGenerator } from "./generator";
 import type { LocalAgentEvent, LocalAgentStartRequest } from "./types";
+import { buildCustomSystemPromptSection } from "../ai/custom-system-prompt";
 
 const localAgentMocks = vi.hoisted(() => ({
   start: vi.fn(),
@@ -160,6 +161,28 @@ describe("LocalAgentGenerator", () => {
 
     instance.abort();
     expect(localAgentMocks.cancel).not.toHaveBeenCalled();
+  });
+
+  it("includes the shared custom prompt suffix in Local CLI requests", async () => {
+    let request: LocalAgentStartRequest | undefined;
+    localAgentMocks.start.mockImplementation(
+      async (
+        currentRequest: LocalAgentStartRequest,
+        onEvent: (event: LocalAgentEvent) => void,
+      ) => {
+        request = currentRequest;
+        queueMicrotask(() => completeRun(onEvent, "run-custom"));
+        return "run-custom";
+      },
+    );
+    const { instance } = generator(baseConversation());
+    instance.setSystemPromptSuffix(
+      buildCustomSystemPromptSection("[custom-local-cli]"),
+    );
+
+    await instance.generate("Build it");
+
+    expect(request?.systemPrompt).toContain("[custom-local-cli]");
   });
 
   it("resumes only when the authoritative transcript fingerprint matches", async () => {
