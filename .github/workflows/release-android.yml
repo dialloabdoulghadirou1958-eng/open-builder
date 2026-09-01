@@ -48,55 +48,17 @@ jobs:
       - name: Initialize Android project
         run: pnpm tauri android init
 
-      - name: Build Android APK ARM64
-        run: pnpm tauri android build --apk --target aarch64
-        env:
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
-
-      - name: Find unsigned APK
+      # ---------------------------------------------------------
+      # Generate a temporary signing key
+      # ---------------------------------------------------------
+      - name: Generate temporary Android signing key
         shell: bash
         run: |
           set -euo pipefail
-
-          APK=$(find src-tauri/gen/android/app/build/outputs/apk \
-            -type f \
-            -name "*-release-unsigned.apk" \
-            | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "Unsigned APK not found."
-            echo "Available APK files:"
-            find src-tauri/gen/android/app/build/outputs/apk \
-              -type f \
-              -name "*.apk" \
-              -print
-            exit 1
-          fi
-
-          echo "Unsigned APK found:"
-          echo "$APK"
-
-          echo "UNSIGNED_APK=$APK" >> "$GITHUB_ENV"
-
-      - name: Verify APK architectures
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Native libraries inside APK:"
-          unzip -l "$UNSIGNED_APK" | \
-            grep -E "lib/(arm64-v8a|armeabi-v7a|x86_64|x86)/" || true
-
-      - name: Generate temporary signing key
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          KEYSTORE_PATH="$RUNNER_TEMP/open-builder-release.keystore"
 
           keytool -genkeypair \
             -v \
-            -keystore "$KEYSTORE_PATH" \
+            -keystore "$GITHUB_WORKSPACE/android-release.keystore" \
             -storetype PKCS12 \
             -storepass "openbuilder123" \
             -keypass "openbuilder123" \
@@ -106,49 +68,135 @@ jobs:
             -validity 10000 \
             -dname "CN=Open Builder, OU=Open Builder, O=Open Builder, C=US"
 
-          echo "KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
-
-      - name: Zipalign APK
+      # ---------------------------------------------------------
+      # Configure Gradle signing
+      # ---------------------------------------------------------
+      - name: Configure Android signing
         shell: bash
         run: |
           set -euo pipefail
 
-          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" \
-            -mindepth 1 \
-            -maxdepth 1 \
-            -type d \
-            | sort -V \
-            | tail -n 1)
+          APP_DIR="src-tauri/gen/android/app"
 
-          "$BUILD_TOOLS/zipalign" \
-            -P 16 \
-            -f 4 \
-            "$UNSIGNED_APK" \
-            "$RUNNER_TEMP/open-builder-aligned.apk"
+          cat > "$APP_DIR/keystore.properties" <<EOF
+          storeFile=$GITHUB_WORKSPACE/android-release.keystore
+          storePassword=openbuilder123
+          keyAlias=openbuilder
+          keyPassword=openbuilder123
+          EOF
 
-          echo "ALIGNED_APK=$RUNNER_TEMP/open-builder-aligned.apk" >> "$GITHUB_ENV"
+          GRADLE_FILE="$APP_DIR/build.gradle.kts"
 
-      - name: Sign APK
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("src-tauri/gen/android/app/build.gradle.kts")
+          text = path.read_text()
+
+          if "java.io.FileInputStream" not in text:
+              text = "import java.io.FileInputStream\nimport java.util.Properties\n\n" + text
+
+          signing_block = r'''
+          val keystorePropertiesFile = rootProject.file("keystore.properties")
+          val keystoreProperties = Properties()
+
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+          }
+
+          android {
+              signingConfigs {
+                  create("release") {
+                      if (keystorePropertiesFile.exists()) {
+                          storeFile = file(keystoreProperties["storeFile"] as String)
+                          storePassword = keystoreProperties["storePassword"] as String
+                          keyAlias = keystoreProperties["keyAlias"] as String
+                          keyPassword = keystoreProperties["keyPassword"] as String
+                      }
+                  }
+              }
+          }
+          '''
+
+          marker = "signingConfigs {"
+
+          if marker not in text:
+              android_marker = "android {"
+              if android_marker not in text:
+                  raise SystemExit("android block not found")
+
+              text = text.replace(
+                  android_marker,
+                  signing_block + "\n" + android_marker,
+                  1
+              )
+
+          if 'signingConfig = signingConfigs.getByName("release")' not in text:
+              build_types = 'buildTypes {'
+
+              if build_types not in text:
+                  raise SystemExit("buildTypes block not found")
+
+              replacement = '''buildTypes {
+                  getByName("release") {
+                      signingConfig = signingConfigs.getByName("release")
+                  }
+              '''
+
+              text = text.replace(build_types, replacement, 1)
+
+          path.write_text(text)
+          PY
+
+      # ---------------------------------------------------------
+      # Build ARM64 APK
+      # ---------------------------------------------------------
+      - name: Build Android ARM64 APK
+        run: pnpm tauri android build --apk --target aarch64
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+
+      # ---------------------------------------------------------
+      # Locate generated APK
+      # ---------------------------------------------------------
+      - name: Locate generated APK
         shell: bash
         run: |
           set -euo pipefail
 
-          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" \
-            -mindepth 1 \
-            -maxdepth 1 \
-            -type d \
-            | sort -V \
-            | tail -n 1)
+          echo "APK files generated by Tauri:"
 
-          "$BUILD_TOOLS/apksigner" sign \
-            --ks "$KEYSTORE_PATH" \
-            --ks-key-alias "openbuilder" \
-            --ks-pass pass:openbuilder123 \
-            --key-pass pass:openbuilder123 \
-            --out "$RUNNER_TEMP/open-builder-arm64-release.apk" \
-            "$ALIGNED_APK"
+          find src-tauri/gen/android/app/build/outputs/apk \
+            -type f \
+            -name "*.apk" \
+            -print
 
-      - name: Verify APK signature
+          APK=$(find src-tauri/gen/android/app/build/outputs/apk \
+            -type f \
+            -name "*-release.apk" \
+            | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: Signed release APK not found."
+
+            echo "All APK files:"
+            find src-tauri/gen/android/app/build/outputs \
+              -type f \
+              -name "*.apk" \
+              -print
+
+            exit 1
+          fi
+
+          echo "Signed APK:"
+          echo "$APK"
+
+          cp "$APK" "$GITHUB_WORKSPACE/open-builder-android-arm64.apk"
+
+      # ---------------------------------------------------------
+      # Verify signature
+      # ---------------------------------------------------------
+      - name: Verify APK
         shell: bash
         run: |
           set -euo pipefail
@@ -162,12 +210,15 @@ jobs:
 
           "$BUILD_TOOLS/apksigner" verify \
             --verbose \
-            "$RUNNER_TEMP/open-builder-arm64-release.apk"
+            "$GITHUB_WORKSPACE/open-builder-android-arm64.apk"
 
-      - name: Upload signed APK
+      # ---------------------------------------------------------
+      # Upload APK
+      # ---------------------------------------------------------
+      - name: Upload Android APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: open-builder-android-arm64
-          path: ${{ env.RUNNER_TEMP }}/open-builder-arm64-release.apk
+          path: open-builder-android-arm64.apk
           if-no-files-found: error
           retention-days: 7
