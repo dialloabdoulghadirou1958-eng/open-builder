@@ -53,6 +53,40 @@ jobs:
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
 
+      - name: Find unsigned APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK=$(find src-tauri/gen/android/app/build/outputs/apk \
+            -type f \
+            -name "*-release-unsigned.apk" \
+            | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "Unsigned APK not found."
+            echo "Available APK files:"
+            find src-tauri/gen/android/app/build/outputs/apk \
+              -type f \
+              -name "*.apk" \
+              -print
+            exit 1
+          fi
+
+          echo "Unsigned APK found:"
+          echo "$APK"
+
+          echo "UNSIGNED_APK=$APK" >> "$GITHUB_ENV"
+
+      - name: Verify APK architectures
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Native libraries inside APK:"
+          unzip -l "$UNSIGNED_APK" | \
+            grep -E "lib/(arm64-v8a|armeabi-v7a|x86_64|x86)/" || true
+
       - name: Generate temporary signing key
         shell: bash
         run: |
@@ -74,25 +108,6 @@ jobs:
 
           echo "KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
 
-      - name: Find ARM64 unsigned APK
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          APK=$(find src-tauri/gen/android/app/build/outputs/apk \
-            -type f \
-            -name "*-arm64-release-unsigned.apk" \
-            | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ARM64 unsigned APK not found."
-            find src-tauri/gen/android/app/build/outputs/apk -type f -name "*.apk" -print
-            exit 1
-          fi
-
-          echo "UNSIGNED_APK=$APK" >> "$GITHUB_ENV"
-          echo "Found: $APK"
-
       - name: Zipalign APK
         shell: bash
         run: |
@@ -109,9 +124,9 @@ jobs:
             -P 16 \
             -f 4 \
             "$UNSIGNED_APK" \
-            "$RUNNER_TEMP/open-builder-arm64-aligned.apk"
+            "$RUNNER_TEMP/open-builder-aligned.apk"
 
-          echo "ALIGNED_APK=$RUNNER_TEMP/open-builder-arm64-aligned.apk" >> "$GITHUB_ENV"
+          echo "ALIGNED_APK=$RUNNER_TEMP/open-builder-aligned.apk" >> "$GITHUB_ENV"
 
       - name: Sign APK
         shell: bash
@@ -145,10 +160,11 @@ jobs:
             | sort -V \
             | tail -n 1)
 
-          "$BUILD_TOOLS/apksigner" verify --verbose \
+          "$BUILD_TOOLS/apksigner" verify \
+            --verbose \
             "$RUNNER_TEMP/open-builder-arm64-release.apk"
 
-      - name: Upload signed ARM64 APK
+      - name: Upload signed APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: open-builder-android-arm64
