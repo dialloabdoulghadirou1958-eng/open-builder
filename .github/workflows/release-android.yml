@@ -1,4 +1,4 @@
-name: Release Android
+name: Release Android ARM64
 
 on:
   workflow_dispatch:
@@ -6,10 +6,13 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
+
     permissions:
-      contents: write
+      contents: read
+
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
@@ -37,7 +40,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+          targets: aarch64-linux-android
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -45,26 +48,110 @@ jobs:
       - name: Initialize Android project
         run: pnpm tauri android init
 
-      - name: Build Android APK
-        run: pnpm tauri android build
+      - name: Build Android APK ARM64
+        run: pnpm tauri android build --apk --target aarch64
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
 
-      - name: Sign APK
-        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+      - name: Generate temporary signing key
+        shell: bash
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > keystore.jks
-          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
-            --ks keystore.jks \
-            --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
-            --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
-            --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
-            src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          set -euo pipefail
 
-      - name: Upload Android artifact
+          KEYSTORE_PATH="$RUNNER_TEMP/open-builder-release.keystore"
+
+          keytool -genkeypair \
+            -v \
+            -keystore "$KEYSTORE_PATH" \
+            -storetype PKCS12 \
+            -storepass "openbuilder123" \
+            -keypass "openbuilder123" \
+            -alias "openbuilder" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Open Builder, OU=Open Builder, O=Open Builder, C=US"
+
+          echo "KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+
+      - name: Find ARM64 unsigned APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK=$(find src-tauri/gen/android/app/build/outputs/apk \
+            -type f \
+            -name "*-arm64-release-unsigned.apk" \
+            | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ARM64 unsigned APK not found."
+            find src-tauri/gen/android/app/build/outputs/apk -type f -name "*.apk" -print
+            exit 1
+          fi
+
+          echo "UNSIGNED_APK=$APK" >> "$GITHUB_ENV"
+          echo "Found: $APK"
+
+      - name: Zipalign APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" \
+            -mindepth 1 \
+            -maxdepth 1 \
+            -type d \
+            | sort -V \
+            | tail -n 1)
+
+          "$BUILD_TOOLS/zipalign" \
+            -P 16 \
+            -f 4 \
+            "$UNSIGNED_APK" \
+            "$RUNNER_TEMP/open-builder-arm64-aligned.apk"
+
+          echo "ALIGNED_APK=$RUNNER_TEMP/open-builder-arm64-aligned.apk" >> "$GITHUB_ENV"
+
+      - name: Sign APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" \
+            -mindepth 1 \
+            -maxdepth 1 \
+            -type d \
+            | sort -V \
+            | tail -n 1)
+
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$KEYSTORE_PATH" \
+            --ks-key-alias "openbuilder" \
+            --ks-pass pass:openbuilder123 \
+            --key-pass pass:openbuilder123 \
+            --out "$RUNNER_TEMP/open-builder-arm64-release.apk" \
+            "$ALIGNED_APK"
+
+      - name: Verify APK signature
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" \
+            -mindepth 1 \
+            -maxdepth 1 \
+            -type d \
+            | sort -V \
+            | tail -n 1)
+
+          "$BUILD_TOOLS/apksigner" verify --verbose \
+            "$RUNNER_TEMP/open-builder-arm64-release.apk"
+
+      - name: Upload signed ARM64 APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: android-build
-          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          name: open-builder-android-arm64
+          path: ${{ env.RUNNER_TEMP }}/open-builder-arm64-release.apk
+          if-no-files-found: error
+          retention-days: 7
