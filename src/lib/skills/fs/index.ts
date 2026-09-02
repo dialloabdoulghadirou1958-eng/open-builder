@@ -1,5 +1,6 @@
 import { OPFSSkillFs } from "./opfs";
 import { TauriSkillFs } from "./tauri";
+import { detectRuntimePlatform } from "../../runtime/platform";
 
 export interface DirEntry {
   name: string;
@@ -35,17 +36,34 @@ export function isSkillsAvailable(): boolean {
 
 let skillFsInstance: SkillFs | null = null;
 
-export function createSkillFs(): SkillFs {
+export async function createSkillFs(): Promise<SkillFs> {
   if (skillFsInstance) return skillFsInstance;
-  if (isTauri()) {
-    skillFsInstance = new TauriSkillFs();
-    return skillFsInstance;
+
+  // On mobile Tauri, prefer OPFS over native FS to avoid plugin-fs resolution issues.
+  const platform = isTauri() ? await detectRuntimePlatform() : "web";
+
+  if (platform === "desktop") {
+    try {
+      skillFsInstance = new TauriSkillFs();
+      return skillFsInstance;
+    } catch {
+      // Fallback to OPFS if Tauri FS fails to load (e.g. plugin unavailable).
+    }
   }
+
   if (!isOpfsAvailable()) {
     throw new Error(
       "Skills storage is not available in this environment (neither Tauri FS nor OPFS).",
     );
   }
   skillFsInstance = new OPFSSkillFs();
+  return skillFsInstance;
+}
+
+/** Synchronous accessor for contexts that cannot await. */
+export function getSkillFs(): SkillFs {
+  if (!skillFsInstance) {
+    throw new Error("SkillFs has not been initialized. Call createSkillFs() first.");
+  }
   return skillFsInstance;
 }

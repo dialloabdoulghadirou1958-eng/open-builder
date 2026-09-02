@@ -27,7 +27,7 @@ export function getSkillRegistry(): Promise<SkillRegistry> {
       );
     }
     await waitForStoreHydration();
-    const fs = createSkillFs();
+    const fs = await createSkillFs();
     const platform = await detectRuntimePlatform();
     const registry = new SkillRegistry(fs, useSkillsStore.getState(), {
       platform,
