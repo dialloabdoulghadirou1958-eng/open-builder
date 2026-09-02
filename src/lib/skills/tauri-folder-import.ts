@@ -49,12 +49,22 @@ async function loadPath(): Promise<PathModule> {
 export async function importFolderViaTauri(
   registry: SkillRegistry,
 ): Promise<ImportResult | null> {
-  const dialog = await loadDialog();
+  let dialog: DialogModule;
+  let fs: FsModule;
+  let pathMod: PathModule;
+  try {
+    dialog = await loadDialog();
+    fs = await loadFs();
+    pathMod = await loadPath();
+  } catch {
+    throw new Error(
+      "Folder import requires Tauri desktop plugins (dialog, fs, path). " +
+        "This feature is not available on mobile or web builds.",
+    );
+  }
+
   const selected = await dialog.open({ directory: true, multiple: false });
   if (!selected) return null;
-
-  const fs = await loadFs();
-  const pathMod = await loadPath();
 
   const files: Record<string, string> = {};
   const budget = createSkillImportBudget();

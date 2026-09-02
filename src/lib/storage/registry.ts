@@ -57,7 +57,7 @@ async function clearPersistedStore(
 async function clearSkillFiles(): Promise<void> {
   const { createSkillFs, isSkillsAvailable } = await import("../skills/fs");
   if (!isSkillsAvailable()) return;
-  const fs = createSkillFs();
+  const fs = await createSkillFs();
   for (const entry of await fs.readDir("")) {
     if (entry.isDirectory) {
       await fs.remove(entry.name, { recursive: true });

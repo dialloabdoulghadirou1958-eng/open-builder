@@ -44,7 +44,14 @@ let pathModulePromise: Promise<PluginPathModule> | null = null;
 
 async function loadFs(): Promise<PluginFsModule> {
   if (!fsModulePromise) {
-    fsModulePromise = import(/* @vite-ignore */ PLUGIN_FS_MODULE_ID);
+    fsModulePromise = import(/* @vite-ignore */ PLUGIN_FS_MODULE_ID).catch(
+      (err) => {
+        throw new Error(
+          `Failed to load Tauri FS plugin: ${err instanceof Error ? err.message : String(err)}. ` +
+            "This is expected on mobile builds where the plugin may not be bundled.",
+        );
+      },
+    );
   }
   return fsModulePromise;
 }
